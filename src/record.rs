@@ -31,6 +31,7 @@ impl Record {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct RecordList {
     pub records: Vec<Record>,
 }
