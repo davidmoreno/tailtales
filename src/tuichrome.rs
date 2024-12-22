@@ -5,15 +5,14 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
 };
-use std::io;
-use tui::{
+use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect, Size},
     style::{Color, Style},
-    text::Spans,
     widgets::{Block, Borders, Cell, Row, Table, Tabs},
     Terminal,
 };
+use std::io;
 
 pub struct TuiState {
     pub records: record::RecordList,
@@ -64,7 +63,7 @@ impl TuiChrome {
                         ]
                         .as_ref(),
                     )
-                    .split(size);
+                    .split(rect.area());
                 rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[1]);
                 rect.render_widget(footer, chunks[2]);
@@ -75,7 +74,7 @@ impl TuiChrome {
     }
 
     pub fn render_header(state: &TuiState) -> Tabs {
-        let titles = ["File", "Edit"].iter().cloned().map(Spans::from).collect();
+        let titles = vec!["File", "Edit"];
 
         Tabs::new(titles)
             .style(Style::default().fg(Color::White))
@@ -83,7 +82,7 @@ impl TuiChrome {
             .select(state.tab_index)
     }
 
-    pub fn render_mainarea<'a>(state: &TuiState, size: Rect) -> Table<'a> {
+    pub fn render_mainarea<'a>(state: &TuiState, size: Size) -> Table<'a> {
         let height = size.height as usize - 2;
         let width = size.width as u16 - 2;
         let start = state.scroll_offset;
@@ -114,6 +113,7 @@ impl TuiChrome {
                         ret
                     }
                 }),
+            vec![Constraint::Min(80), Constraint::Length(6)],
         )
         .header(
             Row::new(vec!["Original", "Word Count"])
@@ -125,9 +125,7 @@ impl TuiChrome {
                 .title("Main Area")
                 .borders(Borders::ALL)
                 .style(Style::default().fg(Color::White).bg(Color::Black)),
-        )
-        .widths(&[Constraint::Min(80), Constraint::Length(6)]);
-
+        );
         ret
     }
 
