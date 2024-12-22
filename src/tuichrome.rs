@@ -1,20 +1,25 @@
 use crate::record;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::DisableMouseCapture,
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
 };
-use std::{io, thread, time::Duration};
+use std::io;
 use tui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders, Widget},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    text::Spans,
+    widgets::{Block, Borders, Cell, Row, Table, Tabs},
     Terminal,
 };
 
 pub struct TuiState {
     pub records: record::RecordList,
+    pub tab_index: usize,
+    pub selected_record: Option<usize>,
+    pub scroll_offset: usize,
 }
 
 pub struct TuiChrome {
@@ -32,6 +37,9 @@ impl TuiChrome {
         Ok(TuiChrome {
             state: TuiState {
                 records: record::RecordList::new(),
+                tab_index: 0,
+                selected_record: Option::Some(10),
+                scroll_offset: 0,
             },
             terminal: terminal,
         })
@@ -40,7 +48,7 @@ impl TuiChrome {
     pub fn draw(&mut self) -> Result<(), io::Error> {
         let size = self.terminal.size()?;
         let header = Self::render_header(&self.state);
-        let mainarea = Self::render_mainarea(&self.state);
+        let mainarea = Self::render_mainarea(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
         let result = self
@@ -66,16 +74,59 @@ impl TuiChrome {
         Ok(())
     }
 
-    pub fn render_header<'a>(state: &TuiState) -> Block<'a> {
-        Block::default().title("Header").borders(Borders::TOP)
+    pub fn render_header(state: &TuiState) -> Tabs {
+        let titles = ["File", "Edit"].iter().cloned().map(Spans::from).collect();
+
+        Tabs::new(titles)
+            .style(Style::default().fg(Color::White))
+            .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
+            .select(state.tab_index)
     }
 
-    pub fn render_mainarea<'a>(state: &TuiState) -> Block<'a> {
-        let ret = Block::default()
-            .title("Main Area")
-            .borders(Borders::RIGHT | Borders::LEFT)
-            // Set white the background color
-            .style(tui::style::Style::default().bg(tui::style::Color::Black));
+    pub fn render_mainarea<'a>(state: &TuiState, size: Rect) -> Table<'a> {
+        let height = size.height as usize - 2;
+        let width = size.width as u16 - 2;
+        let start = state.scroll_offset;
+
+        // do constriants with static storage, as a statinc in C++
+
+        let ret = Table::new(
+            state.records.records[start..start + height]
+                .iter()
+                .map(|record| {
+                    let ret = Row::new(vec![
+                        Cell::from(record.original.clone()),
+                        Cell::from(record.data.get("word_count").unwrap().clone()),
+                    ]);
+
+                    let current_index = record
+                        .data
+                        .get("line_number")
+                        .unwrap()
+                        .parse::<usize>()
+                        .unwrap();
+
+                    if state.selected_record.is_some()
+                        && state.selected_record.unwrap() == current_index
+                    {
+                        ret.style(Style::default().bg(Color::Yellow).fg(Color::Black))
+                    } else {
+                        ret
+                    }
+                }),
+        )
+        .header(
+            Row::new(vec!["Original", "Word Count"])
+                .style(Style::default().fg(Color::Yellow))
+                .bottom_margin(1),
+        )
+        .block(
+            Block::default()
+                .title("Main Area")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::White).bg(Color::Black)),
+        )
+        .widths(&[Constraint::Min(80), Constraint::Length(6)]);
 
         ret
     }
