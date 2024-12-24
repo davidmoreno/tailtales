@@ -33,9 +33,9 @@ impl TuiChrome {
             state: TuiState {
                 records: record::RecordList::new(),
                 tab_index: 0,
-                selected_record: Option::Some(1),
+                selected_record: Option::Some(0),
                 visible_lines: 78,
-                current_record: 1,
+                current_record: 0,
                 scroll_offset: 0,
                 running: true,
                 read_time: time::Duration::new(0, 0),
@@ -49,7 +49,7 @@ impl TuiChrome {
 
         let mut visible_lines = size.height as usize - 6;
         if self.state.selected_record.is_some() {
-            visible_lines -= self.state.records.records[self.state.selected_record.unwrap() - 1]
+            visible_lines -= self.state.records.records[self.state.selected_record.unwrap()]
                 .data
                 .len();
         }
@@ -71,7 +71,7 @@ impl TuiChrome {
                         .state
                         .records
                         .records
-                        .get(self.state.selected_record.unwrap() - 1)
+                        .get(self.state.selected_record.unwrap())
                         .unwrap();
 
                     let chunks = layout
@@ -121,12 +121,11 @@ impl TuiChrome {
 
     pub fn render_records<'a>(state: &TuiState, size: Size) -> Table<'a> {
         let height = size.height as usize - 2;
-        let width = size.width as u16 - 2;
         let start = state.scroll_offset;
 
         // do constriants with static storage, as a statinc in C++
 
-        let mut records = Table::new(
+        let records = Table::new(
             state.records.records
                 [start..std::cmp::min(start + height, state.records.records.len() - 1)]
                 .iter()
@@ -230,7 +229,7 @@ impl TuiChrome {
             }
             // Start
             KeyCode::Home => {
-                self.state.current_record = 1;
+                self.state.current_record = 0;
                 self.state.scroll_offset = 0;
             }
             // End
@@ -258,7 +257,7 @@ impl TuiChrome {
         let max = self.state.records.records.len() as i32 - 1;
 
         if new <= 0 {
-            new = 1;
+            new = 0;
         }
         if new > max {
             new = max;
