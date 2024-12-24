@@ -1,3 +1,4 @@
+use regex::Regex;
 use std::{collections::HashMap, io::BufRead};
 
 #[derive(Debug, Default)]
@@ -12,6 +13,10 @@ impl Record {
 
         data.insert("filename".to_string(), filename.to_string());
         data.insert("line_number".to_string(), line_number.to_string());
+        let timestamp = find_timestamp(&line);
+        if let Some(timestamp) = timestamp {
+            data.insert("timestamp".to_string(), timestamp);
+        }
 
         Record {
             original: line,
@@ -28,6 +33,15 @@ impl Record {
         data.insert("word_count".to_string(), word_count.to_string());
 
         data
+    }
+}
+
+fn find_timestamp(line: &str) -> Option<String> {
+    let re = regex::Regex::new(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}").unwrap();
+    let caps = re.captures(line);
+    match caps {
+        Some(caps) => Some(caps.get(0).unwrap().as_str().to_string()),
+        None => None,
     }
 }
 

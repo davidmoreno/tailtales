@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 ratatui = "0.29"
 crossterm = "0.25"
+regex = "1.11.1"

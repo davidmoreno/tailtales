@@ -9,7 +9,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect, Size},
     style::{Color, Style},
-    widgets::{Block, Borders, Cell, Row, Table, Tabs},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
     Terminal,
 };
 use std::{fmt::Result, io};
@@ -55,26 +55,52 @@ impl TuiChrome {
         }
 
         let header = Self::render_header(&self.state);
-        let mainarea = Self::render_mainarea(&self.state, size);
+        let mainarea = Self::render_records(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
         let result = self
             .terminal
             .draw(|rect| {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints(
-                        [
-                            Constraint::Length(1),
-                            Constraint::Min(0),
-                            Constraint::Length(1),
-                        ]
-                        .as_ref(),
-                    )
-                    .split(rect.area());
-                rect.render_widget(header, chunks[0]);
-                rect.render_widget(mainarea, chunks[1]);
-                rect.render_widget(footer, chunks[2]);
+                let mut layout = Layout::default().direction(Direction::Vertical);
+
+                if self.state.selected_record.is_some() {
+                    let current_record = self
+                        .state
+                        .records
+                        .records
+                        .get(self.state.selected_record.unwrap() - 1)
+                        .unwrap();
+
+                    let chunks = layout
+                        .constraints(
+                            [
+                                Constraint::Length(1),
+                                Constraint::Min(0),
+                                Constraint::Length(current_record.data.len() as u16 + 2),
+                                Constraint::Length(1),
+                            ]
+                            .as_ref(),
+                        )
+                        .split(rect.area());
+                    rect.render_widget(header, chunks[0]);
+                    rect.render_widget(mainarea, chunks[1]);
+                    rect.render_widget(Self::render_record(current_record), chunks[2]);
+                    rect.render_widget(footer, chunks[3]);
+                } else {
+                    let chunks = layout
+                        .constraints(
+                            [
+                                Constraint::Length(1),
+                                Constraint::Min(0),
+                                Constraint::Length(1),
+                            ]
+                            .as_ref(),
+                        )
+                        .split(rect.area());
+                    rect.render_widget(header, chunks[0]);
+                    rect.render_widget(mainarea, chunks[1]);
+                    rect.render_widget(footer, chunks[2]);
+                }
             })
             .unwrap();
 
@@ -90,22 +116,19 @@ impl TuiChrome {
             .select(state.tab_index)
     }
 
-    pub fn render_mainarea<'a>(state: &TuiState, size: Size) -> Table<'a> {
+    pub fn render_records<'a>(state: &TuiState, size: Size) -> Table<'a> {
         let height = size.height as usize - 2;
         let width = size.width as u16 - 2;
         let start = state.scroll_offset;
 
         // do constriants with static storage, as a statinc in C++
 
-        let ret = Table::new(
+        let mut records = Table::new(
             state.records.records
                 [start..std::cmp::min(start + height, state.records.records.len() - 1)]
                 .iter()
                 .map(|record| {
-                    let ret = Row::new(vec![
-                        Cell::from(record.original.clone()),
-                        Cell::from(record.data.get("word_count").unwrap().clone()),
-                    ]);
+                    let ret = Row::new(vec![Cell::from(record.original.clone())]);
 
                     let current_index = record
                         .data
@@ -121,19 +144,32 @@ impl TuiChrome {
                     }
                 }),
             vec![Constraint::Min(80), Constraint::Length(6)],
-        )
-        .header(
-            Row::new(vec!["Original", "Word Count"])
-                .style(Style::default().fg(Color::Yellow))
-                .bottom_margin(1),
-        )
-        .block(
-            Block::default()
-                .title("Main Area")
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::White).bg(Color::Black)),
         );
-        ret
+
+        // ret = ret.header(Row::new(vec!["Line"]).style(Style::default().fg(Color::Yellow)));
+
+        records
+    }
+
+    pub fn render_record<'a>(record: &record::Record) -> Paragraph<'a> {
+        let mut text = String::new();
+
+        // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
+
+        let mut keys: Vec<&String> = record.data.keys().collect();
+        keys.sort();
+
+        for key in keys {
+            text.push_str(&format!("{}: {}\n", key, record.data.get(key).unwrap()));
+        }
+
+        Paragraph::new(text)
+            .style(Style::default().fg(Color::White))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(record.original.clone()),
+            )
     }
 
     pub fn render_footer<'a>(state: &TuiState) -> Block<'a> {
@@ -197,6 +233,14 @@ impl TuiChrome {
             KeyCode::End => {
                 self.state.current_record = self.state.records.records.len() - 1;
                 self.state.scroll_offset = self.state.current_record - self.state.visible_lines;
+            }
+            // Enter
+            KeyCode::Enter => {
+                self.state.selected_record = Some(self.state.current_record);
+            }
+            // ESC
+            KeyCode::Esc => {
+                self.state.selected_record = None;
             }
 
             _ => {}
