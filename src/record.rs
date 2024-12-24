@@ -1,5 +1,9 @@
 use regex::Regex;
-use std::{collections::HashMap, io::BufRead};
+use std::{
+    collections::HashMap,
+    io::BufRead,
+    thread::{self},
+};
 
 #[derive(Debug, Default)]
 pub struct Record {
@@ -65,6 +69,67 @@ impl RecordList {
             line_number += 1;
             let line = line.expect("could not read line");
             self.add(Record::new(line, filename, line_number));
+        }
+    }
+
+    pub fn readfile_parallel(&mut self, filename: &str) {
+        let file = std::fs::File::open(filename).expect("could not open file");
+        let reader = std::io::BufReader::new(file);
+        let mut line_number = 0;
+        let mut threads = Vec::new();
+
+        // We prepare a vector of 100 lines per thread, and send the work, as result we get the records
+        // and we add them to the records list. Continue until no more lines are available.
+
+        let mut lines: Vec<String> = Vec::new();
+        let mut thread_block = 0;
+        for line in reader.lines() {
+            line_number += 1;
+            let line = line.expect("could not read line");
+            lines.push(line);
+            if lines.len() >= 300 {
+                thread_block += 1;
+                let mylines = lines.clone();
+                let filename = filename.to_string();
+                let start_line_number = line_number;
+                let thread = thread::spawn(move || {
+                    let mut records = Vec::new();
+                    for (line_number, line) in mylines.iter().enumerate() {
+                        let mut rec =
+                            Record::new(line.clone(), &filename, line_number + start_line_number);
+                        rec.data
+                            .insert("thread_block".to_string(), thread_block.to_string());
+                        records.push(rec);
+                    }
+                    records
+                });
+                threads.push(thread);
+                lines.clear();
+            }
+        }
+        if lines.len() > 0 {
+            thread_block += 1;
+            let mylines = lines.clone();
+            let filename = filename.to_string();
+            let start_line_number = line_number;
+            let thread = thread::spawn(move || {
+                let mut records = Vec::new();
+                for (line_number, line) in mylines.iter().enumerate() {
+                    let mut rec =
+                        Record::new(line.clone(), &filename, line_number + start_line_number);
+                    rec.data
+                        .insert("thread_block".to_string(), thread_block.to_string());
+                    records.push(rec);
+                }
+                records
+            });
+            threads.push(thread);
+            lines.clear();
+        }
+
+        for thread in threads {
+            let records = thread.join().unwrap();
+            self.records.extend(records);
         }
     }
 

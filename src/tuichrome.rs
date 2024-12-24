@@ -1,18 +1,14 @@
 use crate::record;
 
-use crossterm::{
-    event::{self, DisableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
-};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect, Size},
+    layout::{Constraint, Direction, Layout, Size},
     style::{Color, Style},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
     Terminal,
 };
-use std::{fmt::Result, io};
+use std::{io, time};
 
 pub struct TuiState {
     pub records: record::RecordList,
@@ -22,6 +18,7 @@ pub struct TuiState {
     pub current_record: usize,
     pub scroll_offset: usize,
     pub running: bool,
+    pub read_time: time::Duration,
 }
 
 pub struct TuiChrome {
@@ -41,6 +38,7 @@ impl TuiChrome {
                 current_record: 1,
                 scroll_offset: 0,
                 running: true,
+                read_time: time::Duration::new(0, 0),
             },
             terminal: terminal,
         })
@@ -50,6 +48,11 @@ impl TuiChrome {
         let size = self.terminal.size()?;
 
         let mut visible_lines = size.height as usize - 6;
+        if self.state.selected_record.is_some() {
+            visible_lines -= self.state.records.records[self.state.selected_record.unwrap() - 1]
+                .data
+                .len();
+        }
         if self.state.visible_lines != visible_lines {
             self.state.visible_lines = visible_lines;
         }
@@ -174,9 +177,10 @@ impl TuiChrome {
 
     pub fn render_footer<'a>(state: &TuiState) -> Block<'a> {
         let position_hints = format!(
-            "Position {}/{}",
+            "Position {}/{}. Read time {}ms",
             state.current_record,
-            state.records.records.len()
+            state.records.records.len(),
+            state.read_time.as_millis()
         );
 
         Block::default()
