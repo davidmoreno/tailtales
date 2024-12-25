@@ -1,14 +1,9 @@
 use crate::record;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Size},
-    style::{Color, Style},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
-    Terminal,
-};
-use std::{cmp::max, io, time};
+use ratatui::{prelude::*, widgets::*};
+use std::{io, time};
+use symbols::line;
 
 #[derive(PartialEq, Debug)]
 pub enum Mode {
@@ -110,42 +105,94 @@ impl TuiChrome {
             .select(state.tab_index)
     }
 
-    pub fn render_records<'a>(state: &TuiState, size: Size) -> Table<'a> {
+    pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
         let height = size.height as usize - 2;
+        let width = size.width as usize;
         let start = state.scroll_offset;
 
-        // do constriants with static storage, as a statinc in C++
+        let mut lines: Vec<Line> = vec![];
 
-        let records = Table::new(
-            state.records.records
-                [start..std::cmp::min(start + height, state.records.records.len() - 1)]
-                .iter()
-                .map(|record| {
-                    let ret = Row::new(vec![Cell::from(record.original.clone())]);
+        for record in state.records.records
+            [start..std::cmp::min(start + height, state.records.records.len() - 1)]
+            .iter()
+        {
+            let mut spans = vec![];
+            let current_index = record
+                .data
+                .get("line_number")
+                .unwrap()
+                .parse::<usize>()
+                .unwrap();
 
-                    let current_index = record
-                        .data
-                        .get("line_number")
-                        .unwrap()
-                        .parse::<usize>()
-                        .unwrap();
+            if state.current_record == current_index {
+                let style = Style::default().bg(Color::Yellow).fg(Color::Black);
+                let style_hightlight = Style::default().fg(Color::Yellow).bg(Color::Black);
+                Self::render_record_line(
+                    record.original.as_str(),
+                    state.search.as_str(),
+                    &mut spans,
+                    style,
+                    style_hightlight,
+                    width,
+                );
+            } else {
+                let style = Style::default().bg(Color::Black).fg(Color::White);
+                let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
+                Self::render_record_line(
+                    record.original.as_str(),
+                    state.search.as_str(),
+                    &mut spans,
+                    style,
+                    style_hightlight,
+                    width,
+                );
+            }
+            // add white space to fill the line
 
-                    if state.current_record == current_index {
-                        ret.style(Style::default().bg(Color::Yellow).fg(Color::Black))
-                    } else {
-                        ret
-                    }
-                }),
-            vec![Constraint::Min(80), Constraint::Length(6)],
-        );
+            lines.push(Line::from(spans));
+        }
 
-        // ret = ret.header(Row::new(vec!["Line"]).style(Style::default().fg(Color::Yellow)));
+        let text = Text::from(lines);
 
-        records
+        let ret = Paragraph::new(text);
+
+        ret
     }
 
-    pub fn render_record<'a>(record: &record::Record) -> Paragraph<'a> {
-        let mut text = String::new();
+    pub fn render_record_line<'a>(
+        record: &'a str,
+        search: &'a str,
+        spans: &mut Vec<Span<'a>>,
+        style: Style,
+        style_hightlight: Style,
+        width: usize,
+    ) {
+        let parts = if search == "" {
+            vec![record]
+        } else {
+            record.split(search).collect()
+        };
+
+        if record.starts_with(search) {
+            spans.push(Span::styled(search, style_hightlight));
+        }
+
+        for part in parts[0..parts.len() - 1].iter() {
+            spans.push(Span::styled(part.clone(), style));
+            spans.push(Span::styled(search, style_hightlight));
+        }
+        spans.push(Span::styled(parts[parts.len() - 1], style));
+
+        if record.ends_with(search) {
+            spans.push(Span::styled(search, style_hightlight));
+        }
+
+        let remaining = width - record.len();
+        spans.push(Span::styled(" ".repeat(remaining), style));
+    }
+
+    pub fn render_record<'a>(record: &'a record::Record) -> Paragraph<'a> {
+        let mut lines = vec![];
 
         // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
 
@@ -153,16 +200,19 @@ impl TuiChrome {
         keys.sort();
 
         for key in keys {
-            text.push_str(&format!("{}: {}\n", key, record.data.get(key).unwrap()));
+            lines.push(Line::from(vec![
+                Span::styled(format!("{}: ", key), Style::default().fg(Color::Yellow)),
+                Span::raw(record.data.get(key).unwrap()),
+            ]));
         }
 
-        Paragraph::new(text)
-            .style(Style::default().fg(Color::White))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(record.original.clone()),
-            )
+        let text = Text::from(lines);
+
+        Paragraph::new(text).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(record.original.clone()),
+        )
     }
 
     pub fn render_footer<'a>(state: &TuiState) -> Block<'a> {
