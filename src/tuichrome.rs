@@ -19,7 +19,6 @@ pub enum Mode {
 pub struct TuiState {
     pub records: record::RecordList,
     pub tab_index: usize,
-    pub selected_record: Option<usize>,
     pub visible_lines: usize,
     pub current_record: usize,
     pub scroll_offset: usize,
@@ -41,7 +40,6 @@ impl TuiChrome {
             state: TuiState {
                 records: record::RecordList::new(),
                 tab_index: 0,
-                selected_record: Option::Some(0),
                 visible_lines: 78,
                 current_record: 0,
                 scroll_offset: 0,
@@ -58,11 +56,10 @@ impl TuiChrome {
         let size = self.terminal.size()?;
 
         let mut visible_lines = size.height as usize - 6;
-        if self.state.selected_record.is_some() {
-            visible_lines -= self.state.records.records[self.state.selected_record.unwrap()]
-                .data
-                .len();
-        }
+        visible_lines -= self.state.records.records[self.state.current_record]
+            .data
+            .len()
+            + 2;
         if self.state.visible_lines != visible_lines {
             self.state.visible_lines = visible_lines;
         }
@@ -76,44 +73,28 @@ impl TuiChrome {
             .draw(|rect| {
                 let mut layout = Layout::default().direction(Direction::Vertical);
 
-                if self.state.selected_record.is_some() {
-                    let current_record = self
-                        .state
-                        .records
-                        .records
-                        .get(self.state.selected_record.unwrap())
-                        .unwrap();
+                let current_record = self
+                    .state
+                    .records
+                    .records
+                    .get(self.state.current_record)
+                    .unwrap();
 
-                    let chunks = layout
-                        .constraints(
-                            [
-                                Constraint::Length(1),
-                                Constraint::Min(0),
-                                Constraint::Length(current_record.data.len() as u16 + 2),
-                                Constraint::Length(1),
-                            ]
-                            .as_ref(),
-                        )
-                        .split(rect.area());
-                    rect.render_widget(header, chunks[0]);
-                    rect.render_widget(mainarea, chunks[1]);
-                    rect.render_widget(Self::render_record(current_record), chunks[2]);
-                    rect.render_widget(footer, chunks[3]);
-                } else {
-                    let chunks = layout
-                        .constraints(
-                            [
-                                Constraint::Length(1),
-                                Constraint::Min(0),
-                                Constraint::Length(1),
-                            ]
-                            .as_ref(),
-                        )
-                        .split(rect.area());
-                    rect.render_widget(header, chunks[0]);
-                    rect.render_widget(mainarea, chunks[1]);
-                    rect.render_widget(footer, chunks[2]);
-                }
+                let chunks = layout
+                    .constraints(
+                        [
+                            Constraint::Length(1),
+                            Constraint::Min(0),
+                            Constraint::Length(current_record.data.len() as u16 + 2),
+                            Constraint::Length(1),
+                        ]
+                        .as_ref(),
+                    )
+                    .split(rect.area());
+                rect.render_widget(header, chunks[0]);
+                rect.render_widget(mainarea, chunks[1]);
+                rect.render_widget(Self::render_record(current_record), chunks[2]);
+                rect.render_widget(footer, chunks[3]);
             })
             .unwrap();
 
@@ -262,14 +243,6 @@ impl TuiChrome {
                 self.state.current_record = self.state.records.records.len() - 1;
                 self.state.scroll_offset = self.state.current_record - self.state.visible_lines;
             }
-            // Enter
-            KeyCode::Enter => {
-                self.state.selected_record = Some(self.state.current_record);
-            }
-            // ESC
-            KeyCode::Esc => {
-                self.state.selected_record = None;
-            }
             // F3 search
             KeyCode::F(3) => {
                 self.search_next();
@@ -312,19 +285,16 @@ impl TuiChrome {
     }
 
     pub fn search_next(&mut self) {
-        match self.state.selected_record {
-            Some(selected_record) => {
-                self.state.selected_record = Some(selected_record + 1);
-            }
-            None => {
-                self.state.selected_record = Some(0);
-            }
+        if self.state.current_record >= self.state.records.records.len() {
+            self.state.current_record = 0;
+        } else {
+            self.state.current_record += 1;
         }
         self.search();
     }
 
     pub fn search(&mut self) {
-        let mut current = self.state.selected_record.unwrap_or(0);
+        let mut current = self.state.current_record;
         let search_text: &str = &self.state.search;
 
         let maybe_position = self.state.records.search(search_text, current);
@@ -332,7 +302,6 @@ impl TuiChrome {
             return;
         }
         current = maybe_position.unwrap();
-        self.state.selected_record = Some(current);
         self.state.current_record = current;
         self.ensure_visible(current);
     }
