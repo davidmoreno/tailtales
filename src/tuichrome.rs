@@ -187,8 +187,10 @@ impl TuiChrome {
             spans.push(Span::styled(search, style_hightlight));
         }
 
-        let remaining = width - record.len();
-        spans.push(Span::styled(" ".repeat(remaining), style));
+        let remaining = width as i32 - record.len() as i32;
+        if remaining > 0 {
+            spans.push(Span::styled(" ".repeat(remaining as usize), style));
+        }
     }
 
     pub fn render_record<'a>(record: &'a record::Record) -> Paragraph<'a> {
