@@ -93,4 +93,14 @@ impl RecordList {
     pub fn add(&mut self, record: Record) {
         self.records.push(record);
     }
+
+    /// Search for a string in the records, returns the position of the next match.
+    pub fn search(&mut self, search: &str, start_at: usize) -> Option<usize> {
+        for (i, record) in self.records.iter().enumerate().skip(start_at) {
+            if record.original.contains(search) {
+                return Some(i);
+            }
+        }
+        None
+    }
 }

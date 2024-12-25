@@ -8,7 +8,13 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, Tabs},
     Terminal,
 };
-use std::{io, time};
+use std::{cmp::max, io, time};
+
+#[derive(PartialEq, Debug)]
+pub enum Mode {
+    Normal,
+    Search,
+}
 
 pub struct TuiState {
     pub records: record::RecordList,
@@ -19,6 +25,8 @@ pub struct TuiState {
     pub scroll_offset: usize,
     pub running: bool,
     pub read_time: time::Duration,
+    pub mode: Mode,
+    pub search: String,
 }
 
 pub struct TuiChrome {
@@ -39,6 +47,8 @@ impl TuiChrome {
                 scroll_offset: 0,
                 running: true,
                 read_time: time::Duration::new(0, 0),
+                mode: Mode::Normal,
+                search: String::new(),
             },
             terminal: terminal,
         })
@@ -175,16 +185,23 @@ impl TuiChrome {
     }
 
     pub fn render_footer<'a>(state: &TuiState) -> Block<'a> {
-        let position_hints = format!(
-            "Position {}/{}. Read time {}ms",
-            state.current_record,
-            state.records.records.len(),
-            state.read_time.as_millis()
-        );
+        if state.mode == Mode::Search {
+            return Block::default()
+                .title(format!("Search: {}", state.search))
+                .borders(Borders::BOTTOM)
+                .border_style(Style::default().fg(Color::Yellow));
+        } else {
+            let position_hints = format!(
+                "Position {}/{}. Read time {}ms",
+                state.current_record,
+                state.records.records.len(),
+                state.read_time.as_millis()
+            );
 
-        Block::default()
-            .title(position_hints)
-            .borders(Borders::BOTTOM)
+            Block::default()
+                .title(position_hints)
+                .borders(Borders::BOTTOM)
+        }
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
@@ -198,6 +215,14 @@ impl TuiChrome {
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if self.state.mode == Mode::Normal {
+            self.handle_normal_mode(key_event);
+        } else {
+            self.handle_search_mode(key_event);
+        }
+    }
+
+    pub fn handle_normal_mode(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => {
                 self.state.running = false;
@@ -245,9 +270,71 @@ impl TuiChrome {
             KeyCode::Esc => {
                 self.state.selected_record = None;
             }
+            // F3 search
+            KeyCode::F(3) => {
+                self.search_next();
+            }
+            // /
+            KeyCode::Char('/') => {
+                self.state.mode = Mode::Search;
+            }
 
             _ => {}
         }
+    }
+
+    pub fn handle_search_mode(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Esc => {
+                self.state.mode = Mode::Normal;
+            }
+            KeyCode::Char('\n') => {
+                self.state.mode = Mode::Normal;
+                self.search();
+            }
+            KeyCode::Char(c) => {
+                // search for c
+                self.state.search.push(c);
+                self.search();
+            }
+            KeyCode::Backspace => {
+                self.state.search.pop();
+            }
+            KeyCode::Enter => {
+                self.state.mode = Mode::Normal;
+                self.search();
+            }
+            KeyCode::F(3) => {
+                self.search_next();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn search_next(&mut self) {
+        match self.state.selected_record {
+            Some(selected_record) => {
+                self.state.selected_record = Some(selected_record + 1);
+            }
+            None => {
+                self.state.selected_record = Some(0);
+            }
+        }
+        self.search();
+    }
+
+    pub fn search(&mut self) {
+        let mut current = self.state.selected_record.unwrap_or(0);
+        let search_text: &str = &self.state.search;
+
+        let maybe_position = self.state.records.search(search_text, current);
+        if maybe_position.is_none() {
+            return;
+        }
+        current = maybe_position.unwrap();
+        self.state.selected_record = Some(current);
+        self.state.current_record = current;
+        self.ensure_visible(current);
     }
 
     pub fn move_selection(&mut self, delta: i32) {
@@ -264,21 +351,27 @@ impl TuiChrome {
         }
         current = new;
 
+        self.state.current_record = current as usize;
+        self.ensure_visible(current as usize);
+    }
+
+    pub fn ensure_visible(&mut self, current: usize) {
         let visible_lines = self.state.visible_lines as i32;
+        let current_i32 = current as i32;
+
         let mut scroll_offset = self.state.scroll_offset as i32;
         // Make scroll_offset follow the selected_record. Must be between the third and the visible lines - 3
-        if current > scroll_offset + visible_lines - 3 {
-            scroll_offset = current - visible_lines + 3;
+        if current_i32 > scroll_offset + visible_lines - 3 {
+            scroll_offset = current_i32 - visible_lines + 3;
         }
-        if current < scroll_offset + 3 {
-            scroll_offset = current - 3;
+        if current_i32 < scroll_offset + 3 {
+            scroll_offset = current_i32 - 3;
         }
         // offset can not be negative
         if scroll_offset < 0 {
             scroll_offset = 0;
         }
 
-        self.state.current_record = current as usize;
         self.state.scroll_offset = scroll_offset as usize;
     }
 
