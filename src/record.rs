@@ -121,6 +121,9 @@ impl RecordList {
     }
 
     pub fn record_matches(record: &Record, search: &str) -> bool {
-        record.original.contains(search)
+        record
+            .original
+            .to_lowercase()
+            .contains(search.to_lowercase().as_str())
     }
 }
