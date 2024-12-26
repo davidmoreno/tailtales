@@ -107,7 +107,7 @@ impl TuiChrome {
 
         let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
         for record in state.records.records
-            [start..std::cmp::min(start + height, state.records.records.len() - 1)]
+            [start..std::cmp::min(start + height, state.records.records.len())]
             .iter()
         {
             let style = Self::get_style_for_record(record, state);
