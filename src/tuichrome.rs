@@ -2,7 +2,7 @@ use crate::record;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
-use std::{io, time};
+use std::{cmp::max, io, time};
 use symbols::line;
 
 #[derive(PartialEq, Debug)]
@@ -16,7 +16,8 @@ pub struct TuiState {
     pub tab_index: usize,
     pub visible_lines: usize,
     pub current_record: usize,
-    pub scroll_offset: usize,
+    pub scroll_offset_top: usize,
+    pub scroll_offset_left: usize,
     pub running: bool,
     pub read_time: time::Duration,
     pub mode: Mode,
@@ -37,7 +38,8 @@ impl TuiChrome {
                 tab_index: 0,
                 visible_lines: 78,
                 current_record: 0,
-                scroll_offset: 0,
+                scroll_offset_top: 0,
+                scroll_offset_left: 0,
                 running: true,
                 read_time: time::Duration::new(0, 0),
                 mode: Mode::Normal,
@@ -53,13 +55,12 @@ impl TuiChrome {
         let mut visible_lines = size.height as usize - 6;
         visible_lines -= self.state.records.records[self.state.current_record]
             .data
-            .len()
-            + 2;
+            .len();
         if self.state.visible_lines != visible_lines {
             self.state.visible_lines = visible_lines;
         }
 
-        let header = Self::render_header(&self.state);
+        // let header = Self::render_header(&self.state);
         let mainarea = Self::render_records(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
@@ -78,7 +79,6 @@ impl TuiChrome {
                 let chunks = layout
                     .constraints(
                         [
-                            Constraint::Length(1),
                             Constraint::Min(0),
                             Constraint::Length(current_record.data.len() as u16 + 2),
                             Constraint::Length(1),
@@ -86,10 +86,10 @@ impl TuiChrome {
                         .as_ref(),
                     )
                     .split(rect.area());
-                rect.render_widget(header, chunks[0]);
-                rect.render_widget(mainarea, chunks[1]);
-                rect.render_widget(Self::render_record(current_record), chunks[2]);
-                rect.render_widget(footer, chunks[3]);
+                // rect.render_widget(header, chunks[0]);
+                rect.render_widget(mainarea, chunks[0]);
+                rect.render_widget(Self::render_record(current_record), chunks[1]);
+                rect.render_widget(footer, chunks[2]);
             })
             .unwrap();
 
@@ -108,7 +108,7 @@ impl TuiChrome {
     pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
         let height = size.height as usize - 2;
         let width = size.width as usize;
-        let start = state.scroll_offset;
+        let start = state.scroll_offset_top;
 
         let mut lines: Vec<Line> = vec![];
 
@@ -126,7 +126,7 @@ impl TuiChrome {
 
             if state.current_record == current_index {
                 let style = Style::default().bg(Color::Yellow).fg(Color::Black);
-                let style_hightlight = Style::default().fg(Color::Yellow).bg(Color::Black);
+                let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
                 Self::render_record_line(
                     record.original.as_str(),
                     state.search.as_str(),
@@ -154,7 +154,7 @@ impl TuiChrome {
 
         let text = Text::from(lines);
 
-        let ret = Paragraph::new(text);
+        let ret = Paragraph::new(text).scroll((0, state.scroll_offset_left as u16));
 
         ret
     }
@@ -285,17 +285,31 @@ impl TuiChrome {
             KeyCode::PageDown => {
                 self.move_selection(10);
             }
-            // Start
-            KeyCode::Home => {
-                self.state.current_record = 0;
-                self.state.scroll_offset = 0;
+            KeyCode::Right if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                self.state.scroll_offset_left += 10;
             }
-            // End
-            KeyCode::End => {
-                self.state.current_record = self.state.records.records.len() - 1;
-                self.state.scroll_offset = self.state.current_record - self.state.visible_lines;
+            KeyCode::Left if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                self.state.scroll_offset_left =
+                    max(0, self.state.scroll_offset_left as i32 - 10) as usize;
             }
-            // F3 search
+
+            KeyCode::Right => {
+                self.state.scroll_offset_left += 1;
+            }
+            KeyCode::Left => {
+                self.state.scroll_offset_left =
+                    max(0, self.state.scroll_offset_left as i32 - 1) as usize;
+            }
+
+            KeyCode::Char('n') => {
+                self.search_next();
+            }
+            KeyCode::Char('N') => {
+                self.search_prev();
+            }
+            KeyCode::F(3) if key_event.modifiers.contains(event::KeyModifiers::SHIFT) => {
+                self.search_prev();
+            }
             KeyCode::F(3) => {
                 self.search_next();
             }
@@ -315,19 +329,19 @@ impl TuiChrome {
             }
             KeyCode::Char('\n') => {
                 self.state.mode = Mode::Normal;
-                self.search();
+                self.search_fwd();
             }
             KeyCode::Char(c) => {
                 // search for c
                 self.state.search.push(c);
-                self.search();
+                self.search_fwd();
             }
             KeyCode::Backspace => {
                 self.state.search.pop();
             }
             KeyCode::Enter => {
                 self.state.mode = Mode::Normal;
-                self.search();
+                self.search_fwd();
             }
             KeyCode::F(3) => {
                 self.search_next();
@@ -342,14 +356,36 @@ impl TuiChrome {
         } else {
             self.state.current_record += 1;
         }
-        self.search();
+        self.search_fwd();
     }
 
-    pub fn search(&mut self) {
+    pub fn search_fwd(&mut self) {
         let mut current = self.state.current_record;
         let search_text: &str = &self.state.search;
 
-        let maybe_position = self.state.records.search(search_text, current);
+        let maybe_position = self.state.records.search_forward(search_text, current);
+        if maybe_position.is_none() {
+            return;
+        }
+        current = maybe_position.unwrap();
+        self.state.current_record = current;
+        self.ensure_visible(current);
+    }
+
+    pub fn search_prev(&mut self) {
+        if self.state.current_record == 0 {
+            self.state.current_record = self.state.records.records.len() - 1;
+        } else {
+            self.state.current_record -= 1;
+        }
+        self.search_bwd();
+    }
+
+    pub fn search_bwd(&mut self) {
+        let mut current = self.state.current_record;
+        let search_text: &str = &self.state.search;
+
+        let maybe_position = self.state.records.search_backwards(search_text, current);
         if maybe_position.is_none() {
             return;
         }
@@ -380,7 +416,7 @@ impl TuiChrome {
         let visible_lines = self.state.visible_lines as i32;
         let current_i32 = current as i32;
 
-        let mut scroll_offset = self.state.scroll_offset as i32;
+        let mut scroll_offset = self.state.scroll_offset_top as i32;
         // Make scroll_offset follow the selected_record. Must be between the third and the visible lines - 3
         if current_i32 > scroll_offset + visible_lines - 3 {
             scroll_offset = current_i32 - visible_lines + 3;
@@ -393,7 +429,7 @@ impl TuiChrome {
             scroll_offset = 0;
         }
 
-        self.state.scroll_offset = scroll_offset as usize;
+        self.state.scroll_offset_top = scroll_offset as usize;
     }
 
     pub fn run(&mut self) {

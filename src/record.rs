@@ -95,12 +95,32 @@ impl RecordList {
     }
 
     /// Search for a string in the records, returns the position of the next match.
-    pub fn search(&mut self, search: &str, start_at: usize) -> Option<usize> {
+    pub fn search_forward(&mut self, search: &str, start_at: usize) -> Option<usize> {
         for (i, record) in self.records.iter().enumerate().skip(start_at) {
-            if record.original.contains(search) {
+            if Self::record_matches(record, search) {
                 return Some(i);
             }
         }
         None
+    }
+
+    pub fn search_backwards(&mut self, search: &str, start_at: usize) -> Option<usize> {
+        let rstart_at = if start_at == 0 {
+            self.records.len()
+        } else {
+            start_at + 1
+        };
+
+        for pos in (0..rstart_at).rev() {
+            let record = &self.records[pos];
+            if Self::record_matches(record, search) {
+                return Some(pos);
+            }
+        }
+        None
+    }
+
+    pub fn record_matches(record: &Record, search: &str) -> bool {
+        record.original.contains(search)
     }
 }
