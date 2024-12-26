@@ -1,15 +1,12 @@
 use rayon::prelude::*;
 use regex::Regex;
-use std::{
-    collections::HashMap,
-    io::BufRead,
-    thread::{self},
-};
+use std::{collections::HashMap, io::BufRead};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Record {
     pub original: String,
     pub data: HashMap<String, String>,
+    pub index: usize,
 }
 
 impl Record {
@@ -26,6 +23,7 @@ impl Record {
         Record {
             original: line,
             data,
+            index: line_number,
         }
     }
 
@@ -53,7 +51,7 @@ fn find_timestamp(line: &str) -> Option<String> {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RecordList {
     pub records: Vec<Record>,
 }
@@ -94,6 +92,16 @@ impl RecordList {
         self.records.push(record);
     }
 
+    pub fn filter(&self, search: &str) -> RecordList {
+        let mut result = vec![];
+        for record in &self.records {
+            if RecordList::record_matches(record, search) {
+                result.push((*record).clone());
+            }
+        }
+        RecordList { records: result }
+    }
+
     /// Search for a string in the records, returns the position of the next match.
     pub fn search_forward(&mut self, search: &str, start_at: usize) -> Option<usize> {
         for (i, record) in self.records.iter().enumerate().skip(start_at) {
@@ -125,5 +133,11 @@ impl RecordList {
             .original
             .to_lowercase()
             .contains(search.to_lowercase().as_str())
+    }
+
+    pub fn renumber(&mut self) {
+        for (i, record) in self.records.iter_mut().enumerate() {
+            record.index = i;
+        }
     }
 }

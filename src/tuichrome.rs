@@ -3,18 +3,17 @@ use crate::record;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
 use std::{cmp::max, io, time};
-use symbols::line;
 
 #[derive(PartialEq, Debug)]
 pub enum Mode {
     Normal,
     Search,
+    Filter,
 }
 
 pub struct TuiState {
     pub records: record::RecordList,
-    pub tab_index: usize,
-    pub visible_lines: usize,
+    pub total_visible_lines: usize,
     pub current_record: usize,
     pub scroll_offset_top: usize,
     pub scroll_offset_left: usize,
@@ -22,6 +21,8 @@ pub struct TuiState {
     pub read_time: time::Duration,
     pub mode: Mode,
     pub search: String,
+    pub filter: String,
+    pub all_records: record::RecordList,
 }
 
 pub struct TuiChrome {
@@ -35,8 +36,7 @@ impl TuiChrome {
         Ok(TuiChrome {
             state: TuiState {
                 records: record::RecordList::new(),
-                tab_index: 0,
-                visible_lines: 78,
+                total_visible_lines: 78,
                 current_record: 0,
                 scroll_offset_top: 0,
                 scroll_offset_left: 0,
@@ -44,6 +44,8 @@ impl TuiChrome {
                 read_time: time::Duration::new(0, 0),
                 mode: Mode::Normal,
                 search: String::new(),
+                filter: String::new(),
+                all_records: record::RecordList::new(),
             },
             terminal: terminal,
         })
@@ -56,11 +58,10 @@ impl TuiChrome {
         visible_lines -= self.state.records.records[self.state.current_record]
             .data
             .len();
-        if self.state.visible_lines != visible_lines {
-            self.state.visible_lines = visible_lines;
+        if self.state.total_visible_lines != visible_lines {
+            self.state.total_visible_lines = visible_lines;
         }
 
-        // let header = Self::render_header(&self.state);
         let mainarea = Self::render_records(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
@@ -96,77 +97,58 @@ impl TuiChrome {
         Ok(())
     }
 
-    pub fn render_header(state: &TuiState) -> Tabs {
-        let titles = vec!["File", "Edit"];
-
-        Tabs::new(titles)
-            .style(Style::default().fg(Color::White))
-            .highlight_style(Style::default().fg(Color::Black).bg(Color::Yellow))
-            .select(state.tab_index)
-    }
-
     pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
         let height = size.height as usize - 2;
         let width = size.width as usize;
         let start = state.scroll_offset_top;
+        let length = state.records.records.len();
 
         let mut lines: Vec<Line> = vec![];
 
+        let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
         for record in state.records.records
             [start..std::cmp::min(start + height, state.records.records.len() - 1)]
             .iter()
         {
-            let mut spans = vec![];
-            let current_index = record
-                .data
-                .get("line_number")
-                .unwrap()
-                .parse::<usize>()
-                .unwrap();
+            let style = Self::get_style_for_record(record, state);
 
-            if state.current_record == current_index {
-                let style = Style::default().bg(Color::Yellow).fg(Color::Black);
-                let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
-                Self::render_record_line(
-                    record.original.as_str(),
-                    state.search.as_str(),
-                    &mut spans,
-                    style,
-                    style_hightlight,
-                    width,
-                );
-            } else {
-                let style = Style::default().bg(Color::Black).fg(Color::White);
-                let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
-                Self::render_record_line(
-                    record.original.as_str(),
-                    state.search.as_str(),
-                    &mut spans,
-                    style,
-                    style_hightlight,
-                    width,
-                );
-            }
+            let line = Self::render_record_line(
+                record.original.as_str(),
+                state.search.as_str(),
+                style,
+                style_hightlight,
+                width,
+            );
             // add white space to fill the line
 
-            lines.push(Line::from(spans));
+            lines.push(line);
         }
 
         let text = Text::from(lines);
-
         let ret = Paragraph::new(text).scroll((0, state.scroll_offset_left as u16));
 
         ret
     }
 
+    pub fn get_style_for_record<'a>(record: &'a record::Record, state: &TuiState) -> Style {
+        let current_record = state.current_record;
+        let current_index = record.index;
+
+        if current_index == current_record {
+            return Style::default().bg(Color::Yellow).fg(Color::Black);
+        }
+        Style::default().bg(Color::Black).fg(Color::White)
+    }
+
     pub fn render_record_line<'a>(
         record: &'a str,
         search: &'a str,
-        spans: &mut Vec<Span<'a>>,
         style: Style,
         style_hightlight: Style,
         width: usize,
-    ) {
+    ) -> Line<'a> {
+        let mut spans = vec![];
+
         let parts = if search == "" {
             vec![record]
         } else {
@@ -181,16 +163,19 @@ impl TuiChrome {
             spans.push(Span::styled(part.clone(), style));
             spans.push(Span::styled(search, style_hightlight));
         }
-        spans.push(Span::styled(parts[parts.len() - 1], style));
 
-        if record.ends_with(search) {
+        if parts[parts.len() - 1] == search {
             spans.push(Span::styled(search, style_hightlight));
+        } else {
+            spans.push(Span::styled(parts[parts.len() - 1], style));
         }
 
         let remaining = width as i32 - record.len() as i32;
         if remaining > 0 {
             spans.push(Span::styled(" ".repeat(remaining as usize), style));
         }
+
+        Line::from(spans)
     }
 
     pub fn render_record<'a>(record: &'a record::Record) -> Paragraph<'a> {
@@ -214,24 +199,37 @@ impl TuiChrome {
         Paragraph::new(text).block(Block::default().borders(Borders::ALL).title(title_span))
     }
 
-    pub fn render_footer<'a>(state: &TuiState) -> Block<'a> {
-        if state.mode == Mode::Search {
-            return Block::default()
-                .title(format!("Search: {}", state.search))
-                .borders(Borders::BOTTOM)
-                .border_style(Style::default().fg(Color::Yellow));
-        } else {
-            let position_hints = format!(
-                "Position {}/{}. Read time {}ms",
-                state.current_record,
-                state.records.records.len(),
-                state.read_time.as_millis()
-            );
-
-            Block::default()
-                .title(position_hints)
-                .borders(Borders::BOTTOM)
+    pub fn render_footer<'a>(state: &'a TuiState) -> Block<'a> {
+        match state.mode {
+            Mode::Normal => Self::render_footer_normal(state),
+            Mode::Search => Self::render_footer_search(state),
+            Mode::Filter => Self::render_footer_filter(state),
         }
+    }
+
+    pub fn render_footer_search(state: &TuiState) -> Block {
+        Block::default()
+            .title(format!("Search: {}", state.search))
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(Color::Yellow))
+    }
+    pub fn render_footer_filter(state: &TuiState) -> Block {
+        Block::default()
+            .title(format!("Filter: {}", state.filter))
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(Color::Yellow))
+    }
+    pub fn render_footer_normal(state: &TuiState) -> Block {
+        let position_hints = format!(
+            "Position {}/{}. Read time {}ms",
+            state.current_record,
+            state.records.records.len(),
+            state.read_time.as_millis()
+        );
+
+        Block::default()
+            .title(position_hints)
+            .borders(Borders::BOTTOM)
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
@@ -245,10 +243,16 @@ impl TuiChrome {
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
-        if self.state.mode == Mode::Normal {
-            self.handle_normal_mode(key_event);
-        } else {
-            self.handle_search_mode(key_event);
+        match self.state.mode {
+            Mode::Normal => {
+                self.handle_normal_mode(key_event);
+            }
+            Mode::Search => {
+                self.handle_search_mode(key_event);
+            }
+            Mode::Filter => {
+                self.handle_filter_mode(key_event);
+            }
         }
     }
 
@@ -303,6 +307,9 @@ impl TuiChrome {
             }
             KeyCode::Char('N') => {
                 self.search_prev();
+            }
+            KeyCode::Char('f') => {
+                self.state.mode = Mode::Filter;
             }
             KeyCode::F(3) if key_event.modifiers.contains(event::KeyModifiers::SHIFT) => {
                 self.search_prev();
@@ -391,6 +398,42 @@ impl TuiChrome {
         self.ensure_visible(current);
     }
 
+    pub fn handle_filter_mode(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Esc => {
+                self.state.mode = Mode::Normal;
+                self.state.filter = String::new();
+                self.handle_filter()
+            }
+            KeyCode::Char('\n') => {
+                self.state.mode = Mode::Normal;
+                self.handle_filter()
+            }
+            KeyCode::Char(c) => {
+                // filter for c
+                self.state.filter.push(c);
+                self.handle_filter()
+            }
+            KeyCode::Backspace => {
+                self.state.filter.pop();
+                self.handle_filter()
+            }
+            KeyCode::Enter => {
+                self.state.mode = Mode::Normal;
+                self.handle_filter()
+            }
+            _ => {}
+        }
+    }
+
+    pub fn handle_filter(&mut self) {
+        let filter_text: &str = &self.state.filter;
+        self.state.records = self.state.all_records.filter(filter_text);
+        self.state.records.renumber();
+        self.state.current_record = 0;
+        self.ensure_visible(0);
+    }
+
     pub fn move_selection(&mut self, delta: i32) {
         // I use i32 all around here as I may get some negatives
         let mut current = self.state.current_record as i32;
@@ -410,7 +453,7 @@ impl TuiChrome {
     }
 
     pub fn ensure_visible(&mut self, current: usize) {
-        let visible_lines = self.state.visible_lines as i32;
+        let visible_lines = self.state.total_visible_lines as i32;
         let current_i32 = current as i32;
 
         let mut scroll_offset = self.state.scroll_offset_top as i32;
