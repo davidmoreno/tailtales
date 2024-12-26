@@ -37,6 +37,12 @@ impl Record {
 
         data
     }
+
+    pub fn matches(&self, search: &str) -> bool {
+        self.original
+            .to_lowercase()
+            .contains(search.to_lowercase().as_str())
+    }
 }
 
 lazy_static::lazy_static! {
@@ -95,7 +101,7 @@ impl RecordList {
     pub fn filter(&self, search: &str) -> RecordList {
         let mut result = vec![];
         for record in &self.records {
-            if RecordList::record_matches(record, search) {
+            if record.matches(search) {
                 result.push((*record).clone());
             }
         }
@@ -105,7 +111,7 @@ impl RecordList {
     /// Search for a string in the records, returns the position of the next match.
     pub fn search_forward(&mut self, search: &str, start_at: usize) -> Option<usize> {
         for (i, record) in self.records.iter().enumerate().skip(start_at) {
-            if Self::record_matches(record, search) {
+            if record.matches(search) {
                 return Some(i);
             }
         }
@@ -121,18 +127,11 @@ impl RecordList {
 
         for pos in (0..rstart_at).rev() {
             let record = &self.records[pos];
-            if Self::record_matches(record, search) {
+            if record.matches(search) {
                 return Some(pos);
             }
         }
         None
-    }
-
-    pub fn record_matches(record: &Record, search: &str) -> bool {
-        record
-            .original
-            .to_lowercase()
-            .contains(search.to_lowercase().as_str())
     }
 
     pub fn renumber(&mut self) {
