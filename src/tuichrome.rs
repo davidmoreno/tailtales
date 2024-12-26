@@ -209,12 +209,9 @@ impl TuiChrome {
         }
 
         let text = Text::from(lines);
+        let title_span = Span::styled(record.original.clone(), Style::default().fg(Color::Yellow));
 
-        Paragraph::new(text).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(record.original.clone()),
-        )
+        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title(title_span))
     }
 
     pub fn render_footer<'a>(state: &TuiState) -> Block<'a> {
