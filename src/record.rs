@@ -2,6 +2,8 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::{collections::HashMap, io::BufRead};
 
+use crate::parser::Parser;
+
 #[derive(Debug, Default, Clone)]
 pub struct Record {
     pub original: String,
@@ -10,13 +12,8 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn new(
-        line: String,
-        filename: &str,
-        line_number: usize,
-        re_pattern: &Option<regex::Regex>,
-    ) -> Record {
-        let mut data = Record::parse_line(&line, re_pattern);
+    pub fn new(line: String, filename: &str, line_number: usize, parsers: &Vec<Parser>) -> Record {
+        let mut data = Record::parse_line(&line, parsers);
 
         data.insert("filename".to_string(), filename.to_string());
         data.insert("line_number".to_string(), line_number.to_string());
@@ -34,7 +31,7 @@ impl Record {
         }
     }
 
-    pub fn parse_line(line: &str, re_pattern: &Option<regex::Regex>) -> HashMap<String, String> {
+    pub fn parse_line(line: &str, parsers: &Vec<Parser>) -> HashMap<String, String> {
         let mut data = HashMap::new();
 
         // Basic cound words
@@ -42,13 +39,9 @@ impl Record {
         let word_count = words.len();
         data.insert("word_count".to_string(), word_count.to_string());
 
-        if let Some(re_pattern) = re_pattern {
-            let more_data = Self::parse_line_re(line, re_pattern);
-            if more_data.len() > 0 {
-                data.extend(more_data);
-            } else {
-                data.insert("nopattern".to_string(), "true".to_string());
-            }
+        for parser in parsers {
+            let more_data = parser.parse_line(line);
+            data.extend(more_data);
         }
 
         data
@@ -58,74 +51,6 @@ impl Record {
         self.original
             .to_lowercase()
             .contains(search.to_lowercase().as_str())
-    }
-
-    pub fn parse_pattern(linepattern: &str) -> regex::Regex {
-        // The linepatter lang is <_> equals .*
-        // <name> is a named group "name"
-        // Any other thing is to be matched exactly, including spaces, text and symbols.
-
-        let mut repattern = "^".to_string();
-        let mut inpattern: bool = false;
-        let mut patternname = String::new();
-        for c in linepattern.chars() {
-            if c == '<' {
-                inpattern = true;
-                patternname.clear();
-                continue;
-            }
-            if c == '>' {
-                inpattern = false;
-                if patternname != "_" && patternname != "" {
-                    repattern.push_str("(?P<");
-                    repattern.push_str(&patternname);
-                    repattern.push_str(">");
-                    repattern.push_str(".*?");
-                    repattern.push_str(")");
-                } else {
-                    repattern.push_str("(");
-                    repattern.push_str(".*?");
-                    repattern.push_str(")");
-                }
-                continue;
-            }
-            if inpattern {
-                if is_special_for_re(c) {
-                    repattern.push('\\');
-                }
-                patternname.push(c);
-            } else {
-                if is_special_for_re(c) {
-                    repattern.push('\\');
-                }
-                repattern.push(c);
-            }
-        }
-        repattern.push_str("$");
-        let re = regex::Regex::new(&repattern).unwrap();
-        re
-    }
-
-    pub fn parse_line_re(line: &str, re: &regex::Regex) -> HashMap<String, String> {
-        let mut data = HashMap::new();
-        let caps = re.captures(line);
-        match caps {
-            Some(caps) => {
-                for name in re.capture_names().flatten() {
-                    let value = caps[name].to_string();
-                    data.insert(name.to_string(), value);
-                }
-            }
-            None => {}
-        }
-        data
-    }
-}
-
-fn is_special_for_re(c: char) -> bool {
-    match c {
-        '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '|' | '\\' => true,
-        _ => false,
     }
 }
 
@@ -144,16 +69,14 @@ fn find_timestamp(line: &str) -> Option<String> {
 #[derive(Debug, Default, Clone)]
 pub struct RecordList {
     pub records: Vec<Record>,
-    pub re_pattern: Option<regex::Regex>,
+    pub parsers: Vec<Parser>,
 }
 
 impl RecordList {
     pub fn new() -> RecordList {
         RecordList {
             records: Vec::new(),
-            re_pattern: Some(Record::parse_pattern(
-                "<timestamp> <hostname> <program>[<pid>]:<rest>",
-            )),
+            parsers: vec![],
         }
     }
 
@@ -164,7 +87,7 @@ impl RecordList {
         for line in reader.lines() {
             line_number += 1;
             let line = line.expect("could not read line");
-            self.add(Record::new(line, filename, line_number, &self.re_pattern));
+            self.add(Record::new(line, filename, line_number, &self.parsers));
         }
     }
 
@@ -177,7 +100,7 @@ impl RecordList {
             .par_iter()
             .enumerate()
             .map(|(line_number, line)| {
-                Record::new(line.clone(), filename, line_number, &self.re_pattern)
+                Record::new(line.clone(), filename, line_number, &self.parsers)
             })
             .collect();
 
@@ -197,7 +120,7 @@ impl RecordList {
         }
         RecordList {
             records: result,
-            re_pattern: self.re_pattern.clone(),
+            parsers: self.parsers.clone(),
         }
     }
 
@@ -210,7 +133,7 @@ impl RecordList {
             .collect();
         RecordList {
             records: result,
-            re_pattern: self.re_pattern.clone(),
+            parsers: self.parsers.clone(),
         }
     }
 
