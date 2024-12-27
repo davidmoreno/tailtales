@@ -108,6 +108,16 @@ impl RecordList {
         RecordList { records: result }
     }
 
+    pub fn filter_parallel(&self, search: &str) -> RecordList {
+        let result: Vec<Record> = self
+            .records
+            .par_iter()
+            .filter(|record| record.matches(search))
+            .map(|record| (*record).clone())
+            .collect();
+        RecordList { records: result }
+    }
+
     /// Search for a string in the records, returns the position of the next match.
     pub fn search_forward(&mut self, search: &str, start_at: usize) -> Option<usize> {
         for (i, record) in self.records.iter().enumerate().skip(start_at) {

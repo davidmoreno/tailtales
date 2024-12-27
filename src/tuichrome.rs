@@ -12,9 +12,10 @@ pub enum Mode {
 }
 
 pub struct TuiState {
+    pub all_records: record::RecordList,
     pub records: record::RecordList,
     pub total_visible_lines: usize,
-    pub current_record: usize,
+    pub position: usize,
     pub scroll_offset_top: usize,
     pub scroll_offset_left: usize,
     pub running: bool,
@@ -22,7 +23,6 @@ pub struct TuiState {
     pub mode: Mode,
     pub search: String,
     pub filter: String,
-    pub all_records: record::RecordList,
 }
 
 pub struct TuiChrome {
@@ -37,7 +37,7 @@ impl TuiChrome {
             state: TuiState {
                 records: record::RecordList::new(),
                 total_visible_lines: 78,
-                current_record: 0,
+                position: 0,
                 scroll_offset_top: 0,
                 scroll_offset_left: 0,
                 running: true,
@@ -55,9 +55,7 @@ impl TuiChrome {
         let size = self.terminal.size()?;
 
         let mut visible_lines = size.height as usize - 6;
-        visible_lines -= self.state.records.records[self.state.current_record]
-            .data
-            .len();
+        visible_lines -= self.state.records.records[self.state.position].data.len();
         if self.state.total_visible_lines != visible_lines {
             self.state.total_visible_lines = visible_lines;
         }
@@ -70,12 +68,7 @@ impl TuiChrome {
             .draw(|rect| {
                 let mut layout = Layout::default().direction(Direction::Vertical);
 
-                let current_record = self
-                    .state
-                    .records
-                    .records
-                    .get(self.state.current_record)
-                    .unwrap();
+                let current_record = self.state.records.records.get(self.state.position).unwrap();
 
                 let chunks = layout
                     .constraints(
@@ -131,7 +124,7 @@ impl TuiChrome {
     }
 
     pub fn get_style_for_record<'a>(record: &'a record::Record, state: &TuiState) -> Style {
-        let current_record = state.current_record;
+        let current_record = state.position;
         let current_index = record.index;
 
         if current_index == current_record {
@@ -222,7 +215,7 @@ impl TuiChrome {
     pub fn render_footer_normal(state: &TuiState) -> Block {
         let position_hints = format!(
             "Position {}/{}. Read time {}ms",
-            state.current_record,
+            state.position,
             state.records.records.len(),
             state.read_time.as_millis()
         );
@@ -285,6 +278,14 @@ impl TuiChrome {
             }
             KeyCode::PageDown => {
                 self.move_selection(10);
+            }
+            KeyCode::Home => {
+                self.state.position = 0;
+                self.ensure_visible(0);
+            }
+            KeyCode::End => {
+                self.state.position = self.state.records.records.len() - 1;
+                self.ensure_visible(self.state.records.records.len() - 1);
             }
             KeyCode::Right if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 self.state.scroll_offset_left += 10;
@@ -355,16 +356,16 @@ impl TuiChrome {
     }
 
     pub fn search_next(&mut self) {
-        if self.state.current_record >= self.state.records.records.len() {
-            self.state.current_record = 0;
+        if self.state.position >= self.state.records.records.len() {
+            self.state.position = 0;
         } else {
-            self.state.current_record += 1;
+            self.state.position += 1;
         }
         self.search_fwd();
     }
 
     pub fn search_fwd(&mut self) {
-        let mut current = self.state.current_record;
+        let mut current = self.state.position;
         let search_text: &str = &self.state.search;
 
         let maybe_position = self.state.records.search_forward(search_text, current);
@@ -372,21 +373,21 @@ impl TuiChrome {
             return;
         }
         current = maybe_position.unwrap();
-        self.state.current_record = current;
+        self.state.position = current;
         self.ensure_visible(current);
     }
 
     pub fn search_prev(&mut self) {
-        if self.state.current_record == 0 {
-            self.state.current_record = self.state.records.records.len() - 1;
+        if self.state.position == 0 {
+            self.state.position = self.state.records.records.len() - 1;
         } else {
-            self.state.current_record -= 1;
+            self.state.position -= 1;
         }
         self.search_bwd();
     }
 
     pub fn search_bwd(&mut self) {
-        let mut current = self.state.current_record;
+        let mut current = self.state.position;
         let search_text: &str = &self.state.search;
 
         let maybe_position = self.state.records.search_backwards(search_text, current);
@@ -394,7 +395,7 @@ impl TuiChrome {
             return;
         }
         current = maybe_position.unwrap();
-        self.state.current_record = current;
+        self.state.position = current;
         self.ensure_visible(current);
     }
 
@@ -428,15 +429,15 @@ impl TuiChrome {
 
     pub fn handle_filter(&mut self) {
         let filter_text: &str = &self.state.filter;
-        self.state.records = self.state.all_records.filter(filter_text);
+        self.state.records = self.state.all_records.filter_parallel(filter_text);
         self.state.records.renumber();
-        self.state.current_record = 0;
+        self.state.position = 0;
         self.ensure_visible(0);
     }
 
     pub fn move_selection(&mut self, delta: i32) {
         // I use i32 all around here as I may get some negatives
-        let mut current = self.state.current_record as i32;
+        let mut current = self.state.position as i32;
         let mut new = current as i32 + delta;
         let max = self.state.records.records.len() as i32 - 1;
 
@@ -448,7 +449,7 @@ impl TuiChrome {
         }
         current = new;
 
-        self.state.current_record = current as usize;
+        self.state.position = current as usize;
         self.ensure_visible(current as usize);
     }
 
