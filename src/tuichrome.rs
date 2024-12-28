@@ -23,6 +23,7 @@ pub struct TuiState {
     pub mode: Mode,
     pub search: String,
     pub filter: String,
+    pub number: String,
 }
 
 pub struct TuiChrome {
@@ -45,6 +46,7 @@ impl TuiChrome {
                 mode: Mode::Normal,
                 search: String::new(),
                 filter: String::new(),
+                number: String::new(),
                 all_records: record::RecordList::new(),
             },
             terminal: terminal,
@@ -266,6 +268,18 @@ impl TuiChrome {
             KeyCode::Char('u') => {
                 self.move_selection(-10);
             }
+            // numbers add to number
+            KeyCode::Char(c) if c.is_digit(10) => {
+                self.state.number.push(c);
+            }
+            // G go to number position
+            KeyCode::Char('G') => {
+                let number = self.state.number.parse::<usize>().unwrap_or(0);
+                self.state.position = number;
+                self.ensure_visible(number);
+                self.state.number.clear();
+            }
+
             // Keycode up
             KeyCode::Up => {
                 self.move_selection(-1);

@@ -12,23 +12,27 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn new(line: String, filename: &str, line_number: usize, parsers: &Vec<Parser>) -> Record {
-        let mut data = Record::parse_line(&line, parsers);
-
-        data.insert("filename".to_string(), filename.to_string());
-        data.insert("line_number".to_string(), line_number.to_string());
-        let timestamp = find_timestamp(&line);
-        if !data.contains_key("timestamp") {
-            if let Some(timestamp) = timestamp {
-                data.insert("timestamp".to_string(), timestamp);
-            }
-        }
-
+    pub fn new(line: String) -> Record {
         Record {
             original: line,
-            data,
-            index: line_number,
+            data: HashMap::new(),
+            index: 0,
         }
+    }
+
+    pub fn set_data(mut self, key: &str, value: String) -> Self {
+        self.data.insert(key.to_string(), value);
+        self
+    }
+    pub fn set_line_number(mut self, line_number: usize) -> Self {
+        self.index = line_number;
+        self
+    }
+
+    pub fn parse(mut self, parsers: &Vec<Parser>) -> Self {
+        let data = Record::parse_line(&self.original, parsers);
+        self.data.extend(data);
+        self
     }
 
     pub fn parse_line(line: &str, parsers: &Vec<Parser>) -> HashMap<String, String> {
@@ -80,31 +84,53 @@ impl RecordList {
         }
     }
 
-    pub fn readfile(&mut self, filename: &str) {
-        let file = std::fs::File::open(filename).expect("could not open file");
-        let reader = std::io::BufReader::new(file);
-        let mut line_number = 0;
-        for line in reader.lines() {
-            line_number += 1;
-            let line = line.expect("could not read line");
-            self.add(Record::new(line, filename, line_number, &self.parsers));
-        }
-    }
+    // pub fn readfile(&mut self, filename: &str) {
+    //     let file = std::fs::File::open(filename).expect("could not open file");
+    //     let reader = std::io::BufReader::new(file);
+    //     let mut line_number = 0;
+    //     for line in reader.lines() {
+    //         line_number += 1;
+    //         let line = line.expect("could not read line");
+    //         self.add(Record::new(line, filename, line_number, &self.parsers));
+    //     }
+    // }
 
     pub fn readfile_parallel(&mut self, filename: &str) {
         let file = std::fs::File::open(filename).expect("could not open file");
         let reader = std::io::BufReader::new(file);
 
         let lines: Vec<String> = reader.lines().map(|line| line.unwrap()).collect();
+        let start_line_number = self.records.len();
         let records: Vec<Record> = lines
             .par_iter()
             .enumerate()
             .map(|(line_number, line)| {
-                Record::new(line.clone(), filename, line_number, &self.parsers)
+                Record::new(line.clone())
+                    .set_data("filename", filename.to_string())
+                    .set_data("line_number", (line_number).to_string())
+                    .set_line_number(start_line_number + line_number)
+                    .parse(&self.parsers)
             })
             .collect();
 
         self.records.extend(records);
+    }
+
+    pub fn readfile_stdin(&mut self) {
+        let reader = std::io::stdin();
+        let reader = reader.lock();
+        let mut line_number = 0;
+        let line_number_index = self.records.len();
+        for line in reader.lines() {
+            let line = line.expect("could not read line");
+            self.add(
+                Record::new(line)
+                    .set_data("line_number", line_number.to_string())
+                    .set_line_number(line_number + line_number_index)
+                    .parse(&self.parsers),
+            );
+            line_number += 1;
+        }
     }
 
     pub fn add(&mut self, record: Record) {
