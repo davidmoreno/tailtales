@@ -7,13 +7,18 @@ mod tuichrome;
 fn main() {
     let mut tui_chrome = tuichrome::TuiChrome::new().expect("could not create TuiChrome");
     let start_parse_time = time::Instant::now();
-    tui_chrome
-        .state
-        .all_records
-        .parsers
-        .push(parser::Parser::new_from_pattern(
-            r"<timestamp> <hostname> <program>: <rest>",
-        ));
+    let parsers = &mut tui_chrome.state.all_records.parsers;
+    parsers.push(parser::Parser::new_from_pattern(
+        r"<timestamp> <hostname> <program>: <rest>",
+    ));
+    parsers.push(parser::Parser::new_logfmt());
+    parsers.push(parser::Parser::new_from_regex(
+        r"^(?P<timestamp>....-..-.. ..:..:..) (?P<action>startup .*? .*?)$",
+    ));
+    parsers.push(parser::Parser::new_from_regex(
+        r"^(?P<timestamp>....-..-.. ..:..:..) (?P<action>status .*?|upgrade|install|remove) (?P<package>.*?)-(?P<version>\d.*) (?P<version_2>.+)$"
+    ));
+
     let args = std::env::args();
     if args.len() == 1 {
         tui_chrome.state.all_records.readfile_stdin();

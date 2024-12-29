@@ -3,6 +3,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct Parser {
     regex: regex::Regex,
+    is_logfmt: bool,
 }
 
 impl Parser {
@@ -49,10 +50,47 @@ impl Parser {
         }
         repattern.push_str("$");
         let re = regex::Regex::new(&repattern).unwrap();
-        Parser { regex: re }
+        Parser {
+            regex: re,
+            is_logfmt: false,
+        }
+    }
+
+    pub fn new_logfmt() -> Parser {
+        let re = regex::Regex::new(r"(?P<key>[^ ]*?)=(?P<value>[^ ]*)( |$)").unwrap();
+        Parser {
+            regex: re,
+            is_logfmt: true,
+        }
+    }
+
+    pub fn new_from_regex(regex: &str) -> Parser {
+        let re = regex::Regex::new(regex).unwrap();
+        Parser {
+            regex: re,
+            is_logfmt: false,
+        }
     }
 
     pub fn parse_line(&self, line: &str) -> HashMap<String, String> {
+        if self.is_logfmt {
+            return self.parse_logfmt(line);
+        } else {
+            return self.parse_regex(line);
+        }
+    }
+
+    fn parse_logfmt(&self, line: &str) -> HashMap<String, String> {
+        let mut data = HashMap::new();
+        for caps in self.regex.captures_iter(line) {
+            let key = caps["key"].to_string();
+            let value = caps["value"].to_string();
+            data.insert(key, value);
+        }
+        data
+    }
+
+    fn parse_regex(&self, line: &str) -> HashMap<String, String> {
         let mut data = HashMap::new();
         let caps = self.regex.captures(line);
         match caps {
