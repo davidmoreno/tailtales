@@ -1,4 +1,5 @@
 use crate::record;
+use crate::recordlist;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
@@ -12,8 +13,8 @@ pub enum Mode {
 }
 
 pub struct TuiState {
-    pub all_records: record::RecordList,
-    pub records: record::RecordList,
+    pub all_records: recordlist::RecordList,
+    pub records: recordlist::RecordList,
     pub total_visible_lines: usize,
     pub position: usize,
     pub scroll_offset_top: usize,
@@ -36,7 +37,8 @@ impl TuiChrome {
         let mut terminal = ratatui::init();
         Ok(TuiChrome {
             state: TuiState {
-                records: record::RecordList::new(),
+                records: recordlist::RecordList::new(),
+                all_records: recordlist::RecordList::new(),
                 total_visible_lines: 78,
                 position: 0,
                 scroll_offset_top: 0,
@@ -47,9 +49,8 @@ impl TuiChrome {
                 search: String::new(),
                 filter: String::new(),
                 number: String::new(),
-                all_records: record::RecordList::new(),
             },
-            terminal: terminal,
+            terminal,
         })
     }
 

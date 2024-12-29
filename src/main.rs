@@ -2,6 +2,7 @@ use std::time::{self};
 
 mod parser;
 mod record;
+mod recordlist;
 mod tuichrome;
 
 fn main() {
