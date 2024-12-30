@@ -1,5 +1,8 @@
+use std::sync::mpsc;
 use std::time::{self};
 
+mod events;
+mod keyboard_input;
 mod parser;
 mod record;
 mod recordlist;
@@ -19,6 +22,7 @@ fn main() {
     parsers.push(parser::Parser::new_from_regex(
         r"^(?P<timestamp>....-..-.. ..:..:..) (?P<action>status .*?|upgrade|install|remove) (?P<package>.*?)-(?P<version>\d.*) (?P<version_2>.+)$"
     ));
+    keyboard_input::start_event_thread(tui_chrome.tx.clone());
 
     let args = std::env::args();
     if args.len() == 1 {

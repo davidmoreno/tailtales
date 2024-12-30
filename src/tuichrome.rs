@@ -1,8 +1,10 @@
+use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
+use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
 #[derive(PartialEq, Debug)]
@@ -30,11 +32,15 @@ pub struct TuiState {
 pub struct TuiChrome {
     pub state: TuiState,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    pub tx: mpsc::Sender<TuiEvent>,
+    pub rx: mpsc::Receiver<TuiEvent>,
 }
 
 impl TuiChrome {
     pub fn new() -> io::Result<TuiChrome> {
         let mut terminal = ratatui::init();
+        let (tx, rx) = mpsc::channel();
+
         Ok(TuiChrome {
             state: TuiState {
                 records: recordlist::RecordList::new(),
@@ -51,6 +57,8 @@ impl TuiChrome {
                 number: String::new(),
             },
             terminal,
+            tx,
+            rx,
         })
     }
 
@@ -229,11 +237,17 @@ impl TuiChrome {
     }
 
     pub fn handle_events(&mut self) -> io::Result<()> {
-        match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event);
-            }
-            _ => {}
+        let event = self.rx.recv().unwrap();
+
+        match event {
+            TuiEvent::Key(event) => match event {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    self.handle_key_event(key_event);
+                }
+                _ => {
+                    return Err(io::Error::new(io::ErrorKind::Other, "Unknown event"));
+                }
+            },
         }
         Ok(())
     }
