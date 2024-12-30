@@ -38,7 +38,10 @@ fn main() {
                 .all_records
                 .readfile_stdin(tui_chrome.tx.clone());
         } else {
-            tui_chrome.state.all_records.readfile_parallel(&filename);
+            tui_chrome
+                .state
+                .all_records
+                .readfile_parallel(&filename, tui_chrome.tx.clone());
         }
     }
     tui_chrome.state.records = tui_chrome.state.all_records.clone();

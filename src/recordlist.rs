@@ -1,5 +1,10 @@
+use notify::{Event, Watcher};
 use rayon::{prelude::*, spawn};
-use std::{io::BufRead, sync::mpsc};
+use std::{
+    io::{BufRead, Seek},
+    path::Path,
+    sync::mpsc,
+};
 
 use crate::{events::TuiEvent, parser::Parser, record::Record};
 
@@ -28,9 +33,11 @@ impl RecordList {
     //     }
     // }
 
-    pub fn readfile_parallel(&mut self, filename: &str) {
+    pub fn readfile_parallel(&mut self, filename: &str, tx: mpsc::Sender<TuiEvent>) {
         let file = std::fs::File::open(filename).expect("could not open file");
-        let reader = std::io::BufReader::new(file);
+        let mut reader = std::io::BufReader::new(file);
+        let file_size = reader.seek(std::io::SeekFrom::End(0)).unwrap();
+        reader.seek(std::io::SeekFrom::Start(0)).unwrap();
 
         let lines: Vec<String> = reader.lines().map(|line| line.unwrap()).collect();
         let start_line_number = self.records.len();
@@ -47,6 +54,61 @@ impl RecordList {
             .collect();
 
         self.records.extend(records);
+
+        Self::wait_for_changes(filename.to_string(), tx, file_size.try_into().unwrap());
+    }
+
+    pub fn wait_for_changes(filename: String, tx: mpsc::Sender<TuiEvent>, position: usize) {
+        let tx_clone = tx.clone();
+        spawn(move || {
+            let mut position = position;
+            let (tx, rx) = mpsc::channel();
+            let mut watcher = notify::recommended_watcher(tx).unwrap();
+            watcher
+                .watch(Path::new(&filename), notify::RecursiveMode::NonRecursive)
+                .unwrap();
+            loop {
+                match rx.recv() {
+                    Ok(event) => match event.unwrap().kind {
+                        notify::EventKind::Modify(_) => {
+                            position =
+                                Self::read_and_send_new_lines(&filename, &tx_clone, position);
+                        }
+                        _ => {}
+                    },
+                    Err(e) => println!("watch error: {:?}", e),
+                }
+            }
+        });
+    }
+
+    pub fn read_and_send_new_lines(
+        filename: &str,
+        tx: &mpsc::Sender<TuiEvent>,
+        position: usize,
+    ) -> usize {
+        let file = std::fs::File::open(filename).expect("could not open file");
+        let mut reader = std::io::BufReader::new(file);
+        let end_position = reader.seek(std::io::SeekFrom::End(0)).unwrap();
+        reader
+            .seek(std::io::SeekFrom::Start(position as u64))
+            .unwrap();
+
+        let start_line_number = 0;
+        let mut line_number = 0;
+        for line in reader.lines() {
+            let line = line.expect("could not read line");
+            let record = Record::new(line.clone())
+                .set_data("filename", filename.to_string())
+                .set_data("line_number", (line_number).to_string())
+                .set_line_number(start_line_number + line_number)
+                // .parse(&self.parsers)
+                ;
+            tx.send(TuiEvent::NewRecord(record)).unwrap();
+            line_number += 1;
+        }
+
+        end_position as usize
     }
 
     pub fn readfile_stdin(&mut self, tx: mpsc::Sender<TuiEvent>) {
