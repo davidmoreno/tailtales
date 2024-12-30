@@ -4,6 +4,7 @@ use crate::recordlist;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
+use std::cmp::min;
 use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
@@ -88,7 +89,10 @@ impl TuiChrome {
                     .constraints(
                         [
                             Constraint::Min(0),
-                            Constraint::Length(current_record.data.len() as u16 + 2),
+                            Constraint::Length(min(
+                                size.height / 2,
+                                current_record.data.len() as u16 + 2,
+                            )),
                             Constraint::Length(1),
                         ]
                         .as_ref(),
@@ -177,9 +181,10 @@ impl TuiChrome {
             spans.push(Span::styled(parts[parts.len() - 1], style));
         }
 
-        let remaining = width - record.len();
+        // must be i32 to void underflow
+        let remaining = width as i32 - record.len() as i32;
         if remaining > 0 {
-            spans.push(Span::styled(" ".repeat(remaining), style));
+            spans.push(Span::styled(" ".repeat(remaining as usize), style));
         }
 
         Line::from(spans)
