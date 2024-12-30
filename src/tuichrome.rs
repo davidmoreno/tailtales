@@ -239,24 +239,41 @@ impl TuiChrome {
             .borders(Borders::BOTTOM)
     }
 
-    pub fn handle_events(&mut self) -> io::Result<()> {
-        let event = self.rx.recv().unwrap();
+    /**
+     * It waits for any key eent and inmediatly returns Ok, or
+     * if it receives a new record, it will wait for 100ms and wait for more records
+     */
+    pub fn wait_for_events(&mut self) -> io::Result<()> {
+        let mut timeout = time::Duration::from_millis(0);
+        loop {
+            let event = self.rx.recv_timeout(timeout);
 
-        match event {
-            TuiEvent::Key(event) => match event {
-                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                    self.handle_key_event(key_event);
+            if event.is_err() {
+                return Ok(());
+            }
+            let event = event.unwrap();
+
+            match event {
+                TuiEvent::Key(event) => match event {
+                    Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                        self.handle_key_event(key_event);
+                        return Ok(());
+                    }
+                    _ => {
+                        // Do nothing
+                    }
+                },
+                TuiEvent::NewRecord(record) => {
+                    self.state.all_records.add(record.clone());
+                    self.state.records.add(record);
+                    timeout = time::Duration::from_millis(100);
+                    // self.wait_for_event_timeout(time::Duration::from_millis(100))?;
                 }
-                _ => {
-                    // Do nothing
-                }
-            },
-            TuiEvent::NewRecord(record) => {
-                self.state.all_records.add(record.clone());
-                self.state.records.add(record);
+            }
+            if timeout.as_millis() <= 0 {
+                return Ok(());
             }
         }
-        Ok(())
     }
 
     pub fn handle_key_event(&mut self, key_event: KeyEvent) {
@@ -512,7 +529,7 @@ impl TuiChrome {
     pub fn run(&mut self) {
         loop {
             self.render().unwrap();
-            self.handle_events().unwrap();
+            self.wait_for_events().unwrap();
 
             if !self.state.running {
                 break;
