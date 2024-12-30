@@ -177,9 +177,9 @@ impl TuiChrome {
             spans.push(Span::styled(parts[parts.len() - 1], style));
         }
 
-        let remaining = width as i32 - record.len() as i32;
+        let remaining = width - record.len();
         if remaining > 0 {
-            spans.push(Span::styled(" ".repeat(remaining as usize), style));
+            spans.push(Span::styled(" ".repeat(remaining), style));
         }
 
         Line::from(spans)

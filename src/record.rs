@@ -13,7 +13,7 @@ pub struct Record {
 impl Record {
     pub fn new(line: String) -> Record {
         Record {
-            original: line,
+            original: clean_ansi_text(&line),
             data: HashMap::new(),
             index: 0,
         }
@@ -67,4 +67,24 @@ fn find_timestamp(line: &str) -> Option<String> {
         Some(caps) => Some(caps.get(0).unwrap().as_str().to_string()),
         None => None,
     }
+}
+
+pub fn clean_ansi_text(orig: &str) -> String {
+    // Lenght in real text, skips ANIS codes
+    let mut text = String::new();
+    let mut in_ansi_escape = false;
+    for c in orig.chars() {
+        if in_ansi_escape {
+            if c == 'm' {
+                in_ansi_escape = false;
+            }
+        } else {
+            if c == 0o33 as char {
+                in_ansi_escape = true;
+            } else {
+                text.push(c);
+            }
+        }
+    }
+    text
 }
