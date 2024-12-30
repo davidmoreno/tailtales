@@ -1,7 +1,7 @@
-use rayon::prelude::*;
-use std::io::BufRead;
+use rayon::{prelude::*, spawn};
+use std::{io::BufRead, sync::mpsc};
 
-use crate::{parser::Parser, record::Record};
+use crate::{events::TuiEvent, parser::Parser, record::Record};
 
 #[derive(Debug, Default, Clone)]
 pub struct RecordList {
@@ -49,21 +49,24 @@ impl RecordList {
         self.records.extend(records);
     }
 
-    pub fn readfile_stdin(&mut self) {
-        let reader = std::io::stdin();
-        let reader = reader.lock();
-        let mut line_number = 0;
+    pub fn readfile_stdin(&mut self, tx: mpsc::Sender<TuiEvent>) {
         let line_number_index = self.records.len();
-        for line in reader.lines() {
-            let line = line.expect("could not read line");
-            self.add(
-                Record::new(line)
+        let parsers = self.parsers.clone();
+        spawn(move || {
+            let reader = std::io::stdin();
+            let reader = reader.lock();
+            let mut line_number = 0;
+            for line in reader.lines() {
+                let line = line.expect("could not read line");
+
+                let record = Record::new(line)
                     .set_data("line_number", line_number.to_string())
                     .set_line_number(line_number + line_number_index)
-                    .parse(&self.parsers),
-            );
-            line_number += 1;
-        }
+                    .parse(&parsers);
+                tx.send(TuiEvent::NewRecord(record));
+                line_number += 1;
+            }
+        });
     }
 
     pub fn add(&mut self, record: Record) {

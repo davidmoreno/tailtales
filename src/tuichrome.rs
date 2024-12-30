@@ -66,6 +66,9 @@ impl TuiChrome {
         let size = self.terminal.size()?;
 
         let mut visible_lines = size.height as usize - 6;
+        if self.state.position == 0 && self.state.records.records.len() == 0 {
+            return Ok(());
+        }
         visible_lines -= self.state.records.records[self.state.position].data.len();
         if self.state.total_visible_lines != visible_lines {
             self.state.total_visible_lines = visible_lines;
@@ -245,9 +248,13 @@ impl TuiChrome {
                     self.handle_key_event(key_event);
                 }
                 _ => {
-                    return Err(io::Error::new(io::ErrorKind::Other, "Unknown event"));
+                    // Do nothing
                 }
             },
+            TuiEvent::NewRecord(record) => {
+                self.state.all_records.add(record.clone());
+                self.state.records.add(record);
+            }
         }
         Ok(())
     }

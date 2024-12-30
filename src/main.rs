@@ -26,11 +26,17 @@ fn main() {
 
     let args = std::env::args();
     if args.len() == 1 {
-        tui_chrome.state.all_records.readfile_stdin();
+        tui_chrome
+            .state
+            .all_records
+            .readfile_stdin(tui_chrome.tx.clone());
     }
     for filename in args.skip(1) {
         if filename == "-" {
-            tui_chrome.state.all_records.readfile_stdin();
+            tui_chrome
+                .state
+                .all_records
+                .readfile_stdin(tui_chrome.tx.clone());
         } else {
             tui_chrome.state.all_records.readfile_parallel(&filename);
         }
