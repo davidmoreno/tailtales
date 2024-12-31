@@ -10,15 +10,19 @@ use crate::{events::TuiEvent, parser::Parser, record::Record};
 
 #[derive(Debug, Default, Clone)]
 pub struct RecordList {
-    pub records: Vec<Record>,
+    pub all_records: Vec<Record>,
+    pub visible_records: Vec<Record>,
     pub parsers: Vec<Parser>,
+    pub filter: Option<String>,
 }
 
 impl RecordList {
     pub fn new() -> RecordList {
         RecordList {
-            records: Vec::new(),
+            all_records: Vec::new(),
+            visible_records: Vec::new(),
             parsers: vec![],
+            filter: None,
         }
     }
 
@@ -40,20 +44,20 @@ impl RecordList {
         reader.seek(std::io::SeekFrom::Start(0)).unwrap();
 
         let lines: Vec<String> = reader.lines().map(|line| line.unwrap()).collect();
-        let start_line_number = self.records.len();
         let records: Vec<Record> = lines
             .par_iter()
             .enumerate()
             .map(|(line_number, line)| {
                 Record::new(line.clone())
                     .set_data("filename", filename.to_string())
-                    .set_data("line_number", (line_number).to_string())
-                    .set_line_number(start_line_number + line_number)
+                    .set_data("line_number", line_number.to_string())
                     .parse(&self.parsers)
             })
             .collect();
 
-        self.records.extend(records);
+        self.visible_records = records.clone();
+        self.all_records.extend(records);
+        self.renumber();
 
         Self::wait_for_changes(filename.to_string(), tx, file_size.try_into().unwrap());
     }
@@ -97,13 +101,9 @@ impl RecordList {
         let start_line_number = 0;
         let mut line_number = 0;
         for line in reader.lines() {
+            let real_line_number = line_number + start_line_number;
             let line = line.expect("could not read line");
-            let record = Record::new(line.clone())
-                .set_data("filename", filename.to_string())
-                .set_data("line_number", (line_number).to_string())
-                .set_line_number(start_line_number + line_number)
-                // .parse(&self.parsers)
-                ;
+            let record = Record::new(line.clone()).set_data("filename", filename.to_string());
             tx.send(TuiEvent::NewRecord(record)).unwrap();
             line_number += 1;
         }
@@ -112,58 +112,57 @@ impl RecordList {
     }
 
     pub fn readfile_stdin(&mut self, tx: mpsc::Sender<TuiEvent>) {
-        let line_number_index = self.records.len();
-        let parsers = self.parsers.clone();
         spawn(move || {
             let reader = std::io::stdin();
             let reader = reader.lock();
-            let mut line_number = 0;
             for line in reader.lines() {
                 let line = line.expect("could not read line");
-
-                let record = Record::new(line)
-                    .set_data("line_number", line_number.to_string())
-                    .set_line_number(line_number + line_number_index)
-                    .parse(&parsers);
-                tx.send(TuiEvent::NewRecord(record));
-                line_number += 1;
+                let record = Record::new(line);
+                tx.send(TuiEvent::NewRecord(record)).unwrap();
             }
         });
     }
 
     pub fn add(&mut self, record: Record) {
-        self.records.push(record);
+        let record = record
+            .parse(&self.parsers)
+            .set_data("line_number", self.all_records.len().to_string());
+
+        self.all_records.push(record.clone());
+
+        if self.filter.is_none() || record.matches(&self.filter.as_ref().unwrap()) {
+            let record = record.set_line_number(self.visible_records.len());
+            self.visible_records.push(record);
+        }
     }
 
-    pub fn filter(&self, search: &str) -> RecordList {
+    pub fn filter(&mut self, search: &str) {
+        self.filter = Some(search.to_string());
         let mut result = vec![];
-        for record in &self.records {
+        for record in &self.all_records {
             if record.matches(search) {
                 result.push((*record).clone());
             }
         }
-        RecordList {
-            records: result,
-            parsers: self.parsers.clone(),
-        }
+        self.visible_records = result;
+        self.renumber();
     }
 
-    pub fn filter_parallel(&self, search: &str) -> RecordList {
+    pub fn filter_parallel(&mut self, search: &str) {
+        self.filter = Some(search.to_string());
         let result: Vec<Record> = self
-            .records
+            .all_records
             .par_iter()
             .filter(|record| record.matches(search))
             .map(|record| (*record).clone())
             .collect();
-        RecordList {
-            records: result,
-            parsers: self.parsers.clone(),
-        }
+        self.visible_records = result;
+        self.renumber();
     }
 
     /// Search for a string in the records, returns the position of the next match.
     pub fn search_forward(&mut self, search: &str, start_at: usize) -> Option<usize> {
-        for (i, record) in self.records.iter().enumerate().skip(start_at) {
+        for (i, record) in self.all_records.iter().enumerate().skip(start_at) {
             if record.matches(search) {
                 return Some(i);
             }
@@ -173,13 +172,13 @@ impl RecordList {
 
     pub fn search_backwards(&mut self, search: &str, start_at: usize) -> Option<usize> {
         let rstart_at = if start_at == 0 {
-            self.records.len()
+            self.all_records.len()
         } else {
             start_at + 1
         };
 
         for pos in (0..rstart_at).rev() {
-            let record = &self.records[pos];
+            let record = &self.all_records[pos];
             if record.matches(search) {
                 return Some(pos);
             }
@@ -188,7 +187,7 @@ impl RecordList {
     }
 
     pub fn renumber(&mut self) {
-        for (i, record) in self.records.iter_mut().enumerate() {
+        for (i, record) in self.visible_records.iter_mut().enumerate() {
             record.index = i;
         }
     }
