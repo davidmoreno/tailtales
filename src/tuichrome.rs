@@ -65,12 +65,11 @@ impl TuiChrome {
         let size = self.terminal.size()?;
 
         let mut visible_lines = size.height as usize - 6;
-        if self.state.position == 0 && self.state.records.visible_records.len() == 0 {
-            return Ok(());
+        if self.state.records.visible_records.len() > 0 {
+            visible_lines -= self.state.records.visible_records[self.state.position]
+                .data
+                .len();
         }
-        visible_lines -= self.state.records.visible_records[self.state.position]
-            .data
-            .len();
         if self.state.total_visible_lines != visible_lines {
             self.state.total_visible_lines = visible_lines;
         }
@@ -83,21 +82,19 @@ impl TuiChrome {
             .draw(|rect| {
                 let mut layout = Layout::default().direction(Direction::Vertical);
 
-                let current_record = self
-                    .state
-                    .records
-                    .visible_records
-                    .get(self.state.position)
-                    .unwrap();
+                let current_record = self.state.records.visible_records.get(self.state.position);
+
+                let main_area_height = if let Some(current_record) = current_record {
+                    min(size.height / 2, current_record.data.len() as u16 + 2)
+                } else {
+                    0
+                };
 
                 let chunks = layout
                     .constraints(
                         [
                             Constraint::Min(0),
-                            Constraint::Length(min(
-                                size.height / 2,
-                                current_record.data.len() as u16 + 2,
-                            )),
+                            Constraint::Length(main_area_height),
                             Constraint::Length(1),
                         ]
                         .as_ref(),
@@ -105,7 +102,9 @@ impl TuiChrome {
                     .split(rect.area());
                 // rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[0]);
-                rect.render_widget(Self::render_record(current_record), chunks[1]);
+                if let Some(current_record) = current_record {
+                    rect.render_widget(Self::render_record(current_record), chunks[1]);
+                }
                 rect.render_widget(footer, chunks[2]);
             })
             .unwrap();
