@@ -57,7 +57,7 @@ impl Parser {
     }
 
     pub fn new_logfmt() -> Parser {
-        let re = regex::Regex::new(r"(?P<key>[^ ]*?)=(?P<value>[^ ]*)( |$)").unwrap();
+        let re = regex::Regex::new("(?P<key>[^ ]*?)=(?P<value>\".*\"|[^ ]*)( |$)").unwrap();
         Parser {
             regex: re,
             is_logfmt: true,
