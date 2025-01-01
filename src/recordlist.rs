@@ -6,14 +6,14 @@ use std::{
     sync::mpsc,
 };
 
-use crate::{events::TuiEvent, parser::Parser, record::Record};
+use crate::{ast::AST, events::TuiEvent, parser::Parser, record::Record};
 
 #[derive(Debug, Default, Clone)]
 pub struct RecordList {
     pub all_records: Vec<Record>,
     pub visible_records: Vec<Record>,
     pub parsers: Vec<Parser>,
-    pub filter: Option<String>,
+    pub filter: Option<AST>,
 }
 
 impl RecordList {
@@ -136,32 +136,32 @@ impl RecordList {
         }
     }
 
-    pub fn filter(&mut self, search: &str) {
-        self.filter = Some(search.to_string());
+    pub fn filter(&mut self, search: AST) {
         let mut result = vec![];
         for record in &self.all_records {
-            if record.matches(search) {
+            if record.matches(&search) {
                 result.push((*record).clone());
             }
         }
+        self.filter = Some(search);
         self.visible_records = result;
         self.renumber();
     }
 
-    pub fn filter_parallel(&mut self, search: &str) {
-        self.filter = Some(search.to_string());
+    pub fn filter_parallel(&mut self, search: AST) {
         let result: Vec<Record> = self
             .all_records
             .par_iter()
-            .filter(|record| record.matches(search))
+            .filter(|record| record.matches(&search))
             .map(|record| (*record).clone())
             .collect();
+        self.filter = Some(search);
         self.visible_records = result;
         self.renumber();
     }
 
     /// Search for a string in the records, returns the position of the next match.
-    pub fn search_forward(&mut self, search: &str, start_at: usize) -> Option<usize> {
+    pub fn search_forward(&mut self, search: &AST, start_at: usize) -> Option<usize> {
         for (i, record) in self.all_records.iter().enumerate().skip(start_at) {
             if record.matches(search) {
                 return Some(i);
@@ -170,7 +170,7 @@ impl RecordList {
         None
     }
 
-    pub fn search_backwards(&mut self, search: &str, start_at: usize) -> Option<usize> {
+    pub fn search_backwards(&mut self, search: &AST, start_at: usize) -> Option<usize> {
         let rstart_at = if start_at == 0 {
             self.all_records.len()
         } else {

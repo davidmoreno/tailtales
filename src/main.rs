@@ -1,6 +1,7 @@
 use std::sync::mpsc;
 use std::time::{self};
 
+mod ast;
 mod events;
 mod keyboard_input;
 mod parser;

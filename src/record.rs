@@ -1,7 +1,7 @@
 use regex::Regex;
 use std::collections::HashMap;
 
-use crate::parser::Parser;
+use crate::{ast::AST, parser::Parser};
 
 #[derive(Debug, Default, Clone)]
 pub struct Record {
@@ -23,6 +23,10 @@ impl Record {
         self.data.insert(key.to_string(), value);
         self
     }
+    pub fn get(&self, key: &str) -> Option<&String> {
+        self.data.get(key)
+    }
+
     pub fn set_line_number(mut self, line_number: usize) -> Self {
         self.index = line_number;
         self
@@ -50,10 +54,8 @@ impl Record {
         data
     }
 
-    pub fn matches(&self, search: &str) -> bool {
-        self.original
-            .to_lowercase()
-            .contains(search.to_lowercase().as_str())
+    pub fn matches(&self, search: &AST) -> bool {
+        search.matches(self)
     }
 }
 

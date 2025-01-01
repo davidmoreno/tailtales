@@ -1,3 +1,4 @@
+use crate::ast;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
@@ -236,12 +237,14 @@ impl TuiChrome {
             .border_style(Style::default().fg(Color::Yellow))
     }
     pub fn render_footer_normal(state: &TuiState) -> Block {
+        let filter_ast = ast::parse(&state.filter).unwrap_or(ast::AST::Empty);
         let position_hints = format!(
-            "Position {}. Visible {}. Total {}. Read time {}ms",
+            "Position {}. Visible {}. Total {}. Read time {}ms. Filter {:?}.",
             state.position,
             state.records.visible_records.len(),
             state.records.all_records.len(),
-            state.read_time.as_millis()
+            state.read_time.as_millis(),
+            filter_ast,
         );
 
         Block::default()
@@ -429,8 +432,9 @@ impl TuiChrome {
     pub fn search_fwd(&mut self) {
         let mut current = self.state.position;
         let search_text: &str = &self.state.search;
+        let ast = ast::parse(search_text).unwrap();
 
-        let maybe_position = self.state.records.search_forward(search_text, current);
+        let maybe_position = self.state.records.search_forward(&ast, current);
         if maybe_position.is_none() {
             return;
         }
@@ -451,8 +455,9 @@ impl TuiChrome {
     pub fn search_bwd(&mut self) {
         let mut current = self.state.position;
         let search_text: &str = &self.state.search;
+        let ast = ast::parse(search_text).unwrap();
 
-        let maybe_position = self.state.records.search_backwards(search_text, current);
+        let maybe_position = self.state.records.search_backwards(&ast, current);
         if maybe_position.is_none() {
             return;
         }
@@ -491,9 +496,17 @@ impl TuiChrome {
 
     pub fn handle_filter(&mut self) {
         let filter_text: &str = &self.state.filter;
-        self.state.records.filter_parallel(filter_text);
-        self.state.position = 0;
-        self.ensure_visible(self.state.position);
+        let parsed = ast::parse(&self.state.filter);
+        match parsed {
+            Ok(parsed) => {
+                self.state.records.filter(parsed);
+                self.state.position = 0;
+                self.ensure_visible(self.state.position);
+            }
+            Err(err) => {
+                panic!("TODO show error parsing: {}", err);
+            }
+        }
     }
 
     pub fn move_selection(&mut self, delta: i32) {
