@@ -416,7 +416,7 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
             }
         }
         AST::RegCompareUnary(ast) => match &**ast {
-            AST::String(regex) => {
+            AST::String(regex) | AST::Variable(regex) => {
                 if let Ok(re) = regex::Regex::new(&regex) {
                     Value::Boolean(re.is_match(&record.original))
                 } else {
@@ -678,6 +678,11 @@ mod tests {
         // regex unary
         assert_eq!(
             execute(&parse("~ \"2024\"").unwrap(), &record),
+            Value::Boolean(true)
+        );
+        // convert var to string in this context
+        assert_eq!(
+            execute(&parse("~ 2024").unwrap(), &record),
             Value::Boolean(true)
         );
     }
