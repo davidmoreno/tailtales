@@ -13,6 +13,7 @@ pub enum AST {
     Not(Box<AST>),
     And(Box<AST>, Box<AST>),
     Or(Box<AST>, Box<AST>),
+    RegCompare(Box<AST>, Box<AST>),
     Empty,
 }
 
@@ -38,6 +39,7 @@ enum Token {
     GreaterThan,
     LessThan,
     Equal,
+    RegCompare,
     Greater,
     Less,
     Not,
@@ -109,14 +111,23 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     chars.next();
                 }
             }
+            '~' => {
+                tokens.push(Token::RegCompare);
+            }
             '!' => {
                 tokens.push(Token::Not);
             }
             '&' => {
                 tokens.push(Token::And);
+                if let Some(&'&') = chars.peek() {
+                    chars.next();
+                }
             }
             '|' => {
                 tokens.push(Token::Or);
+                if let Some(&'|') = chars.peek() {
+                    chars.next();
+                }
             }
             ' ' => {}
             _ => {
@@ -127,59 +138,57 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     Ok(tokens)
 }
 
-fn parse_expression(tokens: &mut Vec<Token>) -> Result<AST, String> {
-    let mut ast = parse_term(tokens)?;
+/**
+ * BNF
+ *
+ * start: <expr> END
+ *
+ * expr: <term>
+ *     | <term> <binary_op>
+ *     | <unary_op>
+ *
+ * term: <number>
+ *      | <string>
+ *      | <variable>
+ *
+ * binary_op: <greater> <expr>
+ *          | <greater_than> <expr>
+ *          | <less> <expr>
+ *          | <less_than> <expr>
+ *          | <equal> <expr>
+ *          | <and> <expr>    
+ *          | <or> <expr>
+ *  
+ * unary_op: <not> <term>
+ */
 
-    while let Some(token) = tokens.first() {
-        match token {
-            Token::Greater => {
-                tokens.remove(0);
-                ast = AST::Greater(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::GreaterThan => {
-                tokens.remove(0);
-                ast = AST::GreaterThan(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::Less => {
-                tokens.remove(0);
-                ast = AST::Less(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::LessThan => {
-                tokens.remove(0);
-                ast = AST::LessThan(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::Equal => {
-                tokens.remove(0);
-                ast = AST::Equal(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::Not => {
-                tokens.remove(0);
-                ast = AST::Not(Box::new(parse_term(tokens)?));
-            }
-            Token::And => {
-                tokens.remove(0);
-                ast = AST::And(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::Or => {
-                tokens.remove(0);
-                ast = AST::Or(Box::new(ast), Box::new(parse_term(tokens)?));
-            }
-            Token::Number(n) => {
-                ast = AST::Number(*n);
-                tokens.remove(0);
-            }
-            Token::Variable(v) => {
-                ast = AST::Variable(v.clone());
-                tokens.remove(0);
-            }
-            Token::String(s) => {
-                ast = AST::String(s.clone());
-                tokens.remove(0);
-            }
-            _ => break,
-        }
+fn parse_expression(tokens: &mut Vec<Token>) -> Result<AST, String> {
+    let ast = parse_expr(tokens)?;
+    if tokens.len() > 0 {
+        return Err(format!(
+            "unexpected token {:?} (expected term or unary)",
+            tokens[0]
+        ));
     }
     Ok(ast)
+}
+
+fn parse_expr(tokens: &mut Vec<Token>) -> Result<AST, String> {
+    if tokens.len() == 0 {
+        return Err("unexpected end of expression".to_string());
+    }
+    let ast = if next_is_unary_op(tokens) {
+        let ast = parse_unary_op(tokens);
+        return ast;
+    } else {
+        parse_term(tokens)
+    };
+
+    if next_is_binary_op(tokens) {
+        let ast = parse_binary_op(tokens, ast?);
+        return ast;
+    }
+    return ast;
 }
 
 fn parse_term(tokens: &mut Vec<Token>) -> Result<AST, String> {
@@ -191,7 +200,94 @@ fn parse_term(tokens: &mut Vec<Token>) -> Result<AST, String> {
         Token::Number(n) => Ok(AST::Number(n)),
         Token::Variable(v) => Ok(AST::Variable(v)),
         Token::String(s) => Ok(AST::String(s)),
-        token => Err(format!("unexpected token {:?}", token)),
+        token => Err(format!("unexpected token {:?} (expected term)", token)),
+    }
+}
+
+fn next_is_unary_op(tokens: &Vec<Token>) -> bool {
+    if tokens.len() == 0 {
+        return false;
+    }
+    match tokens[0] {
+        Token::Not => true,
+        _ => false,
+    }
+}
+
+fn next_is_binary_op(tokens: &Vec<Token>) -> bool {
+    if tokens.len() == 0 {
+        return false;
+    }
+    match tokens[0] {
+        Token::GreaterThan => true,
+        Token::LessThan => true,
+        Token::Equal => true,
+        Token::Greater => true,
+        Token::Less => true,
+        Token::And => true,
+        Token::Or => true,
+        Token::RegCompare => true,
+        _ => false,
+    }
+}
+
+fn parse_unary_op(tokens: &mut Vec<Token>) -> Result<AST, String> {
+    if tokens.len() == 0 {
+        return Err("unexpected end of expression".to_string());
+    }
+    match tokens.remove(0) {
+        Token::Not => {
+            let ast = parse_expr(tokens)?;
+            Ok(AST::Not(Box::new(ast)))
+        }
+        token => Err(format!(
+            "unexpected token {:?} (expected unary token)",
+            token
+        )),
+    }
+}
+
+fn parse_binary_op(tokens: &mut Vec<Token>, lhs: AST) -> Result<AST, String> {
+    if tokens.len() == 0 {
+        return Err("unexpected end of expression".to_string());
+    }
+    match tokens.remove(0) {
+        Token::GreaterThan => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::GreaterThan(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::LessThan => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::LessThan(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::Equal => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::Equal(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::Greater => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::Greater(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::Less => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::Less(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::And => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::And(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::Or => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::Or(Box::new(lhs), Box::new(rhs)))
+        }
+        Token::RegCompare => {
+            let rhs = parse_expr(tokens)?;
+            Ok(AST::RegCompare(Box::new(lhs), Box::new(rhs)))
+        }
+        token => Err(format!(
+            "unexpected token {:?} (expected binary token)",
+            token
+        )),
     }
 }
 
@@ -259,7 +355,7 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
             let lhs = execute(&lhs, record);
             let rhs = execute(&rhs, record);
             match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs >= rhs),
+                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs > rhs),
                 _ => Value::Boolean(false),
             }
         }
@@ -267,7 +363,7 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
             let lhs = execute(&lhs, record);
             let rhs = execute(&rhs, record);
             match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs <= rhs),
+                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs < rhs),
                 _ => Value::Boolean(false),
             }
         }
@@ -292,6 +388,17 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
             let rhs = execute_to_bool(&rhs, record);
             match (lhs, rhs) {
                 (Value::Boolean(lhs), Value::Boolean(rhs)) => Value::Boolean(lhs || rhs),
+                _ => Value::Boolean(false),
+            }
+        }
+        AST::RegCompare(lhs, rhs) => {
+            let lhs = execute(&lhs, record);
+            let rhs = execute(&rhs, record);
+            match (lhs, rhs) {
+                (Value::String(lhs), Value::String(rhs)) => {
+                    let re = regex::Regex::new(&rhs).unwrap();
+                    Value::Boolean(re.is_match(&lhs))
+                }
                 _ => Value::Boolean(false),
             }
         }
@@ -384,14 +491,14 @@ mod tests {
         );
         assert_eq!(
             parse("1 >= 2"),
-            Ok(AST::Greater(
+            Ok(AST::GreaterThan(
                 Box::new(AST::Number(1)),
                 Box::new(AST::Number(2))
             ))
         );
         assert_eq!(
             parse("1 <= 2"),
-            Ok(AST::Less(
+            Ok(AST::LessThan(
                 Box::new(AST::Number(1)),
                 Box::new(AST::Number(2))
             ))
@@ -407,7 +514,7 @@ mod tests {
         );
         assert_eq!(
             parse("var > 1"),
-            Ok(AST::GreaterThan(
+            Ok(AST::Greater(
                 Box::new(AST::Variable("var".to_string())),
                 Box::new(AST::Number(1)),
             )),
@@ -417,6 +524,13 @@ mod tests {
             Ok(AST::Equal(
                 Box::new(AST::Variable("var1".to_string())),
                 Box::new(AST::Variable("var2".to_string())),
+            )),
+        );
+        assert_eq!(
+            parse("var1 ~ \"var2\""),
+            Ok(AST::RegCompare(
+                Box::new(AST::Variable("var1".to_string())),
+                Box::new(AST::String("var2".to_string())),
             )),
         );
     }
@@ -501,5 +615,15 @@ mod tests {
             ),
             Value::Boolean(true),
         );
+        assert_eq!(
+            execute(
+                &AST::RegCompare(
+                    Box::new(AST::Variable("rest".to_string())),
+                    Box::new(AST::String(".*".to_string())),
+                ),
+                &record
+            ),
+            Value::Boolean(true),
+        )
     }
 }

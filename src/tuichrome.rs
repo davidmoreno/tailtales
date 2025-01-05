@@ -504,7 +504,7 @@ impl TuiChrome {
                 self.ensure_visible(self.state.position);
             }
             Err(err) => {
-                panic!("TODO show error parsing: {}", err);
+                // panic!("TODO show error parsing: {}", err);
             }
         }
     }
