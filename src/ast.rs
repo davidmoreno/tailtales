@@ -13,7 +13,8 @@ pub enum AST {
     Not(Box<AST>),
     And(Box<AST>, Box<AST>),
     Or(Box<AST>, Box<AST>),
-    RegCompare(Box<AST>, Box<AST>),
+    RegCompareBinary(Box<AST>, Box<AST>),
+    RegCompareUnary(Box<AST>),
     Empty,
 }
 
@@ -158,8 +159,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
  *          | <equal> <expr>
  *          | <and> <expr>    
  *          | <or> <expr>
+ *          | <regexp> <expr>
  *  
  * unary_op: <not> <term>
+ *         | <regexp> <term>
  */
 
 fn parse_expression(tokens: &mut Vec<Token>) -> Result<AST, String> {
@@ -210,6 +213,7 @@ fn next_is_unary_op(tokens: &Vec<Token>) -> bool {
     }
     match tokens[0] {
         Token::Not => true,
+        Token::RegCompare => true,
         _ => false,
     }
 }
@@ -239,6 +243,10 @@ fn parse_unary_op(tokens: &mut Vec<Token>) -> Result<AST, String> {
         Token::Not => {
             let ast = parse_expr(tokens)?;
             Ok(AST::Not(Box::new(ast)))
+        }
+        Token::RegCompare => {
+            let ast = parse_expr(tokens)?;
+            Ok(AST::RegCompareUnary(Box::new(ast)))
         }
         token => Err(format!(
             "unexpected token {:?} (expected unary token)",
@@ -282,7 +290,7 @@ fn parse_binary_op(tokens: &mut Vec<Token>, lhs: AST) -> Result<AST, String> {
         }
         Token::RegCompare => {
             let rhs = parse_expr(tokens)?;
-            Ok(AST::RegCompare(Box::new(lhs), Box::new(rhs)))
+            Ok(AST::RegCompareBinary(Box::new(lhs), Box::new(rhs)))
         }
         token => Err(format!(
             "unexpected token {:?} (expected binary token)",
@@ -318,7 +326,7 @@ enum Value {
 
 pub fn execute(ast: &AST, record: &Record) -> Value {
     match ast {
-        AST::String(s) => Value::Boolean(record.original.contains(s)),
+        AST::String(s) => Value::String(s.clone()),
         AST::Variable(var) => {
             if let Some(value) = record.get(&var) {
                 match value.parse::<i64>() {
@@ -391,17 +399,30 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
                 _ => Value::Boolean(false),
             }
         }
-        AST::RegCompare(lhs, rhs) => {
+        AST::RegCompareBinary(lhs, rhs) => {
             let lhs = execute(&lhs, record);
             let rhs = execute(&rhs, record);
             match (lhs, rhs) {
                 (Value::String(lhs), Value::String(rhs)) => {
-                    let re = regex::Regex::new(&rhs).unwrap();
-                    Value::Boolean(re.is_match(&lhs))
+                    if let Ok(re) = regex::Regex::new(&rhs) {
+                        Value::Boolean(re.is_match(&lhs))
+                    } else {
+                        Value::Boolean(false)
+                    }
                 }
                 _ => Value::Boolean(false),
             }
         }
+        AST::RegCompareUnary(ast) => match &**ast {
+            AST::String(regex) => {
+                if let Ok(re) = regex::Regex::new(&regex) {
+                    Value::Boolean(re.is_match(&record.original))
+                } else {
+                    Value::Boolean(false)
+                }
+            }
+            _ => Value::Boolean(false),
+        },
         AST::Empty => Value::Boolean(true),
     }
 }
@@ -528,7 +549,7 @@ mod tests {
         );
         assert_eq!(
             parse("var1 ~ \"var2\""),
-            Ok(AST::RegCompare(
+            Ok(AST::RegCompareBinary(
                 Box::new(AST::Variable("var1".to_string())),
                 Box::new(AST::String("var2".to_string())),
             )),
@@ -617,13 +638,27 @@ mod tests {
         );
         assert_eq!(
             execute(
-                &AST::RegCompare(
+                &AST::RegCompareBinary(
                     Box::new(AST::Variable("rest".to_string())),
                     Box::new(AST::String(".*".to_string())),
                 ),
                 &record
             ),
             Value::Boolean(true),
-        )
+        );
+        assert_eq!(
+            execute(
+                &AST::RegCompareUnary(Box::new(AST::String("^2024.*".to_string())),),
+                &record
+            ),
+            Value::Boolean(true),
+        );
+        assert_eq!(
+            execute(
+                &AST::RegCompareUnary(Box::new(AST::String("^3024.*".to_string())),),
+                &record
+            ),
+            Value::Boolean(false),
+        );
     }
 }
