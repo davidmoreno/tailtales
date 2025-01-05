@@ -5,6 +5,7 @@ pub enum AST {
     Variable(String),
     String(String),
     Number(i64),
+    Boolean(bool),
     GreaterThan(Box<AST>, Box<AST>),
     LessThan(Box<AST>, Box<AST>),
     Equal(Box<AST>, Box<AST>),
@@ -178,7 +179,7 @@ fn parse_expression(tokens: &mut Vec<Token>) -> Result<AST, String> {
 
 fn parse_expr(tokens: &mut Vec<Token>) -> Result<AST, String> {
     if tokens.len() == 0 {
-        return Err("unexpected end of expression".to_string());
+        return Ok(AST::Boolean(true));
     }
     let ast = if next_is_unary_op(tokens) {
         let ast = parse_unary_op(tokens);
@@ -338,6 +339,7 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
             }
         }
         AST::Number(n) => Value::Number(n.clone()),
+        AST::Boolean(b) => Value::Boolean(b.clone()),
         AST::GreaterThan(lhs, rhs) => {
             let lhs = execute(&lhs, record);
             let rhs = execute(&rhs, record);
@@ -659,6 +661,24 @@ mod tests {
                 &record
             ),
             Value::Boolean(false),
+        );
+    }
+
+    #[test]
+    fn test_tokenize_parse_execute() {
+        let record = Record::new("2024-01-01 00:00:00".to_string())
+            .set_data("hostname", "localhost".to_string())
+            .set_data("program", "test".to_string())
+            .set_data("rest", "message".to_string())
+            .set_data("var1", "10".to_string())
+            .set_data("var2", "20".to_string());
+
+        // Empty is always true
+        assert_eq!(execute(&parse("").unwrap(), &record), Value::Boolean(true));
+        // regex unary
+        assert_eq!(
+            execute(&parse("~ \"2024\"").unwrap(), &record),
+            Value::Boolean(true)
         );
     }
 }
