@@ -1,4 +1,3 @@
-use std::sync::mpsc;
 use std::time::{self};
 
 mod ast;

@@ -39,7 +39,7 @@ pub struct TuiChrome {
 
 impl TuiChrome {
     pub fn new() -> io::Result<TuiChrome> {
-        let mut terminal = ratatui::init();
+        let terminal = ratatui::init();
         let (tx, rx) = mpsc::channel();
 
         Ok(TuiChrome {
@@ -81,7 +81,7 @@ impl TuiChrome {
         let result = self
             .terminal
             .draw(|rect| {
-                let mut layout = Layout::default().direction(Direction::Vertical);
+                let layout = Layout::default().direction(Direction::Vertical);
 
                 let current_record = self.state.records.visible_records.get(self.state.position);
 

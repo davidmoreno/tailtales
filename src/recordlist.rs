@@ -1,4 +1,4 @@
-use notify::{Event, Watcher};
+use notify::Watcher;
 use rayon::{prelude::*, spawn};
 use std::{
     io::{BufRead, Seek},
