@@ -1,10 +1,10 @@
 [package]
 name = "tailtales"
+description = " Flexible log viewer for logfmt and other formats with filtering, LogQL expressions, and real-time pipe following."
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0"
 authors = ["David Moreno"]
-license-file = "LICENSE"
 keywords = ["tail", "logs", "logfmt", "monitoring", "development"]
 homepage = "https://github.com/davidmoreno/tailtales"
 repository = "https://github.com/davidmoreno/tailtales"
