@@ -63,14 +63,6 @@ lazy_static::lazy_static! {
     static ref TIMESTAMP_RE: Regex = Regex::new(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}").unwrap();
 }
 
-fn find_timestamp(line: &str) -> Option<String> {
-    let caps = TIMESTAMP_RE.captures(line);
-    match caps {
-        Some(caps) => Some(caps.get(0).unwrap().as_str().to_string()),
-        None => None,
-    }
-}
-
 pub fn clean_ansi_text(orig: &str) -> String {
     // Lenght in real text, skips ANIS codes
     let mut text = String::new();

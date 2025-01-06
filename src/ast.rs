@@ -37,7 +37,7 @@ enum Token {
     Number(i64),
     Variable(String),
     String(String),
-    Boolean(bool),
+    // Boolean(bool),
     RegCompare,
     Equal,
     Greater,
@@ -307,7 +307,7 @@ fn parse_binary_op(tokens: &mut Vec<Token>, lhs: AST) -> Result<AST, String> {
 }
 
 #[derive(Debug, PartialEq)]
-enum Value {
+pub enum Value {
     Number(i64),
     String(String),
     Boolean(bool),
@@ -439,7 +439,7 @@ pub fn execute_rec(ast: &AST, record: &Record) -> Value {
 }
 fn execute_to_bool(ast: &AST, record: &Record) -> Value {
     match execute_rec(ast, record) {
-        Value::Number(n) => Value::Boolean(true),
+        Value::Number(_n) => Value::Boolean(true),
         Value::String(s) => Value::Boolean(record.data.get(&s).is_some()),
         Value::Boolean(b) => Value::Boolean(b),
     }

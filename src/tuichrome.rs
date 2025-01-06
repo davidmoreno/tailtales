@@ -78,8 +78,7 @@ impl TuiChrome {
         let mainarea = Self::render_records(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
-        let result = self
-            .terminal
+        self.terminal
             .draw(|rect| {
                 let layout = Layout::default().direction(Direction::Vertical);
 
@@ -117,7 +116,6 @@ impl TuiChrome {
         let height = size.height as usize - 2;
         let width = size.width as usize;
         let start = state.scroll_offset_top;
-        let length = state.records.visible_records.len();
 
         let mut lines: Vec<Line> = vec![];
 
@@ -176,7 +174,7 @@ impl TuiChrome {
         }
 
         for part in parts[0..parts.len() - 1].iter() {
-            spans.push(Span::styled(part.clone(), style));
+            spans.push(Span::styled(*part, style));
             spans.push(Span::styled(search, style_hightlight));
         }
 
@@ -495,15 +493,14 @@ impl TuiChrome {
     }
 
     pub fn handle_filter(&mut self) {
-        let filter_text: &str = &self.state.filter;
         let parsed = ast::parse(&self.state.filter);
         match parsed {
             Ok(parsed) => {
-                self.state.records.filter(parsed);
+                self.state.records.filter_parallel(parsed);
                 self.state.position = 0;
                 self.ensure_visible(self.state.position);
             }
-            Err(err) => {
+            Err(_err) => {
                 // panic!("TODO show error parsing: {}", err);
             }
         }

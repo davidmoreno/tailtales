@@ -98,12 +98,12 @@ impl RecordList {
             .seek(std::io::SeekFrom::Start(position as u64))
             .unwrap();
 
-        let start_line_number = 0;
         let mut line_number = 0;
         for line in reader.lines() {
-            let real_line_number = line_number + start_line_number;
             let line = line.expect("could not read line");
-            let record = Record::new(line.clone()).set_data("filename", filename.to_string());
+            let record = Record::new(line.clone())
+                .set_data("filename", filename.to_string())
+                .set_line_number(line_number);
             tx.send(TuiEvent::NewRecord(record)).unwrap();
             line_number += 1;
         }
@@ -136,17 +136,17 @@ impl RecordList {
         }
     }
 
-    pub fn filter(&mut self, search: AST) {
-        let mut result = vec![];
-        for record in &self.all_records {
-            if record.matches(&search) {
-                result.push((*record).clone());
-            }
-        }
-        self.filter = Some(search);
-        self.visible_records = result;
-        self.renumber();
-    }
+    // pub fn filter(&mut self, search: AST) {
+    //     let mut result = vec![];
+    //     for record in &self.all_records {
+    //         if record.matches(&search) {
+    //             result.push((*record).clone());
+    //         }
+    //     }
+    //     self.filter = Some(search);
+    //     self.visible_records = result;
+    //     self.renumber();
+    // }
 
     pub fn filter_parallel(&mut self, search: AST) {
         let result: Vec<Record> = self
