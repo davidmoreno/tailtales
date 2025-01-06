@@ -7,6 +7,11 @@ A TUI log parser written in Rust
 To easy inspect existing logs or streaming logs, with some filters, marking of messages
 and easy finding information in the logs.
 
+## Use
+
+- Can read exisitng files, checks for changes: `tt /var/log/messages`
+- Can be used as pipe destination: `journalctl -f | tt`
+
 ## Keybindings
 
 - Arrows - Move around
