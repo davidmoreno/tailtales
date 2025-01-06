@@ -232,7 +232,7 @@ impl TuiChrome {
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
         Block::default()
-            .title(format!("Filter: {}", state.filter))
+            .title(format!("Filter: {}█", state.filter))
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(Color::Yellow))
     }

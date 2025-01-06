@@ -6,10 +6,10 @@ pub enum AST {
     String(String),
     Number(i64),
     Boolean(bool),
-    GreaterThan(Box<AST>, Box<AST>),
-    LessThan(Box<AST>, Box<AST>),
     Equal(Box<AST>, Box<AST>),
+    GreaterEqual(Box<AST>, Box<AST>),
     Greater(Box<AST>, Box<AST>),
+    LessEqual(Box<AST>, Box<AST>),
     Less(Box<AST>, Box<AST>),
     Not(Box<AST>),
     And(Box<AST>, Box<AST>),
@@ -38,12 +38,12 @@ enum Token {
     Variable(String),
     String(String),
     Boolean(bool),
-    GreaterThan,
-    LessThan,
-    Equal,
     RegCompare,
+    Equal,
     Greater,
+    GreaterEqual,
     Less,
+    LessEqual,
     Not,
     And,
     Or,
@@ -66,10 +66,16 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 }
                 tokens.push(Token::Number(num.parse().unwrap()));
             }
-            'a'..='z' | 'A'..='Z' | '_' => {
+            'a'..='z' | 'A'..='Z' => {
                 let mut var = c.to_string();
                 while let Some(&c) = chars.peek() {
-                    if c.is_alphanumeric() || c == '_' {
+                    if c.is_alphanumeric()
+                        || c == '_'
+                        || c == '.'
+                        || c == ':'
+                        || c == '-'
+                        || c == '*'
+                    {
                         var.push(c);
                         chars.next();
                     } else {
@@ -92,7 +98,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 // >=
                 if let Some(&'=') = chars.peek() {
                     chars.next();
-                    tokens.push(Token::GreaterThan);
+                    tokens.push(Token::GreaterEqual);
                 } else {
                     tokens.push(Token::Greater);
                 }
@@ -101,7 +107,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                 // <=
                 if let Some(&'=') = chars.peek() {
                     chars.next();
-                    tokens.push(Token::LessThan);
+                    tokens.push(Token::LessEqual);
                 } else {
                     tokens.push(Token::Less);
                 }
@@ -224,8 +230,8 @@ fn next_is_binary_op(tokens: &Vec<Token>) -> bool {
         return false;
     }
     match tokens[0] {
-        Token::GreaterThan => true,
-        Token::LessThan => true,
+        Token::GreaterEqual => true,
+        Token::LessEqual => true,
         Token::Equal => true,
         Token::Greater => true,
         Token::Less => true,
@@ -261,13 +267,13 @@ fn parse_binary_op(tokens: &mut Vec<Token>, lhs: AST) -> Result<AST, String> {
         return Err("unexpected end of expression".to_string());
     }
     match tokens.remove(0) {
-        Token::GreaterThan => {
+        Token::GreaterEqual => {
             let rhs = parse_expr(tokens)?;
-            Ok(AST::GreaterThan(Box::new(lhs), Box::new(rhs)))
+            Ok(AST::GreaterEqual(Box::new(lhs), Box::new(rhs)))
         }
-        Token::LessThan => {
+        Token::LessEqual => {
             let rhs = parse_expr(tokens)?;
-            Ok(AST::LessThan(Box::new(lhs), Box::new(rhs)))
+            Ok(AST::LessEqual(Box::new(lhs), Box::new(rhs)))
         }
         Token::Equal => {
             let rhs = parse_expr(tokens)?;
@@ -327,6 +333,13 @@ enum Value {
 
 pub fn execute(ast: &AST, record: &Record) -> Value {
     match ast {
+        AST::String(s) | AST::Variable(s) => Value::Boolean(record.original.contains(s)),
+        _ => execute_rec(ast, record),
+    }
+}
+
+pub fn execute_rec(ast: &AST, record: &Record) -> Value {
+    match ast {
         AST::String(s) => Value::String(s.clone()),
         AST::Variable(var) => {
             if let Some(value) = record.get(&var) {
@@ -340,40 +353,44 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
         }
         AST::Number(n) => Value::Number(n.clone()),
         AST::Boolean(b) => Value::Boolean(b.clone()),
-        AST::GreaterThan(lhs, rhs) => {
-            let lhs = execute(&lhs, record);
-            let rhs = execute(&rhs, record);
-            match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs > rhs),
-                _ => Value::Boolean(false),
-            }
-        }
-        AST::LessThan(lhs, rhs) => {
-            let lhs = execute(&lhs, record);
-            let rhs = execute(&rhs, record);
-            match (lhs, rhs) {
-                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs < rhs),
-                _ => Value::Boolean(false),
-            }
-        }
         AST::Equal(lhs, rhs) => {
-            let lhs = execute(&lhs, record);
-            let rhs = execute(&rhs, record);
+            let lhs = execute_rec(&lhs, record);
+            let rhs = execute_rec(&rhs, record);
             Value::Boolean(lhs == rhs)
         }
         AST::Greater(lhs, rhs) => {
-            let lhs = execute(&lhs, record);
-            let rhs = execute(&rhs, record);
+            let lhs = execute_rec(&lhs, record);
+            let rhs = execute_rec(&rhs, record);
             match (lhs, rhs) {
                 (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs > rhs),
+                (Value::String(lhs), Value::String(rhs)) => Value::Boolean(lhs > rhs),
+                _ => Value::Boolean(false),
+            }
+        }
+        AST::GreaterEqual(lhs, rhs) => {
+            let lhs = execute_rec(&lhs, record);
+            let rhs = execute_rec(&rhs, record);
+            match (lhs, rhs) {
+                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs >= rhs),
+                (Value::String(lhs), Value::String(rhs)) => Value::Boolean(lhs >= rhs),
                 _ => Value::Boolean(false),
             }
         }
         AST::Less(lhs, rhs) => {
-            let lhs = execute(&lhs, record);
-            let rhs = execute(&rhs, record);
+            let lhs = execute_rec(&lhs, record);
+            let rhs = execute_rec(&rhs, record);
             match (lhs, rhs) {
                 (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs < rhs),
+                (Value::String(lhs), Value::String(rhs)) => Value::Boolean(lhs < rhs),
+                _ => Value::Boolean(false),
+            }
+        }
+        AST::LessEqual(lhs, rhs) => {
+            let lhs = execute_rec(&lhs, record);
+            let rhs = execute_rec(&rhs, record);
+            match (lhs, rhs) {
+                (Value::Number(lhs), Value::Number(rhs)) => Value::Boolean(lhs <= rhs),
+                (Value::String(lhs), Value::String(rhs)) => Value::Boolean(lhs <= rhs),
                 _ => Value::Boolean(false),
             }
         }
@@ -402,8 +419,8 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
             }
         }
         AST::RegCompareBinary(lhs, rhs) => {
-            let lhs = execute(&lhs, record);
-            let rhs = execute(&rhs, record);
+            let lhs = execute_rec(&lhs, record);
+            let rhs = execute_rec(&rhs, record);
             match (lhs, rhs) {
                 (Value::String(lhs), Value::String(rhs)) => {
                     if let Ok(re) = regex::Regex::new(&rhs) {
@@ -429,7 +446,7 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
     }
 }
 fn execute_to_bool(ast: &AST, record: &Record) -> Value {
-    match execute(ast, record) {
+    match execute_rec(ast, record) {
         Value::Number(n) => Value::Boolean(true),
         Value::String(s) => Value::Boolean(record.data.get(&s).is_some()),
         Value::Boolean(b) => Value::Boolean(b),
@@ -461,7 +478,7 @@ mod tests {
         let tokens = tokenize("1 <= 2");
         assert_eq!(
             tokens,
-            Ok(vec![Token::Number(1), Token::LessThan, Token::Number(2)])
+            Ok(vec![Token::Number(1), Token::LessEqual, Token::Number(2)])
         );
         let tokens = tokenize("1 == 2");
         assert_eq!(
@@ -473,7 +490,7 @@ mod tests {
             tokens,
             Ok(vec![
                 Token::Variable("var".to_string()),
-                Token::GreaterThan,
+                Token::GreaterEqual,
                 Token::Number(2)
             ])
         );
@@ -514,14 +531,14 @@ mod tests {
         );
         assert_eq!(
             parse("1 >= 2"),
-            Ok(AST::GreaterThan(
+            Ok(AST::GreaterEqual(
                 Box::new(AST::Number(1)),
                 Box::new(AST::Number(2))
             ))
         );
         assert_eq!(
             parse("1 <= 2"),
-            Ok(AST::LessThan(
+            Ok(AST::LessEqual(
                 Box::new(AST::Number(1)),
                 Box::new(AST::Number(2))
             ))
@@ -585,7 +602,7 @@ mod tests {
         );
         assert_eq!(
             execute(
-                &AST::GreaterThan(
+                &AST::GreaterEqual(
                     Box::new(AST::Variable("var1".to_string())),
                     Box::new(AST::Variable("var2".to_string())),
                 ),
@@ -595,7 +612,7 @@ mod tests {
         );
         assert_eq!(
             execute(
-                &AST::LessThan(
+                &AST::LessEqual(
                     Box::new(AST::Variable("var1".to_string())),
                     Box::new(AST::Variable("var2".to_string())),
                 ),
@@ -605,11 +622,11 @@ mod tests {
         );
         assert_eq!(
             execute(&AST::Variable("var1".to_string()), &record),
-            Value::Number(10)
+            Value::Boolean(false)
         );
         assert_eq!(
             execute(&AST::Variable("var2".to_string()), &record),
-            Value::Number(20)
+            Value::Boolean(false)
         );
         assert_eq!(
             execute(
@@ -666,24 +683,76 @@ mod tests {
 
     #[test]
     fn test_tokenize_parse_execute() {
-        let record = Record::new("2024-01-01 00:00:00".to_string())
+        let record = Record::new("2024-01-01 00:00:00 text to find".to_string())
             .set_data("hostname", "localhost".to_string())
             .set_data("program", "test".to_string())
             .set_data("rest", "message".to_string())
             .set_data("var1", "10".to_string())
-            .set_data("var2", "20".to_string());
+            .set_data("var2", "20".to_string())
+            .set_data("timestamp", "2024-01-01 00:00:00".to_string());
 
         // Empty is always true
         assert_eq!(execute(&parse("").unwrap(), &record), Value::Boolean(true));
+        assert_eq!(
+            execute(
+                &parse("timestamp > \"2020-01-01 00:00:00").unwrap(),
+                &record
+            ),
+            Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(
+                &parse("timestamp >= \"2024-01-01 00:00:00").unwrap(),
+                &record
+            ),
+            Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(
+                &parse("timestamp <= \"2024-01-01 00:00:00").unwrap(),
+                &record
+            ),
+            Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(
+                &parse("timestamp > \"2024-01-01 00:00:00").unwrap(),
+                &record
+            ),
+            Value::Boolean(false)
+        );
+        assert_eq!(
+            execute(
+                &parse("timestamp < \"2024-01-01 00:00:00").unwrap(),
+                &record
+            ),
+            Value::Boolean(false)
+        );
         // regex unary
         assert_eq!(
-            execute(&parse("~ \"2024\"").unwrap(), &record),
+            execute(&parse("~ \"text.*\"").unwrap(), &record),
             Value::Boolean(true)
         );
         // convert var to string in this context
         assert_eq!(
-            execute(&parse("~ 2024").unwrap(), &record),
+            execute(&parse("~ f..d").unwrap(), &record),
             Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(&parse("~ not_find.*").unwrap(), &record),
+            Value::Boolean(false)
+        );
+        assert_eq!(
+            execute(&parse("~ \"not_find.*\"").unwrap(), &record),
+            Value::Boolean(false)
+        );
+        assert_eq!(
+            execute(&parse("find").unwrap(), &record),
+            Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(&parse("not_find").unwrap(), &record),
+            Value::Boolean(false)
         );
     }
 }
