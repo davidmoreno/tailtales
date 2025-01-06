@@ -7,6 +7,7 @@ mod keyboard_input;
 mod parser;
 mod record;
 mod recordlist;
+mod regex_cache;
 mod tuichrome;
 
 fn main() {

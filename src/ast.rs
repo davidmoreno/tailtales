@@ -1,4 +1,4 @@
-use crate::record::Record;
+use crate::{record::Record, regex_cache::REGEX_CACHE};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AST {
@@ -423,22 +423,14 @@ pub fn execute_rec(ast: &AST, record: &Record) -> Value {
             let rhs = execute_rec(&rhs, record);
             match (lhs, rhs) {
                 (Value::String(lhs), Value::String(rhs)) => {
-                    if let Ok(re) = regex::Regex::new(&rhs) {
-                        Value::Boolean(re.is_match(&lhs))
-                    } else {
-                        Value::Boolean(false)
-                    }
+                    Value::Boolean(REGEX_CACHE.matches(&rhs, &lhs))
                 }
                 _ => Value::Boolean(false),
             }
         }
         AST::RegCompareUnary(ast) => match &**ast {
             AST::String(regex) | AST::Variable(regex) => {
-                if let Ok(re) = regex::Regex::new(&regex) {
-                    Value::Boolean(re.is_match(&record.original))
-                } else {
-                    Value::Boolean(false)
-                }
+                Value::Boolean(REGEX_CACHE.matches(&regex, &record.original))
             }
             _ => Value::Boolean(false),
         },
