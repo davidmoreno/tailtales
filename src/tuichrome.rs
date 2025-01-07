@@ -251,11 +251,15 @@ impl TuiChrome {
     }
 
     /**
-     * It waits for any key eent and inmediatly returns Ok, or
-     * if it receives a new record, it will wait for 100ms and wait for more records
+     * It waits a lot first time, for any event.
+     *
+     * If its a key event returns inmediatly, to render changes.
+     * If its a new record, keeps 100ms waiting for more records.
+     *
+     * So if there are a lot of new records, will get them all, and at max 100ms will render.
      */
     pub fn wait_for_events(&mut self) -> io::Result<()> {
-        let mut timeout = time::Duration::from_millis(0);
+        let mut timeout = time::Duration::from_millis(60000);
         loop {
             let event = self.rx.recv_timeout(timeout);
 
