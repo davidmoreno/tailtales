@@ -1,6 +1,6 @@
 [package]
 name = "tailtales"
-description = " Flexible log viewer for logfmt and other formats with filtering, LogQL expressions, and real-time pipe following."
+description = " Flexible log viewer for logfmt and other formats with filtering, filtering expressions, and real-time pipe following."
 version = "0.1.1"
 edition = "2021"
 license = "AGPL-3.0"

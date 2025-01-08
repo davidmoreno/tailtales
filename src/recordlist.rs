@@ -191,4 +191,8 @@ impl RecordList {
             record.index = i;
         }
     }
+
+    pub fn len(&self) -> usize {
+        return self.visible_records.len();
+    }
 }

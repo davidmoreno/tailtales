@@ -280,6 +280,9 @@ impl TuiChrome {
                 },
                 TuiEvent::NewRecord(record) => {
                     self.state.records.add(record);
+                    if self.state.position == self.state.records.len() - 2 {
+                        self.move_selection(1);
+                    }
                     timeout = time::Duration::from_millis(100);
                     // self.wait_for_event_timeout(time::Duration::from_millis(100))?;
                 }
