@@ -1,4 +1,5 @@
 use crate::ast;
+use crate::ast::AST;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
@@ -27,6 +28,7 @@ pub struct TuiState {
     pub mode: Mode,
     pub search: String,
     pub filter: String,
+    pub search_ast: Option<ast::AST>,
     pub number: String,
 }
 
@@ -54,6 +56,7 @@ impl TuiChrome {
                 mode: Mode::Normal,
                 search: String::new(),
                 filter: String::new(),
+                search_ast: None,
                 number: String::new(),
             },
             terminal,
@@ -124,7 +127,7 @@ impl TuiChrome {
             [start..std::cmp::min(start + height, state.records.visible_records.len())]
             .iter()
         {
-            let style = Self::get_style_for_record(record, state);
+            let style = Self::get_style_for_record(record, state, &state.search_ast);
 
             let line = Self::render_record_line(
                 record.original.as_str(),
@@ -144,12 +147,18 @@ impl TuiChrome {
         ret
     }
 
-    pub fn get_style_for_record<'a>(record: &'a record::Record, state: &TuiState) -> Style {
+    pub fn get_style_for_record<'a>(
+        record: &'a record::Record,
+        state: &TuiState,
+        search: &Option<AST>,
+    ) -> Style {
         let current_record = state.position;
         let current_index = record.index;
 
         if current_index == current_record {
             return Style::default().bg(Color::Yellow).fg(Color::Black);
+        } else if search.is_some() && record.matches(&search.as_ref().unwrap()) {
+            return Style::default().bg(Color::Black).fg(Color::Yellow);
         }
         Style::default().bg(Color::Black).fg(Color::White)
     }
@@ -224,7 +233,10 @@ impl TuiChrome {
 
     pub fn render_footer_search(state: &TuiState) -> Block {
         Block::default()
-            .title(format!("Search: {}", state.search))
+            .title(format!(
+                "Search: {}█  AST: {:?}",
+                state.search, state.search_ast
+            ))
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(Color::Yellow))
     }
@@ -235,7 +247,7 @@ impl TuiChrome {
             .border_style(Style::default().fg(Color::Yellow))
     }
     pub fn render_footer_normal(state: &TuiState) -> Block {
-        let filter_ast = ast::parse(&state.filter).unwrap_or(ast::AST::Empty);
+        let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
         let position_hints = format!(
             "Position {}. Visible {}. Total {}. Read time {}ms. Filter {:?}.",
             state.position,
@@ -409,6 +421,7 @@ impl TuiChrome {
             KeyCode::Char(c) => {
                 // search for c
                 self.state.search.push(c);
+                self.state.search_ast = ast::parse(&self.state.search).ok();
                 self.search_fwd();
             }
             KeyCode::Backspace => {
@@ -435,11 +448,14 @@ impl TuiChrome {
     }
 
     pub fn search_fwd(&mut self) {
+        let search_ast = self.state.search_ast.as_ref();
+        if search_ast.is_none() {
+            return;
+        }
+        let search_ast = search_ast.unwrap();
         let mut current = self.state.position;
-        let search_text: &str = &self.state.search;
-        let ast = ast::parse(search_text).unwrap();
 
-        let maybe_position = self.state.records.search_forward(&ast, current);
+        let maybe_position = self.state.records.search_forward(search_ast, current);
         if maybe_position.is_none() {
             return;
         }
@@ -458,11 +474,14 @@ impl TuiChrome {
     }
 
     pub fn search_bwd(&mut self) {
+        let search_ast = self.state.search_ast.as_ref();
+        if search_ast.is_none() {
+            return;
+        }
+        let search_ast = search_ast.unwrap();
         let mut current = self.state.position;
-        let search_text: &str = &self.state.search;
-        let ast = ast::parse(search_text).unwrap();
 
-        let maybe_position = self.state.records.search_backwards(&ast, current);
+        let maybe_position = self.state.records.search_backwards(search_ast, current);
         if maybe_position.is_none() {
             return;
         }
