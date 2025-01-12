@@ -7,6 +7,7 @@ mod parser;
 mod record;
 mod recordlist;
 mod regex_cache;
+mod settings;
 mod tuichrome;
 
 fn main() {

@@ -3,6 +3,8 @@ use crate::ast::AST;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
+use crate::settings;
+use crate::settings::SETTINGS;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
@@ -156,9 +158,9 @@ impl TuiChrome {
         let current_index = record.index;
 
         if current_index == current_record {
-            return Style::default().bg(Color::Yellow).fg(Color::Black);
+            return SETTINGS.global.colors.highlight.into();
         } else if search.is_some() && record.matches(&search.as_ref().unwrap()) {
-            return Style::default().bg(Color::Black).fg(Color::Yellow);
+            return SETTINGS.global.colors.normal.into();
         }
         Style::default().bg(Color::Black).fg(Color::White)
     }
@@ -212,15 +214,31 @@ impl TuiChrome {
 
         for key in keys {
             lines.push(Line::from(vec![
-                Span::styled(format!("{}: ", key), Style::default().fg(Color::Yellow)),
-                Span::raw(record.data.get(key).unwrap()),
+                Span::styled(
+                    format!("{}: ", key),
+                    Style::from(SETTINGS.global.colors.details.key),
+                ),
+                Span::styled(
+                    record.data.get(key).unwrap(),
+                    Style::from(SETTINGS.global.colors.details.value),
+                ),
             ]));
         }
 
         let text = Text::from(lines);
-        let title_span = Span::styled(record.original.clone(), Style::default().fg(Color::Yellow));
+        let title_span = Span::styled(
+            record.original.clone(),
+            Style::from(SETTINGS.global.colors.details.title),
+        );
 
-        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title(title_span))
+        Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title_span)
+                    .border_style(Style::from(SETTINGS.global.colors.details.border)),
+            )
+            .style(Style::from(SETTINGS.global.colors.details.border))
     }
 
     pub fn render_footer<'a>(state: &'a TuiState) -> Block<'a> {
