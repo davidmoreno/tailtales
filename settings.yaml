@@ -21,6 +21,8 @@ global:
   colors:
     normal: white black
     highlight: white darkgray
+    table:
+      header: black lightgreen
     details:
       title: green black
       key: green black
@@ -42,6 +44,12 @@ rules:
       - regex (?P<level>info|warning|error|debug|warn)
       - regex (?P<date>\d{4}-\d{2}-\d{2})
       - regex (?P<what>status|upgrade|startup)
+    columns:
+      - name: line_number
+        align: right
+        width: 5
+      - name: timestamp
+        width: 19
 
   - name: apache
     file_patterns:

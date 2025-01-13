@@ -50,16 +50,10 @@ fn load_parsers_from_settings(
     tui_chrome: &mut tuichrome::TuiChrome,
 ) -> Result<(), parser::ParserError> {
     let parsers = &mut tui_chrome.state.records.parsers;
+    let current_rules = SETTINGS.current_rules();
 
-    // find the detault rules
-    let rules = SETTINGS
-        .rules
-        .iter()
-        .find(|rules| rules.name == "default")
-        .expect("No default rules found");
-
-    for extractor in &rules.extractors {
-        parsers.push(parser::Parser::parse(&extractor)?);
+    for extractor in current_rules.extractors.iter() {
+        parsers.push(parser::Parser::parse(extractor)?);
     }
 
     Ok(())

@@ -1,6 +1,6 @@
 use ratatui::style::{Color, Style};
 use serde::{de::Deserializer, Deserialize};
-use std::str::FromStr;
+use std::{str::FromStr, sync::RwLock};
 
 // singleton load settings
 lazy_static::lazy_static! {
@@ -26,6 +26,14 @@ pub struct GlobalColorSettings {
     #[serde(deserialize_with = "parse_style")]
     pub highlight: Style,
     pub details: DetailsColorSettings,
+    pub table: TableColorSettings,
+}
+
+#[derive(Debug, Deserialize)]
+
+pub struct TableColorSettings {
+    #[serde(deserialize_with = "parse_style")]
+    pub header: Style,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,7 +48,7 @@ pub struct DetailsColorSettings {
     pub border: Style,
 }
 
-#[derive(Debug, Deserialize, Default, PartialEq)]
+#[derive(Debug, Deserialize, Default, PartialEq, Clone)]
 pub enum Alignment {
     #[default]
     Left,
@@ -48,7 +56,7 @@ pub enum Alignment {
     Center,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct RulesSettings {
     pub name: String,
     #[serde(default)]
@@ -61,7 +69,7 @@ pub struct RulesSettings {
     pub columns: Vec<ColumnSettings>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct FilterSettings {
     #[serde(default)]
     pub name: String,
@@ -111,7 +119,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ColumnSettings {
     pub name: String,
     pub width: usize,
@@ -146,6 +154,13 @@ impl Settings {
         let reader = std::io::BufReader::new(file);
         let settings: Settings = serde_yaml::from_reader(reader)?;
         Ok(settings)
+    }
+
+    pub fn current_rules(&self) -> &RulesSettings {
+        self.rules
+            .iter()
+            .find(|rules| rules.name == "default")
+            .expect("No default rules found")
     }
 }
 

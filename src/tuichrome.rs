@@ -79,7 +79,7 @@ impl TuiChrome {
             self.state.total_visible_lines = visible_lines;
         }
 
-        let mainarea = Self::render_records(&self.state, size);
+        let mainarea = Self::render_records_table(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
         self.terminal
@@ -114,6 +114,56 @@ impl TuiChrome {
             .unwrap();
 
         Ok(())
+    }
+
+    pub fn render_records_table<'a>(state: &'a TuiState, size: Size) -> Table<'a> {
+        // Columns from SETTINGS.current_rule
+        let current_rules = SETTINGS.current_rules();
+        let columns = &current_rules.columns;
+        let start = state.scroll_offset_top;
+        let end = min(
+            start + state.total_visible_lines,
+            state.records.visible_records.len(),
+        );
+
+        let records = &state.records.visible_records;
+        let mut rows = Vec::new();
+        for record in records[start..end].iter() {
+            let mut cells: Vec<Cell> = columns
+                .iter()
+                .map(|column| {
+                    let binding = "".to_string();
+                    let value = record.data.get(&column.name).unwrap_or(&binding);
+                    let cell = Cell::from(value.clone());
+                    cell
+                })
+                .collect();
+            let cell = Cell::from(record.original.clone());
+            cells.push(cell);
+
+            let row = if record.index == state.position {
+                Row::new(cells).style(Style::from(SETTINGS.global.colors.highlight))
+            } else {
+                Row::new(cells)
+            };
+
+            rows.push(row);
+        }
+        let mut header = columns
+            .iter()
+            .map(|column| Cell::from(column.name.clone()))
+            .collect::<Vec<Cell>>();
+        header.push(Cell::from("Original"));
+        let header = Row::new(header).style(Style::from(SETTINGS.global.colors.table.header));
+        let mut columns = columns
+            .iter()
+            .map(|column| column.width as u16)
+            .collect::<Vec<u16>>();
+
+        columns.push(size.width - columns.iter().sum::<u16>());
+
+        let table = Table::new(rows, columns).header(header);
+        table
     }
 
     pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
