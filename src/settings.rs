@@ -1,4 +1,4 @@
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use serde::{de::Deserializer, Deserialize};
 use std::str::FromStr;
 
@@ -21,38 +21,23 @@ pub struct GlobalSettings {
 
 #[derive(Debug, Deserialize)]
 pub struct GlobalColorSettings {
-    #[serde(deserialize_with = "parse_color_pair")]
-    pub normal: ColorPair,
-    #[serde(deserialize_with = "parse_color_pair")]
-    pub highlight: ColorPair,
+    #[serde(deserialize_with = "parse_style")]
+    pub normal: Style,
+    #[serde(deserialize_with = "parse_style")]
+    pub highlight: Style,
     pub details: DetailsColorSettings,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct DetailsColorSettings {
-    #[serde(deserialize_with = "parse_color_pair")]
-    pub title: ColorPair,
-    #[serde(deserialize_with = "parse_color_pair")]
-    pub key: ColorPair,
-    #[serde(deserialize_with = "parse_color_pair")]
-    pub value: ColorPair,
-    #[serde(deserialize_with = "parse_color_pair")]
-    pub border: ColorPair,
-}
-
-// All basic ANSI terminal colors
-#[derive(Debug, Deserialize, Default, PartialEq, Clone, Copy)]
-pub enum Color {
-    Red,
-    Green,
-    Blue,
-    Yellow,
-    Cyan,
-    Magenta,
-    White,
-    Black,
-    #[default]
-    Unknown,
+    #[serde(deserialize_with = "parse_style")]
+    pub title: Style,
+    #[serde(deserialize_with = "parse_style")]
+    pub key: Style,
+    #[serde(deserialize_with = "parse_style")]
+    pub value: Style,
+    #[serde(deserialize_with = "parse_style")]
+    pub border: Style,
 }
 
 #[derive(Debug, Deserialize, Default, PartialEq)]
@@ -81,66 +66,48 @@ pub struct FilterSettings {
     #[serde(default)]
     pub name: String,
     pub expression: String,
-    #[serde(default, deserialize_with = "parse_color_pair")]
-    pub highlight: ColorPair,
-    #[serde(default, deserialize_with = "parse_color")]
-    pub gutter: Option<Color>,
+    #[serde(default, deserialize_with = "parse_style")]
+    pub highlight: Style,
+    #[serde(default, deserialize_with = "optional_parse_style")]
+    pub gutter: Option<Style>,
 }
 
-impl FromStr for Color {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "white" => Ok(Color::White),
-            "red" => Ok(Color::Red),
-            "green" => Ok(Color::Green),
-            "blue" => Ok(Color::Blue),
-            "yellow" => Ok(Color::Yellow),
-            "cyan" => Ok(Color::Cyan),
-            "magenta" => Ok(Color::Magenta),
-            "black" => Ok(Color::Black),
-            _ => Err(()),
-        }
-    }
-}
-
-fn parse_color_pair<'de, D>(deserializer: D) -> Result<ColorPair, D::Error>
+fn parse_style<'de, D>(deserializer: D) -> Result<Style, D::Error>
 where
     D: Deserializer<'de>,
 {
     let s: String = Deserialize::deserialize(deserializer)?;
-    let mut parts = s.split_whitespace();
-    let first = parts
-        .next()
-        .ok_or_else(|| serde::de::Error::custom("Missing first color"))?;
-    let second = parts
-        .next()
-        .ok_or_else(|| serde::de::Error::custom("Missing second color"))?;
-
-    let first_color =
-        Color::from_str(first).map_err(|_| serde::de::Error::custom("Invalid color"))?;
-    let second_color =
-        Color::from_str(second).map_err(|_| serde::de::Error::custom("Invalid color"))?;
-
-    Ok(ColorPair {
-        fg: first_color,
-        bg: second_color,
-    })
+    string_to_style(&s).map_err(serde::de::Error::custom)
 }
 
-fn parse_color<'de, D>(deserializer: D) -> Result<Option<Color>, D::Error>
+fn string_to_style(s: &str) -> Result<Style, String> {
+    let mut parts = s.split_whitespace();
+    let first = parts.next().ok_or_else(|| "Missing first color")?;
+    let first_color = Color::from_str(first).map_err(|_| "Invalid color")?;
+    let style = Style::new().fg(first_color);
+
+    // optional second, default black
+    let style = match parts.next() {
+        Some(second) => {
+            let second_color = Color::from_str(second).map_err(|_| "Invalid color")?;
+            style.bg(second_color)
+        }
+        None => style,
+    };
+
+    Ok(style)
+}
+
+fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let s: Option<String> = Deserialize::deserialize(deserializer)?;
-    match s {
-        Some(s) => {
-            let color =
-                Color::from_str(&s).map_err(|_| serde::de::Error::custom("Invalid color"))?;
-            Ok(Some(color))
-        }
-        None => Ok(None),
+    let s: String = Deserialize::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        let style = string_to_style(&s).map_err(serde::de::Error::custom)?;
+        Ok(Some(style))
     }
 }
 
@@ -174,43 +141,6 @@ where
 }
 
 impl Settings {
-    // pub fn new() -> Self {
-    //     Settings {
-    //         global: GlobalSettings {
-    //             reload_on_truncate: false,
-    //             colors: GlobalColorSettings {
-    //                 normal: ColorPair {
-    //                     fg: Color::White,
-    //                     bg: Color::Black,
-    //                 },
-    //                 highlight: ColorPair {
-    //                     fg: Color::Yellow,
-    //                     bg: Color::Black,
-    //                 },
-    //                 details: DetailsColorSettings {
-    //                     title: ColorPair {
-    //                         fg: Color::White,
-    //                         bg: Color::Black,
-    //                     },
-    //                     key: ColorPair {
-    //                         fg: Color::White,
-    //                         bg: Color::Black,
-    //                     },
-    //                     value: ColorPair {
-    //                         fg: Color::White,
-    //                         bg: Color::Black,
-    //                     },
-    //                     border: ColorPair {
-    //                         fg: Color::White,
-    //                         bg: Color::Black,
-    //                     },
-    //                 },
-    //             },
-    //         },
-    //         rules: Vec::new(),
-    //     }
-    // }
-
     pub fn read_from_yaml(filename: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let file = std::fs::File::open(filename)?;
         let reader = std::io::BufReader::new(file);
@@ -219,46 +149,14 @@ impl Settings {
     }
 }
 
-// An .into from (settings::Color, settings::Color) to crossterm::style::Color
-#[derive(Debug, Deserialize, Default, Clone, Copy)]
-pub struct ColorPair {
-    #[serde(default)]
-    pub fg: Color,
-    #[serde(default)]
-    pub bg: Color,
-}
-
-impl From<ColorPair> for Style {
-    fn from(pair: ColorPair) -> Self {
-        Style::default().fg(pair.fg.into()).bg(pair.bg.into())
-    }
-}
-
-// Color to crossterm::style::Color
-impl From<Color> for ratatui::prelude::Color {
-    fn from(color: Color) -> Self {
-        match color {
-            Color::Red => ratatui::prelude::Color::Red,
-            Color::Green => ratatui::prelude::Color::Green,
-            Color::Blue => ratatui::prelude::Color::Blue,
-            Color::Yellow => ratatui::prelude::Color::Yellow,
-            Color::Cyan => ratatui::prelude::Color::Cyan,
-            Color::Magenta => ratatui::prelude::Color::Magenta,
-            Color::White => ratatui::prelude::Color::White,
-            Color::Black => ratatui::prelude::Color::Black,
-            Color::Unknown => ratatui::prelude::Color::Reset,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     // #[test]
-    // fn test_parse_color_pair() {
+    // fn test_parse_style() {
     //     let input = "white black";
-    //     let result = parse_color_pair(input.into()).unwrap();
+    //     let result = parse_style(input.into()).unwrap();
     //     assert_eq!(result, (Color::White, Color::Black));
     // }
 

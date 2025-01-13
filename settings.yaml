@@ -1,8 +1,26 @@
+# colors:
+#  * black
+#  * red
+#  * green
+#  * yellow
+#  * blue
+#  * magenta
+#  * cyan
+#  * gray
+#  * darkgray
+#  * lightred
+#  * lightgreen
+#  * lightyellow
+#  * lightblue
+#  * lightmagenta
+#  * lightcyan
+#  * white
+
 global:
   reload_on_truncate: false
   colors:
     normal: white black
-    highlight: black green
+    highlight: white darkgray
     details:
       title: green black
       key: green black

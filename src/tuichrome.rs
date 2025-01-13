@@ -3,7 +3,6 @@ use crate::ast::AST;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
-use crate::settings;
 use crate::settings::SETTINGS;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
