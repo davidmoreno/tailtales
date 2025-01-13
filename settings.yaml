@@ -36,9 +36,12 @@ rules:
       - "*"
     extractors:
       - logfmt
-      - json
-      - regex "(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z)"
-      - regex "(?P<level>info|warning|error|debug|warn)" i
+      # - json
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z)
+      - regex (?P<level>info|warning|error|debug|warn)
+      - regex (?P<date>\d{4}-\d{2}-\d{2})
+      - regex (?P<what>status|upgrade|startup)
 
   - name: apache
     file_patterns:
