@@ -69,7 +69,7 @@ impl TuiChrome {
     pub fn render(&mut self) -> io::Result<()> {
         let size = self.terminal.size()?;
 
-        let mut visible_lines = size.height as usize - 6;
+        let mut visible_lines = size.height as usize - 4;
         if self.state.records.visible_records.len() > 0 {
             visible_lines -= self.state.records.visible_records[self.state.position]
                 .data
@@ -359,7 +359,7 @@ impl TuiChrome {
                 },
                 TuiEvent::NewRecord(record) => {
                     self.state.records.add(record);
-                    if self.state.position == self.state.records.len() - 2 {
+                    if self.state.position == max(0, self.state.records.len() as i32 - 2) as usize {
                         self.move_selection(1);
                     }
                     timeout = time::Duration::from_millis(100);
