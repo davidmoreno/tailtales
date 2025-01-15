@@ -81,7 +81,7 @@ impl Parser {
     }
 
     pub fn new_logfmt() -> Parser {
-        let re = regex::Regex::new("(?P<key>[^ ]*?)=(?P<value>\".*\"|[^ ]*)( |$)").unwrap();
+        let re = regex::Regex::new("(?P<key>[^ ]*?)=(?P<value>\".*?\"|[^ ]*)( |$)").unwrap();
         Parser {
             regex: re,
             is_logfmt: true,
@@ -109,6 +109,13 @@ impl Parser {
         for caps in self.regex.captures_iter(line) {
             let key = caps["key"].to_string();
             let value = caps["value"].to_string();
+
+            if value.starts_with('"') && value.ends_with('"') {
+                let value = value[1..value.len() - 1].to_string();
+                data.insert(key, value);
+                continue;
+            }
+
             data.insert(key, value);
         }
         data
