@@ -1,6 +1,8 @@
 use std::time::{self};
 
-use settings::SETTINGS;
+use regex::Regex;
+use settings::RulesSettings;
+use settings::Settings;
 
 mod ast;
 mod events;
@@ -15,20 +17,31 @@ mod tuichrome;
 fn main() {
     let mut tui_chrome = tuichrome::TuiChrome::new().expect("could not create TuiChrome");
     let start_parse_time = time::Instant::now();
+    tui_chrome.state.settings =
+        Settings::read_from_yaml("settings.yaml").expect("Failed to read settings from YAML");
 
-    if let Err(err) = load_parsers_from_settings(&mut tui_chrome) {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        tui_chrome.state.current_rule = get_rule_by_filename(
+            &mut tui_chrome.state.settings,
+            args.get(1).unwrap().to_string(),
+        );
+    }
+    if let Err(err) = load_parsers(
+        &tui_chrome.state.current_rule,
+        &mut tui_chrome.state.records.parsers,
+    ) {
         panic!("Could not load parsers from settings: {:?}", err);
     }
     keyboard_input::start_event_thread(tui_chrome.tx.clone());
 
-    let args = std::env::args();
     if args.len() == 1 {
         tui_chrome
             .state
             .records
             .readfile_stdin(tui_chrome.tx.clone());
     }
-    for filename in args.skip(1) {
+    for filename in &args[1..] {
         if filename == "-" {
             tui_chrome
                 .state
@@ -46,15 +59,32 @@ fn main() {
     tui_chrome.run();
 }
 
-fn load_parsers_from_settings(
-    tui_chrome: &mut tuichrome::TuiChrome,
+fn load_parsers(
+    rule: &RulesSettings,
+    parsers: &mut Vec<parser::Parser>,
 ) -> Result<(), parser::ParserError> {
-    let parsers = &mut tui_chrome.state.records.parsers;
-    let current_rules = SETTINGS.current_rules();
-
-    for extractor in current_rules.extractors.iter() {
+    for extractor in rule.extractors.iter() {
         parsers.push(parser::Parser::parse(extractor)?);
     }
 
     Ok(())
+}
+
+fn get_rule_by_filename(settings: &mut Settings, filename: String) -> RulesSettings {
+    let rules = &settings.rules;
+
+    let mut count = 0;
+    for rule in rules.iter() {
+        for pattern in &rule.file_patterns {
+            if Regex::new(pattern).unwrap().is_match(&filename) {
+                return rule.clone();
+            }
+        }
+        count += 1;
+    }
+
+    panic!(
+        "Could not guess rules for filename: {}. Checked {} rule sets.",
+        filename, count
+    );
 }

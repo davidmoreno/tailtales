@@ -1,25 +1,22 @@
 use ratatui::style::{Color, Style};
 use serde::{de::Deserializer, Deserialize};
-use std::{str::FromStr, sync::RwLock};
+use std::str::FromStr;
 
 // singleton load settings
-lazy_static::lazy_static! {
-    pub static ref SETTINGS: Settings = Settings::read_from_yaml("settings.yaml").unwrap();
-}
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Settings {
     pub global: GlobalSettings,
     pub rules: Vec<RulesSettings>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct GlobalSettings {
     pub reload_on_truncate: bool,
     pub colors: GlobalColorSettings,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct GlobalColorSettings {
     #[serde(deserialize_with = "parse_style")]
     pub normal: Style,
@@ -29,14 +26,14 @@ pub struct GlobalColorSettings {
     pub table: TableColorSettings,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 
 pub struct TableColorSettings {
     #[serde(deserialize_with = "parse_style")]
     pub header: Style,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct DetailsColorSettings {
     #[serde(deserialize_with = "parse_style")]
     pub title: Style,
@@ -56,7 +53,7 @@ pub enum Alignment {
     Center,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct RulesSettings {
     pub name: String,
     #[serde(default)]
@@ -149,18 +146,15 @@ where
 }
 
 impl Settings {
+    pub fn new() -> Settings {
+        Settings::default()
+    }
+
     pub fn read_from_yaml(filename: &str) -> Result<Self, Box<dyn std::error::Error>> {
         let file = std::fs::File::open(filename)?;
         let reader = std::io::BufReader::new(file);
         let settings: Settings = serde_yaml::from_reader(reader)?;
         Ok(settings)
-    }
-
-    pub fn current_rules(&self) -> &RulesSettings {
-        self.rules
-            .iter()
-            .find(|rules| rules.name == "default")
-            .expect("No default rules found")
     }
 }
 

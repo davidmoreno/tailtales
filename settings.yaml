@@ -33,28 +33,10 @@ global:
     # gutter: black yellow
 
 rules:
-  - name: default
-    file_patterns:
-      - "*"
-    extractors:
-      - logfmt
-      # - json
-      - regex (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})
-      - regex (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z)
-      - regex (?P<level>info|warning|error|debug|warn)
-      - regex (?P<date>\d{4}-\d{2}-\d{2})
-      - regex (?P<what>status|upgrade|startup)
-    columns:
-      - name: line_number
-        align: right
-        width: 5
-      - name: timestamp
-        width: 19
-
   - name: apache
     file_patterns:
-      - access.log
-      - apache/*.log
+      - access\.log
+      - apache/.*\.log
     extractors:
       # Common Log Format, see http://httpd.apache.org/docs/2.0/logs.html#common
       #  127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326
@@ -91,6 +73,23 @@ rules:
         width: 10
         align: right
 
+  - name: dpkg
+    file_patterns:
+      - dpkg\.log
+    extractors:
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<action>startup archives unpack|upgrade|status half-configured|status unpacked|status half installed|status triggers pending|configure)
+      - regex (?P<package>[\w\d\.-]+):(?P<arch>\w+) (?P<version>\d.*)
+    columns:
+      - name: line_number
+        width: 6
+        align: right
+      - name: action
+        width: 16
+      - name: package
+        width: 16
+      - name: version
+        width: 8
+
   - name: nginx
     file_patterns:
       - nginx/*.log
@@ -115,7 +114,7 @@ rules:
 
   - name: json
     file_patterns:
-      - "*.json"
+      - .*\.json
     extractors:
       - json
     filters:
@@ -128,7 +127,7 @@ rules:
 
   - name: django
     file_patterns:
-      - django/*.log
+      - django/.*\.log
     extractors:
       - pattern <timestamp> <level> <module> <message>
       - transform timestamp iso8601
@@ -148,13 +147,24 @@ rules:
 
   - name: journald
     file_patterns:
-      - /var/log/journal/*
+      - /var/log/journal/
     extractors:
       - journald
 
-  - name: journald-pipe
+  - name: default
     file_patterns:
-      - journald |
+      - ".*"
     extractors:
-      - "pattern <month> <day> <time> <hostname> <program>[<pid>]: <message>"
-      - transform month,day,time iso8601
+      - logfmt
+      # - json
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z)
+      - regex (?P<level>info|warning|error|debug|warn)
+      - regex (?P<date>\d{4}-\d{2}-\d{2})
+      - regex (?P<what>status|upgrade|startup)
+    columns:
+      - name: line_number
+        align: right
+        width: 5
+      - name: timestamp
+        width: 19
