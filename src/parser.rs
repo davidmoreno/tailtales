@@ -1,4 +1,4 @@
-use std::{collections::HashMap, f32::consts::E};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Parser {
@@ -7,9 +7,9 @@ pub struct Parser {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum ParserError {
     InvalidParser(String),
-    InvalidRegex(regex::Error),
 }
 
 impl Parser {
