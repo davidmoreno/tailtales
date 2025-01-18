@@ -1,0 +1,170 @@
+# colors:
+#  * black
+#  * red
+#  * green
+#  * yellow
+#  * blue
+#  * magenta
+#  * cyan
+#  * gray
+#  * darkgray
+#  * lightred
+#  * lightgreen
+#  * lightyellow
+#  * lightblue
+#  * lightmagenta
+#  * lightcyan
+#  * white
+
+global:
+  reload_on_truncate: false
+  colors:
+    normal: white black
+    highlight: white darkgray
+    table:
+      header: black lightgreen
+    details:
+      title: green black
+      key: green black
+      value: yellow black
+      border: green black
+
+    # details_highlight: black green
+    # gutter: black yellow
+
+rules:
+  - name: apache
+    file_patterns:
+      - access\.log
+      - apache/.*\.log
+    extractors:
+      # Common Log Format, see http://httpd.apache.org/docs/2.0/logs.html#common
+      #  127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326
+      - pattern <ip> - <user> [<timestamp>] "<method> <url> <protocol>" <status> <bytes>
+      - transform timestamp iso8601
+    filters:
+      - name: errors
+        expression: status ~ "5\d\d"
+        highlight: white red
+      - name: not_found
+        expression: status == 404
+        gutter: yellow
+      - name: successful
+        expression: status == 200
+        gutter: green
+      - name: too big
+        expression: bytes > 1000000
+      - name: empty requests
+        expression: bytes == 0
+    columns:
+      - name: timestamp
+        width: 25
+      - name: ip
+        width: 15
+      - name: method
+        width: 5
+      - name: url
+        width: 30
+      - name: protocol
+        width: 10
+      - name: status
+        width: 5
+      - name: bytes
+        width: 10
+        align: right
+
+  - name: dpkg
+    file_patterns:
+      - dpkg\.log
+    extractors:
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<action>startup archives unpack|upgrade|status half-configured|status unpacked|status half installed|status triggers pending|configure)
+      - regex (?P<package>[\w\d\.-]+):(?P<arch>\w+) (?P<version>\d.*)
+    columns:
+      - name: line_number
+        width: 6
+        align: right
+      - name: action
+        width: 16
+      - name: package
+        width: 16
+      - name: version
+        width: 8
+
+  - name: nginx
+    file_patterns:
+      - nginx/*.log
+    extractors:
+      # 127.0.0.1 - - [02/Jan/2024:12:10:46 +0100] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0"
+      - pattern <ip> - <user> [<timestamp>] "<method> <url> <protocol>" <status> <bytes> "<referer>" "<user_agent>"
+      - transform timestamp iso8601
+    filters:
+      - name: errors
+        expression: status ~ "5\d\d"
+        color: white red
+      - name: not_found
+        expression: status == 404
+        color: white yellow
+      - name: successful
+        expression: status == 200
+        color: white green
+      - name: too big
+        expression: bytes > 1000000
+      - name: empty requests
+        expression: bytes == 0
+
+  - name: json
+    file_patterns:
+      - .*\.json
+    extractors:
+      - json
+    filters:
+      - color: white red
+        expression: level == "error"
+      - color: white yellow
+        expression: level == "warning"
+      - color: white green
+        expression: level == "info"
+
+  - name: django
+    file_patterns:
+      - django/.*\.log
+    extractors:
+      - pattern <timestamp> <level> <module> <message>
+      - transform timestamp iso8601
+    filters:
+      - name: errors
+        expression: level == "ERROR"
+        highlight: white red
+      - name: warnings
+        expression: level == "WARNING"
+        highlight: white yellow
+      - name: infos
+        expression: level == "INFO"
+        highlight: white green
+      - name: debug
+        expression: level == "DEBUG"
+        highlight: white blue
+
+  - name: journald
+    file_patterns:
+      - /var/log/journal/
+    extractors:
+      - journald
+
+  - name: default
+    file_patterns:
+      - ".*"
+    extractors:
+      - logfmt
+      # - json
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})
+      - regex (?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z)
+      - regex (?P<level>info|warning|error|debug|warn)
+      - regex (?P<date>\d{4}-\d{2}-\d{2})
+      - regex (?P<what>status|upgrade|startup)
+    columns:
+      - name: line_number
+        align: right
+        width: 5
+      - name: timestamp
+        width: 19

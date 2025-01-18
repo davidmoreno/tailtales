@@ -3,6 +3,8 @@ use crate::ast::AST;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
+use crate::settings::RulesSettings;
+use crate::settings::Settings;
 
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
@@ -18,6 +20,8 @@ pub enum Mode {
 }
 
 pub struct TuiState {
+    pub settings: Settings,
+    pub current_rule: RulesSettings,
     pub records: recordlist::RecordList,
     pub total_visible_lines: usize,
     pub position: usize,
@@ -46,6 +50,8 @@ impl TuiChrome {
 
         Ok(TuiChrome {
             state: TuiState {
+                settings: Settings::new(),
+                current_rule: RulesSettings::default(),
                 records: recordlist::RecordList::new(),
                 total_visible_lines: 78,
                 position: 0,
@@ -68,7 +74,7 @@ impl TuiChrome {
     pub fn render(&mut self) -> io::Result<()> {
         let size = self.terminal.size()?;
 
-        let mut visible_lines = size.height as usize - 6;
+        let mut visible_lines = size.height as usize - 4;
         if self.state.records.visible_records.len() > 0 {
             visible_lines -= self.state.records.visible_records[self.state.position]
                 .data
@@ -78,7 +84,7 @@ impl TuiChrome {
             self.state.total_visible_lines = visible_lines;
         }
 
-        let mainarea = Self::render_records(&self.state, size);
+        let mainarea = Self::render_records_table(&self.state, size);
         let footer = Self::render_footer(&self.state);
 
         self.terminal
@@ -106,13 +112,64 @@ impl TuiChrome {
                 // rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[0]);
                 if let Some(current_record) = current_record {
-                    rect.render_widget(Self::render_record(current_record), chunks[1]);
+                    rect.render_widget(Self::render_record(&self.state, current_record), chunks[1]);
                 }
                 rect.render_widget(footer, chunks[2]);
             })
             .unwrap();
 
         Ok(())
+    }
+
+    pub fn render_records_table<'a>(state: &'a TuiState, size: Size) -> Table<'a> {
+        let settings = &state.settings;
+        // Columns from SETTINGS.current_rule
+        let current_rules = &state.current_rule;
+        let columns = &current_rules.columns;
+        let start = state.scroll_offset_top;
+        let end = min(
+            start + state.total_visible_lines,
+            state.records.visible_records.len(),
+        );
+
+        let records = &state.records.visible_records;
+        let mut rows = Vec::new();
+        for record in records[start..end].iter() {
+            let mut cells: Vec<Cell> = columns
+                .iter()
+                .map(|column| {
+                    let binding = "".to_string();
+                    let value = record.data.get(&column.name).unwrap_or(&binding);
+                    let cell = Cell::from(value.clone());
+                    cell
+                })
+                .collect();
+            let cell = Cell::from(record.original.clone());
+            cells.push(cell);
+
+            let row = if record.index == state.position {
+                Row::new(cells).style(Style::from(settings.global.colors.highlight))
+            } else {
+                Row::new(cells)
+            };
+
+            rows.push(row);
+        }
+        let mut header = columns
+            .iter()
+            .map(|column| Cell::from(column.name.clone()))
+            .collect::<Vec<Cell>>();
+        header.push(Cell::from("Original"));
+        let header = Row::new(header).style(Style::from(settings.global.colors.table.header));
+        let mut columns = columns
+            .iter()
+            .map(|column| column.width as u16)
+            .collect::<Vec<u16>>();
+
+        columns.push(size.width - columns.iter().sum::<u16>());
+
+        let table = Table::new(rows, columns).header(header);
+        table
     }
 
     pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
@@ -152,13 +209,14 @@ impl TuiChrome {
         state: &TuiState,
         search: &Option<AST>,
     ) -> Style {
+        let settings = &state.settings;
         let current_record = state.position;
         let current_index = record.index;
 
         if current_index == current_record {
-            return Style::default().bg(Color::Yellow).fg(Color::Black);
+            return settings.global.colors.highlight.into();
         } else if search.is_some() && record.matches(&search.as_ref().unwrap()) {
-            return Style::default().bg(Color::Black).fg(Color::Yellow);
+            return settings.global.colors.normal.into();
         }
         Style::default().bg(Color::Black).fg(Color::White)
     }
@@ -202,7 +260,8 @@ impl TuiChrome {
         Line::from(spans)
     }
 
-    pub fn render_record<'a>(record: &'a record::Record) -> Paragraph<'a> {
+    pub fn render_record<'a>(state: &TuiState, record: &'a record::Record) -> Paragraph<'a> {
+        let settings = &state.settings;
         let mut lines = vec![];
 
         // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
@@ -212,15 +271,31 @@ impl TuiChrome {
 
         for key in keys {
             lines.push(Line::from(vec![
-                Span::styled(format!("{}: ", key), Style::default().fg(Color::Yellow)),
-                Span::raw(record.data.get(key).unwrap()),
+                Span::styled(
+                    format!("{}: ", key),
+                    Style::from(settings.global.colors.details.key),
+                ),
+                Span::styled(
+                    record.data.get(key).unwrap(),
+                    Style::from(settings.global.colors.details.value),
+                ),
             ]));
         }
 
         let text = Text::from(lines);
-        let title_span = Span::styled(record.original.clone(), Style::default().fg(Color::Yellow));
+        let title_span = Span::styled(
+            record.original.clone(),
+            Style::from(settings.global.colors.details.title),
+        );
 
-        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title(title_span))
+        Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title_span)
+                    .border_style(Style::from(settings.global.colors.details.border)),
+            )
+            .style(Style::from(settings.global.colors.details.border))
     }
 
     pub fn render_footer<'a>(state: &'a TuiState) -> Block<'a> {
@@ -249,12 +324,13 @@ impl TuiChrome {
     pub fn render_footer_normal(state: &TuiState) -> Block {
         let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
         let position_hints = format!(
-            "Position {}. Visible {}. Total {}. Read time {}ms. Filter {:?}.",
+            "Position {}. Visible {}. Total {}. Read time {}ms. Filter {:?}. Rules {}",
             state.position,
             state.records.visible_records.len(),
             state.records.all_records.len(),
             state.read_time.as_millis(),
             filter_ast,
+            state.current_rule.name
         );
 
         Block::default()
@@ -292,7 +368,7 @@ impl TuiChrome {
                 },
                 TuiEvent::NewRecord(record) => {
                     self.state.records.add(record);
-                    if self.state.position == self.state.records.len() - 2 {
+                    if self.state.position == max(0, self.state.records.len() as i32 - 2) as usize {
                         self.move_selection(1);
                     }
                     timeout = time::Duration::from_millis(100);
