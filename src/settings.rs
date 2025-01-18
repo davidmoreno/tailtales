@@ -6,13 +6,23 @@ use std::str::FromStr;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct Settings {
+    #[serde(default)]
     pub global: GlobalSettings,
+    #[serde(default)]
+    pub rules: Vec<RulesSettings>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct SettingsFromYaml {
+    #[serde(default)]
+    pub global: Option<GlobalSettings>,
+    #[serde(default)]
     pub rules: Vec<RulesSettings>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct GlobalSettings {
-    pub reload_on_truncate: bool,
+    // pub reload_on_truncate: bool,
     pub colors: GlobalColorSettings,
 }
 
@@ -60,22 +70,22 @@ pub struct RulesSettings {
     pub file_patterns: Vec<String>,
     #[serde(default)]
     pub extractors: Vec<String>,
-    #[serde(default)]
-    pub filters: Vec<FilterSettings>,
+    // #[serde(default)]
+    // pub filters: Vec<FilterSettings>,
     #[serde(default)]
     pub columns: Vec<ColumnSettings>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct FilterSettings {
-    #[serde(default)]
-    pub name: String,
-    pub expression: String,
-    #[serde(default, deserialize_with = "parse_style")]
-    pub highlight: Style,
-    #[serde(default, deserialize_with = "optional_parse_style")]
-    pub gutter: Option<Style>,
-}
+// #[derive(Debug, Deserialize, Clone)]
+// pub struct FilterSettings {
+//     #[serde(default)]
+//     pub name: String,
+//     pub expression: String,
+//     #[serde(default, deserialize_with = "parse_style")]
+//     pub highlight: Style,
+//     #[serde(default, deserialize_with = "optional_parse_style")]
+//     pub gutter: Option<Style>,
+// }
 
 fn parse_style<'de, D>(deserializer: D) -> Result<Style, D::Error>
 where
@@ -103,18 +113,18 @@ fn string_to_style(s: &str) -> Result<Style, String> {
     Ok(style)
 }
 
-fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    if s.is_empty() {
-        Ok(None)
-    } else {
-        let style = string_to_style(&s).map_err(serde::de::Error::custom)?;
-        Ok(Some(style))
-    }
-}
+// fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
+// where
+//     D: Deserializer<'de>,
+// {
+//     let s: String = Deserialize::deserialize(deserializer)?;
+//     if s.is_empty() {
+//         Ok(None)
+//     } else {
+//         let style = string_to_style(&s).map_err(serde::de::Error::custom)?;
+//         Ok(Some(style))
+//     }
+// }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ColumnSettings {
@@ -147,14 +157,55 @@ where
 
 impl Settings {
     pub fn new() -> Settings {
-        Settings::default()
+        let mut settings = Settings::default();
+
+        settings
+            .read_from_string(include_str!("../settings.yaml"))
+            .expect("Failed to read default settings from internal YAML");
+
+        // Try to load from ~/.config/tailtales/settings.yaml. If does not exist, ignore.
+
+        xdg::BaseDirectories::with_prefix("tailtales")
+            .map(|xdg| xdg.find_config_file("settings.yaml"))
+            .map(|path| {
+                path.map(|path| {
+                    if path.exists() {
+                        settings.read_from_yaml(path.to_str().unwrap()).unwrap();
+                    }
+                })
+            })
+            .unwrap_or(None);
+
+        settings
     }
 
-    pub fn read_from_yaml(filename: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn read_from_yaml(&mut self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
         let file = std::fs::File::open(filename)?;
         let reader = std::io::BufReader::new(file);
-        let settings: Settings = serde_yaml::from_reader(reader)?;
-        Ok(settings)
+        let settings: SettingsFromYaml = serde_yaml::from_reader(reader)?;
+
+        self.merge_with(settings);
+
+        Ok(())
+    }
+
+    pub fn read_from_string(&mut self, s: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let settings: SettingsFromYaml = serde_yaml::from_str(s)?;
+        self.merge_with(settings);
+
+        Ok(())
+    }
+
+    pub fn merge_with(&mut self, other: SettingsFromYaml) {
+        if other.global.is_some() {
+            self.global = other.global.unwrap();
+        }
+
+        // copy rules at the beginning, so have priority over default rules
+        let mut other_rules = other.rules.clone();
+        other_rules.extend(self.rules.clone());
+
+        self.rules = other_rules
     }
 }
 
@@ -185,7 +236,8 @@ mod tests {
 
     #[test]
     fn test_parse_settings() {
-        let settings = Settings::read_from_yaml("settings.yaml").unwrap();
+        let mut settings = Settings::new();
+        settings.read_from_yaml("settings.yaml").unwrap();
         println!("{:#?}", settings);
     }
 }

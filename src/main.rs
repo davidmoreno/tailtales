@@ -17,8 +17,6 @@ mod tuichrome;
 fn main() {
     let mut tui_chrome = tuichrome::TuiChrome::new().expect("could not create TuiChrome");
     let start_parse_time = time::Instant::now();
-    tui_chrome.state.settings =
-        Settings::read_from_yaml("settings.yaml").expect("Failed to read settings from YAML");
 
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {

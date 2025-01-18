@@ -1,5 +1,4 @@
 use crate::ast;
-use crate::ast::AST;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::recordlist;
@@ -140,7 +139,14 @@ impl TuiChrome {
                 .map(|column| {
                     let binding = "".to_string();
                     let value = record.data.get(&column.name).unwrap_or(&binding);
-                    let cell = Cell::from(value.clone());
+                    let cell =
+                        Cell::from(Line::from(value.clone()).alignment(match column.align {
+                            crate::settings::Alignment::Left => ratatui::layout::Alignment::Left,
+                            crate::settings::Alignment::Center => {
+                                ratatui::layout::Alignment::Center
+                            }
+                            crate::settings::Alignment::Right => ratatui::layout::Alignment::Right,
+                        }));
                     cell
                 })
                 .collect();
@@ -150,7 +156,7 @@ impl TuiChrome {
             let row = if record.index == state.position {
                 Row::new(cells).style(Style::from(settings.global.colors.highlight))
             } else {
-                Row::new(cells)
+                Row::new(cells).style(Style::from(settings.global.colors.normal))
             };
 
             rows.push(row);
@@ -172,93 +178,93 @@ impl TuiChrome {
         table
     }
 
-    pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
-        let height = size.height as usize - 2;
-        let width = size.width as usize;
-        let start = state.scroll_offset_top;
+    // pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
+    //     let height = size.height as usize - 2;
+    //     let width = size.width as usize;
+    //     let start = state.scroll_offset_top;
 
-        let mut lines: Vec<Line> = vec![];
+    //     let mut lines: Vec<Line> = vec![];
 
-        let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
-        for record in state.records.visible_records
-            [start..std::cmp::min(start + height, state.records.visible_records.len())]
-            .iter()
-        {
-            let style = Self::get_style_for_record(record, state, &state.search_ast);
+    //     let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
+    //     for record in state.records.visible_records
+    //         [start..std::cmp::min(start + height, state.records.visible_records.len())]
+    //         .iter()
+    //     {
+    //         let style = Self::get_style_for_record(record, state, &state.search_ast);
 
-            let line = Self::render_record_line(
-                record.original.as_str(),
-                state.search.as_str(),
-                style,
-                style_hightlight,
-                width,
-            );
-            // add white space to fill the line
+    //         let line = Self::render_record_line(
+    //             record.original.as_str(),
+    //             state.search.as_str(),
+    //             style,
+    //             style_hightlight,
+    //             width,
+    //         );
+    //         // add white space to fill the line
 
-            lines.push(line);
-        }
+    //         lines.push(line);
+    //     }
 
-        let text = Text::from(lines);
-        let ret = Paragraph::new(text).scroll((0, state.scroll_offset_left as u16));
+    //     let text = Text::from(lines);
+    //     let ret = Paragraph::new(text).scroll((0, state.scroll_offset_left as u16));
 
-        ret
-    }
+    //     ret
+    // }
 
-    pub fn get_style_for_record<'a>(
-        record: &'a record::Record,
-        state: &TuiState,
-        search: &Option<AST>,
-    ) -> Style {
-        let settings = &state.settings;
-        let current_record = state.position;
-        let current_index = record.index;
+    // pub fn get_style_for_record<'a>(
+    //     record: &'a record::Record,
+    //     state: &TuiState,
+    //     search: &Option<AST>,
+    // ) -> Style {
+    //     let settings = &state.settings;
+    //     let current_record = state.position;
+    //     let current_index = record.index;
 
-        if current_index == current_record {
-            return settings.global.colors.highlight.into();
-        } else if search.is_some() && record.matches(&search.as_ref().unwrap()) {
-            return settings.global.colors.normal.into();
-        }
-        Style::default().bg(Color::Black).fg(Color::White)
-    }
+    //     if current_index == current_record {
+    //         return settings.global.colors.highlight.into();
+    //     } else if search.is_some() && record.matches(&search.as_ref().unwrap()) {
+    //         return settings.global.colors.normal.into();
+    //     }
+    //     Style::default().bg(Color::Black).fg(Color::White)
+    // }
 
-    pub fn render_record_line<'a>(
-        record: &'a str,
-        search: &'a str,
-        style: Style,
-        style_hightlight: Style,
-        width: usize,
-    ) -> Line<'a> {
-        let mut spans = vec![];
+    // pub fn render_record_line<'a>(
+    //     record: &'a str,
+    //     search: &'a str,
+    //     style: Style,
+    //     style_hightlight: Style,
+    //     width: usize,
+    // ) -> Line<'a> {
+    //     let mut spans = vec![];
 
-        let parts = if search == "" {
-            vec![record]
-        } else {
-            record.split(search).collect()
-        };
+    //     let parts = if search == "" {
+    //         vec![record]
+    //     } else {
+    //         record.split(search).collect()
+    //     };
 
-        if record.starts_with(search) {
-            spans.push(Span::styled(search, style_hightlight));
-        }
+    //     if record.starts_with(search) {
+    //         spans.push(Span::styled(search, style_hightlight));
+    //     }
 
-        for part in parts[0..parts.len() - 1].iter() {
-            spans.push(Span::styled(*part, style));
-            spans.push(Span::styled(search, style_hightlight));
-        }
+    //     for part in parts[0..parts.len() - 1].iter() {
+    //         spans.push(Span::styled(*part, style));
+    //         spans.push(Span::styled(search, style_hightlight));
+    //     }
 
-        if parts[parts.len() - 1] == search {
-            spans.push(Span::styled(search, style_hightlight));
-        } else {
-            spans.push(Span::styled(parts[parts.len() - 1], style));
-        }
+    //     if parts[parts.len() - 1] == search {
+    //         spans.push(Span::styled(search, style_hightlight));
+    //     } else {
+    //         spans.push(Span::styled(parts[parts.len() - 1], style));
+    //     }
 
-        // must be i32 to void underflow
-        let remaining = width as i32 - record.len() as i32;
-        if remaining > 0 {
-            spans.push(Span::styled(" ".repeat(remaining as usize), style));
-        }
+    //     // must be i32 to void underflow
+    //     let remaining = width as i32 - record.len() as i32;
+    //     if remaining > 0 {
+    //         spans.push(Span::styled(" ".repeat(remaining as usize), style));
+    //     }
 
-        Line::from(spans)
-    }
+    //     Line::from(spans)
+    // }
 
     pub fn render_record<'a>(state: &TuiState, record: &'a record::Record) -> Paragraph<'a> {
         let settings = &state.settings;
