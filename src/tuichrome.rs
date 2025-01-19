@@ -150,7 +150,15 @@ impl TuiChrome {
                     cell
                 })
                 .collect();
-            let cell = Cell::from(record.original.clone());
+            let vscroll_left = min(
+                max(0, record.original.len() as i32),
+                max(0, state.scroll_offset_left as i32),
+            ) as usize;
+            let vscroll_right: usize = min(
+                record.original.len() as i32,
+                state.scroll_offset_left as i32 + size.width as i32,
+            ) as usize;
+            let cell = Cell::from(String::from(&record.original[vscroll_left..vscroll_right]));
             cells.push(cell);
 
             let row = if record.index == state.position {
@@ -444,24 +452,23 @@ impl TuiChrome {
             }
             KeyCode::Home => {
                 self.set_position(0);
+                self.set_vposition(0);
             }
             KeyCode::End => {
                 self.set_position(usize::max_value());
             }
             KeyCode::Right if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                self.state.scroll_offset_left += 10;
+                self.set_vposition(self.state.scroll_offset_left as i32 + 10);
             }
             KeyCode::Left if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                self.state.scroll_offset_left =
-                    max(0, self.state.scroll_offset_left as i32 - 10) as usize;
+                self.set_vposition(self.state.scroll_offset_left as i32 - 10);
             }
 
             KeyCode::Right => {
-                self.state.scroll_offset_left += 1;
+                self.set_vposition(self.state.scroll_offset_left as i32 + 1);
             }
             KeyCode::Left => {
-                self.state.scroll_offset_left =
-                    max(0, self.state.scroll_offset_left as i32 - 1) as usize;
+                self.set_vposition(self.state.scroll_offset_left as i32 - 1);
             }
 
             KeyCode::Char('n') => {
@@ -667,6 +674,14 @@ impl TuiChrome {
             self.state.position = position as usize;
         }
         self.ensure_visible(self.state.position);
+    }
+
+    pub fn set_vposition(&mut self, position: i32) {
+        if position < 0 {
+            self.state.scroll_offset_left = 0;
+        } else {
+            self.state.scroll_offset_left = position as usize;
+        }
     }
 
     pub fn run(&mut self) {
