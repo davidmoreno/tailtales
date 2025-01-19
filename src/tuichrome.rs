@@ -425,8 +425,7 @@ impl TuiChrome {
             // G go to number position
             KeyCode::Char('G') => {
                 let number = self.state.number.parse::<usize>().unwrap_or(0);
-                self.state.position = number;
-                self.ensure_visible(number);
+                self.set_position(number);
                 self.state.number.clear();
             }
 
@@ -444,12 +443,10 @@ impl TuiChrome {
                 self.move_selection(10);
             }
             KeyCode::Home => {
-                self.state.position = 0;
-                self.ensure_visible(0);
+                self.set_position(0);
             }
             KeyCode::End => {
-                self.state.position = self.state.records.visible_records.len() - 1;
-                self.ensure_visible(self.state.records.visible_records.len() - 1);
+                self.set_position(usize::max_value());
             }
             KeyCode::Right if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 self.state.scroll_offset_left += 10;
@@ -521,55 +518,54 @@ impl TuiChrome {
     }
 
     pub fn search_next(&mut self) {
-        if self.state.position >= self.state.records.visible_records.len() {
-            self.state.position = 0;
-        } else {
-            self.state.position += 1;
+        let current = self.state.position;
+        self.set_position_wrap(self.state.position as i32 + 1);
+        if !self.search_fwd() {
+            // if not found, go back to the original position
+            self.set_position(current);
         }
-        self.search_fwd();
     }
 
-    pub fn search_fwd(&mut self) {
+    pub fn search_fwd(&mut self) -> bool {
         let search_ast = self.state.search_ast.as_ref();
         if search_ast.is_none() {
-            return;
+            return false;
         }
         let search_ast = search_ast.unwrap();
         let mut current = self.state.position;
 
         let maybe_position = self.state.records.search_forward(search_ast, current);
         if maybe_position.is_none() {
-            return;
+            return false;
         }
         current = maybe_position.unwrap();
-        self.state.position = current;
-        self.ensure_visible(current);
+        self.set_position(current);
+        true
     }
 
     pub fn search_prev(&mut self) {
-        if self.state.position == 0 {
-            self.state.position = self.state.records.visible_records.len() - 1;
-        } else {
-            self.state.position -= 1;
+        let current = self.state.position;
+        self.set_position_wrap(self.state.position as i32 - 1);
+        if !self.search_bwd() {
+            self.set_position(current);
         }
-        self.search_bwd();
     }
 
-    pub fn search_bwd(&mut self) {
+    pub fn search_bwd(&mut self) -> bool {
         let search_ast = self.state.search_ast.as_ref();
         if search_ast.is_none() {
-            return;
+            return false;
         }
         let search_ast = search_ast.unwrap();
         let mut current = self.state.position;
 
         let maybe_position = self.state.records.search_backwards(search_ast, current);
         if maybe_position.is_none() {
-            return;
+            return false;
         }
         current = maybe_position.unwrap();
-        self.state.position = current;
-        self.ensure_visible(current);
+        self.set_position(current);
+        true
     }
 
     pub fn handle_filter_mode(&mut self, key_event: KeyEvent) {
@@ -605,8 +601,7 @@ impl TuiChrome {
         match parsed {
             Ok(parsed) => {
                 self.state.records.filter_parallel(parsed);
-                self.state.position = 0;
-                self.ensure_visible(self.state.position);
+                self.set_position(0);
             }
             Err(_err) => {
                 // panic!("TODO show error parsing: {}", err);
@@ -628,8 +623,7 @@ impl TuiChrome {
         }
         current = new;
 
-        self.state.position = current as usize;
-        self.ensure_visible(current as usize);
+        self.set_position(current as usize);
     }
 
     pub fn ensure_visible(&mut self, current: usize) {
@@ -650,6 +644,29 @@ impl TuiChrome {
         }
 
         self.state.scroll_offset_top = scroll_offset as usize;
+    }
+
+    pub fn set_position(&mut self, position: usize) {
+        if position >= self.state.records.visible_records.len() {
+            self.state.position = self.state.records.visible_records.len() - 1;
+        } else {
+            self.state.position = position;
+        }
+        self.ensure_visible(self.state.position);
+    }
+
+    pub fn set_position_wrap(&mut self, position: i32) {
+        let max = self.state.records.visible_records.len() as i32;
+        if max <= 1 {
+            self.state.position = 0
+        } else if position >= max {
+            self.state.position = 0;
+        } else if position < 0 {
+            self.state.position = (max - 1) as usize;
+        } else {
+            self.state.position = position as usize;
+        }
+        self.ensure_visible(self.state.position);
     }
 
     pub fn run(&mut self) {
