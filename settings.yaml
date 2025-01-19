@@ -29,8 +29,14 @@ global:
       value: yellow black
       border: green black
 
-    # details_highlight: black green
-    # gutter: black yellow
+default_arguments:
+  - "!journalctl"
+  - -f
+  - --since
+  - today
+
+  # details_highlight: black green
+  # gutter: black yellow
 
 rules:
   - name: apache

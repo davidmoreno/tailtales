@@ -10,6 +10,8 @@ pub struct Settings {
     pub global: GlobalSettings,
     #[serde(default)]
     pub rules: Vec<RulesSettings>,
+    #[serde(default)]
+    pub default_arguments: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -18,6 +20,8 @@ pub struct SettingsFromYaml {
     pub global: Option<GlobalSettings>,
     #[serde(default)]
     pub rules: Vec<RulesSettings>,
+    #[serde(default)]
+    pub default_arguments: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -199,6 +203,10 @@ impl Settings {
     pub fn merge_with(&mut self, other: SettingsFromYaml) {
         if other.global.is_some() {
             self.global = other.global.unwrap();
+        }
+
+        if other.default_arguments.len() > 0 {
+            self.default_arguments = other.default_arguments.clone();
         }
 
         // copy rules at the beginning, so have priority over default rules

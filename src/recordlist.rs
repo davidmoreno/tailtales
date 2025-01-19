@@ -3,6 +3,7 @@ use rayon::{prelude::*, spawn};
 use std::{
     io::{BufRead, Seek},
     path::Path,
+    process::Stdio,
     sync::mpsc,
 };
 
@@ -38,7 +39,10 @@ impl RecordList {
     // }
 
     pub fn readfile_parallel(&mut self, filename: &str, tx: mpsc::Sender<TuiEvent>) {
-        let file = std::fs::File::open(filename).expect("could not open file");
+        let file = match std::fs::File::open(filename) {
+            Ok(file) => file,
+            Err(_error) => panic!("Could not open file={:?}", filename),
+        };
         let mut reader = std::io::BufReader::new(file);
         let file_size = reader.seek(std::io::SeekFrom::End(0)).unwrap();
         reader.seek(std::io::SeekFrom::Start(0)).unwrap();
@@ -134,6 +138,27 @@ impl RecordList {
             let record = record.set_line_number(self.visible_records.len());
             self.visible_records.push(record);
         }
+    }
+
+    // Executes a command line program and read the output. Waits as in readfile_stdint to send new lines.
+    pub fn readfile_exec(&mut self, args: &Vec<&str>, tx: mpsc::Sender<TuiEvent>) {
+        let output = std::process::Command::new(args[0])
+            .args(&args[1..])
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("could not execute command");
+
+        spawn(move || {
+            let stdout = std::io::BufReader::new(output.stdout.expect("could not read stdout"));
+            for line in stdout.lines() {
+                if let Ok(line) = line {
+                    let record = Record::new(line);
+                    tx.send(TuiEvent::NewRecord(record)).unwrap();
+                } else {
+                    return;
+                }
+            }
+        })
     }
 
     // pub fn filter(&mut self, search: AST) {
