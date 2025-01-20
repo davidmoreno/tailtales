@@ -72,6 +72,15 @@ pub fn clean_ansi_text(orig: &str) -> String {
             if c == 'm' {
                 in_ansi_escape = false;
             }
+        }
+        if c == '\t' {
+            // I need to put as many spaces to make for a multiple of 8 spaces
+            let spaces = 8 - text.len() % 8;
+            for _ in 0..spaces {
+                text.push(' ');
+            }
+        } else if c == '\r' {
+            // Ignore
         } else {
             if c == 0o33 as char {
                 in_ansi_escape = true;
