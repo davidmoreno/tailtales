@@ -5,6 +5,7 @@ use crate::recordlist;
 use crate::settings::RulesSettings;
 use crate::settings::Settings;
 
+use crossterm::terminal::enable_raw_mode;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
 use std::cmp::min;
@@ -492,6 +493,10 @@ impl TuiChrome {
             }
             KeyCode::F(1) => {
                 self.open_help();
+            }
+            // control + L
+            KeyCode::Char('l') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                self.terminal.clear().unwrap();
             }
 
             _ => {}
