@@ -6,6 +6,7 @@ use crate::settings::RulesSettings;
 use crate::settings::Settings;
 
 use crossterm::terminal::enable_raw_mode;
+use crossterm::ExecutableCommand;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
 use std::cmp::min;
@@ -116,6 +117,12 @@ impl TuiChrome {
                 }
                 rect.render_widget(footer, chunks[2]);
             })
+            .unwrap();
+
+        // set cursor at the begining of the last line
+        self.terminal
+            .backend_mut()
+            .execute(crossterm::cursor::MoveTo(0, size.height - 1))
             .unwrap();
 
         Ok(())
