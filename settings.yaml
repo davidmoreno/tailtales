@@ -29,15 +29,22 @@ global:
       value: yellow black
       border: green black
 
+# this is the URL to open when press F1. The {} will be replaced with the selected text
+help_url: https://duckduckgo.com/?q={}
+# help_url: https://www.perplexity.ai/search/new?q={}
+# help_url: https://google.com/search/?q={}
+# help_url: https://chatgpt.com/?q={}
+
+# If called without any argument, this is what it opens.
+# With ! at the begining it will execute the command with the rest of the argumments
 default_arguments:
   - "!journalctl"
   - -f
   - --since
   - today
 
-  # details_highlight: black green
-  # gutter: black yellow
-
+# Uses the file_patterns to determine which rules to apply
+# Can be expanded at your ~/.config/tailtales/settings.yaml
 rules:
   - name: apache
     file_patterns:

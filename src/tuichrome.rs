@@ -490,6 +490,9 @@ impl TuiChrome {
             KeyCode::Char('/') => {
                 self.state.mode = Mode::Search;
             }
+            KeyCode::F(1) => {
+                self.open_help();
+            }
 
             _ => {}
         }
@@ -682,6 +685,37 @@ impl TuiChrome {
         } else {
             self.state.scroll_offset_left = position as usize;
         }
+    }
+
+    pub fn open_help(&self) {
+        let line = &self
+            .state
+            .records
+            .visible_records
+            .get(self.state.position)
+            .unwrap()
+            .original;
+
+        // remove host name
+        let hostname = match hostname::get() {
+            Ok(name) => name.to_string_lossy().into_owned(),
+            Err(_) => String::from("unknown"),
+        };
+        let line = line.replace(&hostname, "");
+        // remove ips to xxx.xxx.xxx.xx
+        let line = regex::Regex::new(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
+            .unwrap()
+            .replace_all(&line, "xxx.xxx.xxx.xxx");
+        // remove username
+        let username = whoami::username();
+        let line = line.replace(&username, "username");
+
+        // open xdg-open
+        let urlencodedline = urlencoding::encode(&line);
+        let _output = std::process::Command::new("xdg-open")
+            .arg(self.state.settings.help_url.replace("{}", &urlencodedline))
+            .output()
+            .expect("failed to execute process");
     }
 
     pub fn run(&mut self) {

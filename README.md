@@ -19,6 +19,13 @@ and easy finding information in the logs.
 - `/` Search
 - `f` Filter
 - `q` Quit
+- `F1` Open a web browser to search for the current selected line (slightly anonymzed).
+- `numbers + G` Goto that line number
+
+## Settings
+
+It comes with some sensible default settings from the settings.yaml file. It can overwriten, by section at
+`~/.config/tailtales/settings.yaml` or the appropiate XDG config directory. See the file for further information.
 
 ## Search / filter language
 

@@ -12,6 +12,8 @@ pub struct Settings {
     pub rules: Vec<RulesSettings>,
     #[serde(default)]
     pub default_arguments: Vec<String>,
+    #[serde(default)]
+    pub help_url: String,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -22,6 +24,8 @@ pub struct SettingsFromYaml {
     pub rules: Vec<RulesSettings>,
     #[serde(default)]
     pub default_arguments: Vec<String>,
+    #[serde(default)]
+    pub help_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -207,6 +211,9 @@ impl Settings {
 
         if other.default_arguments.len() > 0 {
             self.default_arguments = other.default_arguments.clone();
+        }
+        if other.help_url.is_some() {
+            self.help_url = other.help_url.unwrap();
         }
 
         // copy rules at the beginning, so have priority over default rules
