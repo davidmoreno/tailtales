@@ -145,15 +145,31 @@ impl RecordList {
         let output = std::process::Command::new(args[0])
             .args(&args[1..])
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("could not execute command");
 
+        let stdout = std::io::BufReader::new(output.stdout.expect("could not read stdout"));
+        let tx_stdout = tx.clone();
+        let tx_stderr = tx;
         spawn(move || {
-            let stdout = std::io::BufReader::new(output.stdout.expect("could not read stdout"));
             for line in stdout.lines() {
                 if let Ok(line) = line {
                     let record = Record::new(line);
-                    tx.send(TuiEvent::NewRecord(record)).unwrap();
+                    let record = record.set_data("filename", "stdout".into());
+                    tx_stdout.send(TuiEvent::NewRecord(record)).unwrap();
+                } else {
+                    return;
+                }
+            }
+        });
+        let stderr = std::io::BufReader::new(output.stderr.expect("could not read stderr"));
+        spawn(move || {
+            for line in stderr.lines() {
+                if let Ok(line) = line {
+                    let record = Record::new(line);
+                    let record = record.set_data("filename", "stderr".into());
+                    tx_stderr.send(TuiEvent::NewRecord(record)).unwrap();
                 } else {
                     return;
                 }
