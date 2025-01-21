@@ -5,7 +5,6 @@ use crate::recordlist;
 use crate::settings::RulesSettings;
 use crate::settings::Settings;
 
-use crossterm::terminal::enable_raw_mode;
 use crossterm::ExecutableCommand;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
