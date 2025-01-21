@@ -668,8 +668,11 @@ impl TuiChrome {
     }
 
     pub fn set_position(&mut self, position: usize) {
-        if position >= self.state.records.visible_records.len() {
-            self.state.position = self.state.records.visible_records.len() - 1;
+        let visible_len = self.state.records.visible_records.len();
+        if visible_len == 0 {
+            self.state.position = 0;
+        } else if position >= visible_len {
+            self.state.position = visible_len - 1;
         } else {
             self.state.position = position;
         }
