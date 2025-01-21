@@ -333,7 +333,9 @@ pub enum Value {
 
 pub fn execute(ast: &AST, record: &Record) -> Value {
     match ast {
-        AST::String(s) | AST::Variable(s) => Value::Boolean(record.original.contains(s)),
+        AST::String(s) | AST::Variable(s) => {
+            Value::Boolean(record.original.to_lowercase().contains(&s.to_lowercase()))
+        }
         _ => execute_rec(ast, record),
     }
 }
