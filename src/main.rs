@@ -14,6 +14,7 @@ mod record;
 mod recordlist;
 mod regex_cache;
 mod settings;
+mod state;
 mod tuichrome;
 
 fn main() {
