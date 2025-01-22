@@ -1,6 +1,6 @@
 use ratatui::style::{Color, Style};
 use serde::{de::Deserializer, Deserialize};
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 // singleton load settings
 
@@ -14,6 +14,8 @@ pub struct Settings {
     pub default_arguments: Vec<String>,
     #[serde(default)]
     pub help_url: String,
+    #[serde(default)]
+    pub keybindings: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -26,6 +28,8 @@ pub struct SettingsFromYaml {
     pub default_arguments: Vec<String>,
     #[serde(default)]
     pub help_url: Option<String>,
+    #[serde(default)]
+    pub keybindings: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -216,9 +220,12 @@ impl Settings {
             self.help_url = other.help_url.unwrap();
         }
 
-        // copy rules at the beginning, so have priority over default rules
         let mut other_rules = other.rules.clone();
         other_rules.extend(self.rules.clone());
+
+        if other.keybindings.is_some() {
+            self.keybindings.extend(other.keybindings.unwrap());
+        }
 
         self.rules = other_rules
     }

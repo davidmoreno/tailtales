@@ -9,6 +9,7 @@ use crossterm::ExecutableCommand;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
 use std::cmp::min;
+use std::fmt::format;
 use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
@@ -17,6 +18,8 @@ pub enum Mode {
     Normal,
     Search,
     Filter,
+    Command,
+    Warning,
 }
 
 pub struct TuiState {
@@ -34,6 +37,8 @@ pub struct TuiState {
     pub filter: String,
     pub search_ast: Option<ast::AST>,
     pub number: String,
+    pub command: String,
+    pub warning: String,
 }
 
 pub struct TuiChrome {
@@ -64,6 +69,8 @@ impl TuiChrome {
                 filter: String::new(),
                 search_ast: None,
                 number: String::new(),
+                command: String::new(),
+                warning: String::new(),
             },
             terminal,
             tx,
@@ -324,23 +331,38 @@ impl TuiChrome {
             Mode::Normal => Self::render_footer_normal(state),
             Mode::Search => Self::render_footer_search(state),
             Mode::Filter => Self::render_footer_filter(state),
+            Mode::Command => Self::render_footer_command(state),
+            Mode::Warning => Self::render_footer_warning(state),
         }
     }
 
     pub fn render_footer_search(state: &TuiState) -> Block {
         Block::default()
-            .title(format!(
-                "Search: {}█  AST: {:?}",
-                state.search, state.search_ast
-            ))
+            .title(format!("/{}█", state.search))
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(Color::Yellow))
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
         Block::default()
-            .title(format!("Filter: {}█", state.filter))
+            .title(format!("|{}█", state.filter))
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(Color::Yellow))
+    }
+    pub fn render_footer_command(state: &TuiState) -> Block {
+        Block::default()
+            .title(format!(":{}█", state.command))
+            .borders(Borders::BOTTOM)
+            .border_style(Style::default().fg(Color::Yellow))
+    }
+    pub fn render_footer_warning(state: &TuiState) -> Block {
+        Block::default()
+            .title(format!("Warning: {}", state.warning))
+            .style(
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::LightYellow)
+                    .bold(),
+            )
     }
     pub fn render_footer_normal(state: &TuiState) -> Block {
         let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
@@ -413,105 +435,44 @@ impl TuiChrome {
             Mode::Filter => {
                 self.handle_filter_mode(key_event);
             }
+            Mode::Command => {
+                self.handle_command_mode(key_event);
+            }
+            Mode::Warning => {
+                // Any key will dismiss the warning
+                self.state.mode = Mode::Normal;
+            }
         }
     }
 
     pub fn handle_normal_mode(&mut self, key_event: KeyEvent) {
-        match key_event.code {
-            KeyCode::Char('q') => {
-                self.state.running = false;
-            }
-            KeyCode::Char('j') => {
-                self.move_selection(1);
-            }
-            KeyCode::Char('k') => {
-                self.move_selection(-1);
-            }
-            KeyCode::Char('d') => {
-                self.move_selection(10);
-            }
-            KeyCode::Char('u') => {
-                self.move_selection(-10);
-            }
+        let keyname: &str = match key_event.code {
             // numbers add to number
             KeyCode::Char(c) if c.is_digit(10) => {
                 self.state.number.push(c);
+                return;
             }
-            // G go to number position
-            KeyCode::Char('G') => {
-                let number = self.state.number.parse::<usize>().unwrap_or(0);
-                self.set_position(number);
-                self.state.number.clear();
-            }
+            KeyCode::Char(x) => &String::from(x).to_lowercase(),
+            KeyCode::F(x) => &String::from(x as char),
 
-            // Keycode up
-            KeyCode::Up => {
-                self.move_selection(-1);
-            }
-            KeyCode::Down => {
-                self.move_selection(1);
-            }
-            KeyCode::PageUp => {
-                self.move_selection(-10);
-            }
-            KeyCode::PageDown => {
-                self.move_selection(10);
-            }
-            KeyCode::Home => {
-                self.set_position(0);
-                self.set_vposition(0);
-            }
-            KeyCode::End => {
-                self.set_position(usize::max_value());
-            }
-            KeyCode::Right if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                self.set_vposition(self.state.scroll_offset_left as i32 + 10);
-            }
-            KeyCode::Left if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                self.set_vposition(self.state.scroll_offset_left as i32 - 10);
-            }
+            x => &x.to_string().to_lowercase(),
+        };
+        let keyname = if key_event.modifiers.contains(event::KeyModifiers::SHIFT) {
+            &format!("shift-{}", keyname)
+        } else {
+            keyname
+        };
+        let keyname = if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
+            &format!("control-{}", keyname)
+        } else {
+            keyname
+        };
 
-            KeyCode::Right => {
-                self.set_vposition(self.state.scroll_offset_left as i32 + 1);
-            }
-            KeyCode::Left => {
-                self.set_vposition(self.state.scroll_offset_left as i32 - 1);
-            }
-
-            KeyCode::Char('n') => {
-                self.search_next();
-            }
-            KeyCode::Char('N') => {
-                self.search_prev();
-            }
-            KeyCode::Char('f') => {
-                self.state.mode = Mode::Filter;
-            }
-            KeyCode::F(3) if key_event.modifiers.contains(event::KeyModifiers::SHIFT) => {
-                self.search_prev();
-            }
-            KeyCode::F(3) => {
-                self.search_next();
-            }
-            // /
-            KeyCode::Char('/') => {
-                self.state.mode = Mode::Search;
-            }
-            KeyCode::F(1) => {
-                self.open_help();
-            }
-            // control + L
-            KeyCode::Char('l') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                self.terminal.clear().unwrap();
-            }
-            // supr
-            KeyCode::Delete if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                self.state.records.clear();
-                self.state.position = 0;
-                self.state.scroll_offset_top = 0;
-                self.state.scroll_offset_left = 0;
-            }
-            _ => {}
+        if self.state.settings.keybindings.contains_key(keyname) {
+            self.state.command = self.state.settings.keybindings[keyname].clone();
+            self.handle_command();
+        } else {
+            self.set_warning(format!("Unknown keybinding: {:?}", keyname));
         }
     }
 
@@ -634,6 +595,103 @@ impl TuiChrome {
                 // panic!("TODO show error parsing: {}", err);
             }
         }
+    }
+
+    pub fn handle_command_mode(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Esc => {
+                self.state.mode = Mode::Normal;
+            }
+            KeyCode::Char('\n') => {
+                self.state.mode = Mode::Normal;
+                self.handle_command();
+            }
+            KeyCode::Char(c) => {
+                self.state.command.push(c);
+            }
+            KeyCode::Backspace => {
+                self.state.command.pop();
+            }
+            KeyCode::Enter => {
+                self.state.mode = Mode::Normal;
+                self.handle_command();
+            }
+            _ => {}
+        }
+    }
+
+    pub fn handle_command(&mut self) {
+        let command = self.state.command.trim();
+        match command {
+            "quit" => {
+                self.state.running = false;
+            }
+            "clear" => {
+                self.state.records.clear();
+                self.state.position = 0;
+                self.state.scroll_offset_top = 0;
+                self.state.scroll_offset_left = 0;
+            }
+            "help" => {
+                self.open_help();
+            }
+            "command" => {
+                self.state.command = String::new();
+                self.state.mode = Mode::Command;
+            }
+            "search" => {
+                self.state.mode = Mode::Search;
+            }
+            "filter" => {
+                self.state.mode = Mode::Filter;
+            }
+            "search_next" => {
+                self.search_next();
+            }
+            "search_prev" => {
+                self.search_prev();
+            }
+            "move_up" => {
+                self.move_selection(-1);
+            }
+            "move_down" => {
+                self.move_selection(1);
+            }
+            "move_left" => {
+                self.set_vposition(self.state.scroll_offset_left as i32 - 1);
+            }
+            "move_right" => {
+                self.set_vposition(self.state.scroll_offset_left as i32 + 1);
+            }
+            "move_pageup" => {
+                self.move_selection(-10);
+            }
+            "move_pagedown" => {
+                self.move_selection(10);
+            }
+            "move_top" => {
+                self.set_position(0);
+                self.set_vposition(0);
+            }
+            "move_bottom" => {
+                self.set_position(usize::max_value());
+            }
+            "clear_records" => {
+                self.state.records.clear();
+                self.set_position(0);
+                self.set_vposition(0);
+            }
+            "warning" => {
+                self.set_warning(format!("Warning: {}", command));
+            }
+            _ => {
+                self.set_warning(format!("Unknown command: {}", command));
+            }
+        }
+    }
+    pub fn set_warning(&mut self, command: String) {
+        self.state.warning = format!("Unknown command: {}", command);
+        self.state.mode = Mode::Warning;
     }
 
     pub fn move_selection(&mut self, delta: i32) {

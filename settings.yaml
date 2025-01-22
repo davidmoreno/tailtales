@@ -43,6 +43,35 @@ default_arguments:
   - --since
   - today
 
+keybindings:
+  ":": "command"
+  "|": "filter"
+  "f": "filter"
+  "/": "search"
+  "n": "search_next"
+  "shift-n": "search_prev"
+  "control-del": "clear_records"
+  "control-l": "refresh"
+  "F1": "external_help"
+  "h": "help"
+  "q": "quit"
+  "o": "open"
+
+  "j": "move_down"
+  "k": "move_up"
+  "h": "move_left"
+  "l": "move_right"
+  "up": "move_up"
+  "down": "move_down"
+  "left": "move_left"
+  "right": "move_right"
+  "pageup": "move_pageup"
+  "pagedown": "move_pagedown"
+  "home": "move_top"
+  "end": "move_bottom"
+  "G": "goto_line"
+
+
 # Uses the file_patterns to determine which rules to apply
 # Can be expanded at your ~/.config/tailtales/settings.yaml
 rules:
