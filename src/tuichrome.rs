@@ -9,7 +9,6 @@ use crossterm::ExecutableCommand;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
 use std::cmp::min;
-use std::fmt::format;
 use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
