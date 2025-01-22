@@ -312,20 +312,17 @@ impl TuiChrome {
     pub fn render_footer_search(state: &TuiState) -> Block {
         Block::default()
             .title(format!("/{}█", state.search))
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::Yellow))
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
         Block::default()
             .title(format!("|{}█", state.filter))
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::Yellow))
     }
     pub fn render_footer_command(state: &TuiState) -> Block {
         Block::default()
             .title(format!(":{}█", state.command))
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(Color::Yellow))
+            .style(Style::default().fg(Color::Yellow))
     }
     pub fn render_footer_warning(state: &TuiState) -> Block {
         Block::default()
@@ -340,13 +337,13 @@ impl TuiChrome {
     pub fn render_footer_normal(state: &TuiState) -> Block {
         let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
         let position_hints = format!(
-            "Position {}. Visible {}. Total {}. Read time {}ms. Filter {:?}. Rules {}",
+            "line {} of {}. Read time {}ms. Filter {:?}. Rules {}. Total {} lines.",
             state.position,
             state.records.visible_records.len(),
-            state.records.all_records.len(),
             state.read_time.as_millis(),
             filter_ast,
-            state.current_rule.name
+            state.current_rule.name,
+            state.records.all_records.len(),
         );
 
         Block::default()
