@@ -98,6 +98,8 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
                 .records
                 .readfile_exec(&args, tui_chrome.tx.clone());
             return;
+        } else if filename.ends_with(".gz") {
+            tui_chrome.state.records.readfile_gz(&filename);
         } else {
             tui_chrome
                 .state

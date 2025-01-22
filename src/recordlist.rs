@@ -1,7 +1,7 @@
 use notify::Watcher;
 use rayon::{prelude::*, spawn};
 use std::{
-    io::{BufRead, Seek},
+    io::{BufRead, Read, Seek},
     path::Path,
     process::Stdio,
     sync::mpsc,
@@ -37,6 +37,34 @@ impl RecordList {
     //         self.add(Record::new(line, filename, line_number, &self.parsers));
     //     }
     // }
+
+    pub fn readfile_gz(&mut self, filename: &str) {
+        let file = match std::fs::File::open(filename) {
+            Ok(file) => file,
+            Err(_error) => panic!("Could not open file={:?}", filename),
+        };
+
+        let reader = std::io::BufReader::new(file);
+        let mut decoder = flate2::read::GzDecoder::new(reader);
+        let mut buffer = String::new();
+        decoder.read_to_string(&mut buffer).unwrap();
+
+        let lines: Vec<String> = buffer.lines().map(|line| line.to_string()).collect();
+        let records: Vec<Record> = lines
+            .par_iter()
+            .enumerate()
+            .map(|(line_number, line)| {
+                Record::new(line.clone())
+                    .set_data("filename", filename.to_string())
+                    .set_data("line_number", line_number.to_string())
+                    .parse(&self.parsers)
+            })
+            .collect();
+
+        self.visible_records = records.clone();
+        self.all_records.extend(records);
+        self.renumber();
+    }
 
     pub fn readfile_parallel(&mut self, filename: &str, tx: mpsc::Sender<TuiEvent>) {
         let file = match std::fs::File::open(filename) {
