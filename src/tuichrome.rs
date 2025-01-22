@@ -504,7 +504,13 @@ impl TuiChrome {
             KeyCode::Char('l') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 self.terminal.clear().unwrap();
             }
-
+            // supr
+            KeyCode::Delete if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                self.state.records.clear();
+                self.state.position = 0;
+                self.state.scroll_offset_top = 0;
+                self.state.scroll_offset_left = 0;
+            }
             _ => {}
         }
     }

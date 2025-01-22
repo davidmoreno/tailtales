@@ -264,4 +264,9 @@ impl RecordList {
     pub fn len(&self) -> usize {
         return self.visible_records.len();
     }
+
+    pub fn clear(&mut self) {
+        self.all_records.clear();
+        self.visible_records.clear();
+    }
 }
