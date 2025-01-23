@@ -19,23 +19,20 @@ impl Record {
         }
     }
 
-    pub fn set_data(mut self, key: &str, value: String) -> Self {
+    pub fn set_data(&mut self, key: &str, value: String) {
         self.data.insert(key.to_string(), value);
-        self
     }
     pub fn get(&self, key: &str) -> Option<&String> {
         self.data.get(key)
     }
 
-    pub fn set_line_number(mut self, line_number: usize) -> Self {
+    pub fn set_line_number(&mut self, line_number: usize) {
         self.index = line_number;
-        self
     }
 
-    pub fn parse(mut self, parsers: &Vec<Parser>) -> Self {
+    pub fn parse(&mut self, parsers: &Vec<Parser>) {
         let data = Record::parse_line(&self.original, parsers);
         self.data.extend(data);
-        self
     }
 
     pub fn parse_line(line: &str, parsers: &Vec<Parser>) -> HashMap<String, String> {

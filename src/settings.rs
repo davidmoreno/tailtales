@@ -44,6 +44,10 @@ pub struct GlobalColorSettings {
     pub normal: Style,
     #[serde(deserialize_with = "parse_style")]
     pub highlight: Style,
+    #[serde(deserialize_with = "parse_style")]
+    pub mark: Style,
+    #[serde(deserialize_with = "parse_style")]
+    pub mark_highlight: Style,
     pub details: DetailsColorSettings,
     pub table: TableColorSettings,
 }

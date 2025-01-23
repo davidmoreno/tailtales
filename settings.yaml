@@ -21,6 +21,8 @@ global:
   colors:
     normal: white black
     highlight: white darkgray
+    mark: yellow black
+    mark_highlight: black yellow
     table:
       header: black lightgreen
     details:
@@ -70,6 +72,8 @@ keybindings:
   "home": "move_top"
   "end": "move_bottom"
   "G": "goto_line"
+  " ": "mark"
+  "tab": "move_to_next_mark"
 
 
 # Uses the file_patterns to determine which rules to apply

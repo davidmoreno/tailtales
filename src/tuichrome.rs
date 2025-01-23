@@ -148,10 +148,18 @@ impl TuiChrome {
             let cell = Cell::from(String::from(&record.original[vscroll_left..vscroll_right]));
             cells.push(cell);
 
-            let row = if record.index == state.position {
-                Row::new(cells).style(Style::from(settings.global.colors.highlight))
-            } else {
-                Row::new(cells).style(Style::from(settings.global.colors.normal))
+            let is_selected = record.index == state.position;
+            let is_mark = record.get("mark").is_some();
+
+            let row = match (is_selected, is_mark) {
+                (true, true) => {
+                    Row::new(cells).style(Style::from(settings.global.colors.mark_highlight))
+                }
+                (true, false) => {
+                    Row::new(cells).style(Style::from(settings.global.colors.highlight))
+                }
+                (false, true) => Row::new(cells).style(Style::from(settings.global.colors.mark)),
+                (false, false) => Row::new(cells).style(Style::from(settings.global.colors.normal)),
             };
 
             rows.push(row);

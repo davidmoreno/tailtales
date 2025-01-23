@@ -161,6 +161,13 @@ impl TuiState {
             "warning" => {
                 self.set_warning(format!("Warning: {}", command));
             }
+            "mark" => {
+                self.records.mark(self.position);
+                self.set_position_wrap(self.position as i32 + 1);
+            }
+            "move_to_next_mark" => {
+                self.move_to_next_mark();
+            }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
             }
@@ -270,5 +277,20 @@ impl TuiState {
             .arg(self.settings.help_url.replace("{}", &urlencodedline))
             .output()
             .expect("failed to execute process");
+    }
+
+    pub fn move_to_next_mark(&mut self) {
+        let current = self.position;
+        let mut new = current + 1;
+        let max = self.records.visible_records.len();
+
+        while new < max {
+            if self.records.visible_records[new].get("mark").is_some() {
+                self.set_position(new);
+                return;
+            }
+            new += 1;
+        }
+        self.set_position(0);
     }
 }

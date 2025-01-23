@@ -54,10 +54,11 @@ impl RecordList {
             .par_iter()
             .enumerate()
             .map(|(line_number, line)| {
-                Record::new(line.clone())
-                    .set_data("filename", filename.to_string())
-                    .set_data("line_number", line_number.to_string())
-                    .parse(&self.parsers)
+                let mut record = Record::new(line.clone());
+                record.set_data("filename", filename.to_string());
+                record.set_data("line_number", line_number.to_string());
+                record.parse(&self.parsers);
+                record
             })
             .collect();
 
@@ -80,10 +81,11 @@ impl RecordList {
             .par_iter()
             .enumerate()
             .map(|(line_number, line)| {
-                Record::new(line.clone())
-                    .set_data("filename", filename.to_string())
-                    .set_data("line_number", line_number.to_string())
-                    .parse(&self.parsers)
+                let mut record = Record::new(line.clone());
+                record.set_data("filename", filename.to_string());
+                record.set_data("line_number", line_number.to_string());
+                record.parse(&self.parsers);
+                record
             })
             .collect();
 
@@ -133,9 +135,9 @@ impl RecordList {
         let mut line_number = 0;
         for line in reader.lines() {
             let line = line.expect("could not read line");
-            let record = Record::new(line.clone())
-                .set_data("filename", filename.to_string())
-                .set_line_number(line_number);
+            let mut record = Record::new(line.clone());
+            record.set_data("filename", filename.to_string());
+            record.set_line_number(line_number);
             tx.send(TuiEvent::NewRecord(record)).unwrap();
             line_number += 1;
         }
@@ -155,15 +157,14 @@ impl RecordList {
         });
     }
 
-    pub fn add(&mut self, record: Record) {
-        let record = record
-            .parse(&self.parsers)
-            .set_data("line_number", self.all_records.len().to_string());
+    pub fn add(&mut self, mut record: Record) {
+        record.parse(&self.parsers);
+        record.set_data("line_number", self.all_records.len().to_string());
 
         self.all_records.push(record.clone());
 
         if self.filter.is_none() || record.matches(&self.filter.as_ref().unwrap()) {
-            let record = record.set_line_number(self.visible_records.len());
+            record.set_line_number(self.visible_records.len());
             self.visible_records.push(record);
         }
     }
@@ -183,8 +184,8 @@ impl RecordList {
         spawn(move || {
             for line in stdout.lines() {
                 if let Ok(line) = line {
-                    let record = Record::new(line);
-                    let record = record.set_data("filename", "stdout".into());
+                    let mut record = Record::new(line);
+                    record.set_data("filename", "stdout".into());
                     tx_stdout.send(TuiEvent::NewRecord(record)).unwrap();
                 } else {
                     return;
@@ -195,8 +196,8 @@ impl RecordList {
         spawn(move || {
             for line in stderr.lines() {
                 if let Ok(line) = line {
-                    let record = Record::new(line);
-                    let record = record.set_data("filename", "stderr".into());
+                    let mut record = Record::new(line);
+                    record.set_data("filename", "stderr".into());
                     tx_stderr.send(TuiEvent::NewRecord(record)).unwrap();
                 } else {
                     return;
@@ -268,5 +269,14 @@ impl RecordList {
     pub fn clear(&mut self) {
         self.all_records.clear();
         self.visible_records.clear();
+    }
+
+    pub fn mark(&mut self, position: usize) {
+        if position < self.visible_records.len() {
+            self.visible_records
+                .get_mut(position)
+                .unwrap()
+                .set_data("mark", "true".into());
+        }
     }
 }
