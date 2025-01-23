@@ -168,6 +168,9 @@ impl TuiState {
             "move_to_next_mark" => {
                 self.move_to_next_mark();
             }
+            "move_to_prev_mark" => {
+                self.move_to_prev_mark();
+            }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
             }
@@ -281,16 +284,39 @@ impl TuiState {
 
     pub fn move_to_next_mark(&mut self) {
         let current = self.position;
-        let mut new = current + 1;
         let max = self.records.visible_records.len();
 
-        while new < max {
+        for new in current + 1..max {
             if self.records.visible_records[new].get("mark").is_some() {
                 self.set_position(new);
                 return;
             }
-            new += 1;
         }
-        self.set_position(0);
+        for new in 0..current {
+            if self.records.visible_records[new].get("mark").is_some() {
+                self.set_position(new);
+                return;
+            }
+        }
+        self.set_warning("mark not found".into());
+    }
+
+    pub fn move_to_prev_mark(&mut self) {
+        let current = self.position;
+        let max = self.records.visible_records.len();
+
+        for new in (0..current).rev() {
+            if self.records.visible_records[new].get("mark").is_some() {
+                self.set_position(new);
+                return;
+            }
+        }
+        for new in (current + 1..max).rev() {
+            if self.records.visible_records[new].get("mark").is_some() {
+                self.set_position(new);
+                return;
+            }
+        }
+        self.set_warning("mark not found".into());
     }
 }
