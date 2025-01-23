@@ -356,20 +356,77 @@ impl TuiChrome {
             )
     }
     pub fn render_footer_normal(state: &TuiState) -> Block {
-        let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
-        let position_hints = format!(
-            "line {} of {}. Read time {}ms. Filter {:?}. Rules {}. Total {} lines.",
-            state.position,
-            state.records.visible_records.len(),
-            state.read_time.as_millis(),
-            filter_ast,
-            state.current_rule.name,
-            state.records.all_records.len(),
-        );
+        // let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
+
+        // Blue for current line
+        // Black for max line
+        // Yellow for search
+        // Green for filter
+
+        let mut spans = vec![];
+
+        if state.search != "" {
+            spans.push(Span::styled(
+                " Search ",
+                Style::default().fg(Color::Black).bg(Color::Yellow),
+            ));
+            spans.push(Span::styled(
+                format!(" {} ", state.search),
+                Style::default().fg(Color::Yellow).bg(Color::Black),
+            ));
+        }
+
+        if state.filter != "" {
+            spans.push(Span::styled(
+                " Filter ",
+                Style::default().fg(Color::Black).bg(Color::Green),
+            ));
+            spans.push(Span::styled(
+                format!(" {} ", state.filter),
+                Style::default().fg(Color::Green).bg(Color::Black),
+            ));
+        }
+
+        spans.push(Span::styled(
+            " Line ",
+            Style::default().fg(Color::Black).bg(Color::Blue),
+        ));
+        spans.push(Span::styled(
+            format!(" {:5} ", state.position),
+            Style::default().fg(Color::Blue).bg(Color::Black),
+        ));
+        spans.push(Span::styled(
+            "/",
+            Style::default().fg(Color::Black).bg(Color::Blue),
+        ));
+        spans.push(Span::styled(
+            format!(" {:5} ", state.records.visible_records.len()),
+            Style::default().fg(Color::Blue).bg(Color::Black),
+        ));
+        spans.push(Span::styled(
+            " ",
+            Style::default().fg(Color::Black).bg(Color::Blue),
+        ));
+
+        let line = Line::from(spans);
 
         Block::default()
-            .title(position_hints)
-            .borders(Borders::BOTTOM)
+            .title(line)
+            .title_alignment(ratatui::layout::Alignment::Right)
+
+        // let position_hints = format!(
+        //     "line {} of {}. Read time {}ms. Filter {:?}. Rules {}. Total {} lines.",
+        //     state.position,
+        //     state.records.visible_records.len(),
+        //     state.read_time.as_millis(),
+        //     filter_ast,
+        //     state.current_rule.name,
+        //     state.records.all_records.len(),
+        // );
+
+        // Block::default()
+        //     .title(position_hints)
+        //     .borders(Borders::BOTTOM)
     }
 
     /**

@@ -57,7 +57,7 @@ keybindings:
   "F1": "external_help"
   "h": "help"
   "q": "quit"
-  "o": "open"
+  "o": "help"
 
   "j": "move_down"
   "k": "move_up"
