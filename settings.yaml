@@ -88,21 +88,23 @@ rules:
       # Common Log Format, see http://httpd.apache.org/docs/2.0/logs.html#common
       #  127.0.0.1 - frank [10/Oct/2000:13:55:36 -0700] "GET /apache_pb.gif HTTP/1.0" 200 2326
       - pattern <ip> - <user> [<timestamp>] "<method> <url> <protocol>" <status> <bytes>
-      - transform timestamp iso8601
+      # - transform timestamp iso8601
     filters:
       - name: errors
-        expression: status ~ "5\d\d"
-        highlight: white red
+        expression: status >= 500
+        highlight: red
       - name: not_found
         expression: status == 404
-        gutter: yellow
+        highlight: yellow
       - name: successful
         expression: status == 200
-        gutter: green
-      - name: too big
-        expression: bytes > 1000000
+        highlight: green
+      - name: redirect
+        expression: status == 304
+        highlight: blue
       - name: empty requests
         expression: bytes == 0
+        highlight: red
     columns:
       - name: timestamp
         width: 25

@@ -19,6 +19,12 @@ pub enum AST {
     Empty,
 }
 
+impl Default for AST {
+    fn default() -> Self {
+        AST::Empty
+    }
+}
+
 pub fn parse(input: &str) -> Result<AST, String> {
     let mut tokens = match tokenize(input) {
         Ok(tokens) => tokens,
@@ -29,6 +35,12 @@ pub fn parse(input: &str) -> Result<AST, String> {
         Ok(AST::Variable(var)) => Ok(AST::String(var)),
         Ok(ast) => Ok(ast),
         Err(e) => Err(e),
+    }
+}
+
+impl AST {
+    pub fn from_str(input: &str) -> Result<AST, String> {
+        parse(input)
     }
 }
 

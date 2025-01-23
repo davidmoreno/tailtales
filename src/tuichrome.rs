@@ -148,19 +148,9 @@ impl TuiChrome {
             let cell = Cell::from(String::from(&record.original[vscroll_left..vscroll_right]));
             cells.push(cell);
 
-            let is_selected = record.index == state.position;
-            let is_mark = record.get("mark").is_some();
+            let style = Self::get_row_style(state, &record);
 
-            let row = match (is_selected, is_mark) {
-                (true, true) => {
-                    Row::new(cells).style(Style::from(settings.global.colors.mark_highlight))
-                }
-                (true, false) => {
-                    Row::new(cells).style(Style::from(settings.global.colors.highlight))
-                }
-                (false, true) => Row::new(cells).style(Style::from(settings.global.colors.mark)),
-                (false, false) => Row::new(cells).style(Style::from(settings.global.colors.normal)),
-            };
+            let row = Row::new(cells).style(style);
 
             rows.push(row);
         }
@@ -179,6 +169,29 @@ impl TuiChrome {
 
         let table = Table::new(rows, columns).header(header);
         table
+    }
+
+    pub fn get_row_style(state: &TuiState, record: &record::Record) -> Style {
+        let settings = &state.settings;
+        let filters = &state.current_rule;
+
+        let is_mark = record.get("mark").is_some();
+        let is_selected = record.index == state.position;
+
+        match (is_selected, is_mark) {
+            (true, true) => return Style::from(settings.global.colors.mark_highlight),
+            (true, false) => return Style::from(settings.global.colors.highlight),
+            (false, true) => return Style::from(settings.global.colors.mark),
+            _ => {}
+        }
+
+        for filter in &filters.filters {
+            if record.matches(&filter.expression) {
+                return Style::from(filter.highlight);
+            }
+        }
+
+        return Style::from(settings.global.colors.normal);
     }
 
     // pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {

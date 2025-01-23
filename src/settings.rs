@@ -2,6 +2,8 @@ use ratatui::style::{Color, Style};
 use serde::{de::Deserializer, Deserialize};
 use std::{collections::HashMap, str::FromStr};
 
+use crate::ast;
+
 // singleton load settings
 
 #[derive(Debug, Deserialize, Default)]
@@ -86,22 +88,31 @@ pub struct RulesSettings {
     pub file_patterns: Vec<String>,
     #[serde(default)]
     pub extractors: Vec<String>,
-    // #[serde(default)]
-    // pub filters: Vec<FilterSettings>,
+    #[serde(default)]
+    pub filters: Vec<FilterSettings>,
     #[serde(default)]
     pub columns: Vec<ColumnSettings>,
 }
 
-// #[derive(Debug, Deserialize, Clone)]
-// pub struct FilterSettings {
-//     #[serde(default)]
-//     pub name: String,
-//     pub expression: String,
-//     #[serde(default, deserialize_with = "parse_style")]
-//     pub highlight: Style,
-//     #[serde(default, deserialize_with = "optional_parse_style")]
-//     pub gutter: Option<Style>,
-// }
+#[derive(Debug, Deserialize, Clone)]
+pub struct FilterSettings {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, deserialize_with = "parse_expression")]
+    pub expression: ast::AST,
+    #[serde(default, deserialize_with = "parse_style")]
+    pub highlight: Style,
+    #[serde(default, deserialize_with = "optional_parse_style")]
+    pub gutter: Option<Style>,
+}
+
+fn parse_expression<'de, D>(deserializer: D) -> Result<ast::AST, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    ast::AST::from_str(&s).map_err(serde::de::Error::custom)
+}
 
 fn parse_style<'de, D>(deserializer: D) -> Result<Style, D::Error>
 where
@@ -129,18 +140,18 @@ fn string_to_style(s: &str) -> Result<Style, String> {
     Ok(style)
 }
 
-// fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
-// where
-//     D: Deserializer<'de>,
-// {
-//     let s: String = Deserialize::deserialize(deserializer)?;
-//     if s.is_empty() {
-//         Ok(None)
-//     } else {
-//         let style = string_to_style(&s).map_err(serde::de::Error::custom)?;
-//         Ok(Some(style))
-//     }
-// }
+fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        let style = string_to_style(&s).map_err(serde::de::Error::custom)?;
+        Ok(Some(style))
+    }
+}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ColumnSettings {
