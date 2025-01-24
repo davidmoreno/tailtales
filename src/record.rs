@@ -25,6 +25,9 @@ impl Record {
     pub fn get(&self, key: &str) -> Option<&String> {
         self.data.get(key)
     }
+    pub fn unset_data(&mut self, key: &str) {
+        self.data.remove(key);
+    }
 
     pub fn set_line_number(&mut self, line_number: usize) {
         self.index = line_number;

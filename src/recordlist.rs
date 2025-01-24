@@ -1,6 +1,7 @@
 use notify::Watcher;
 use rayon::{prelude::*, spawn};
 use std::{
+    f32::consts::E,
     io::{BufRead, Read, Seek},
     path::Path,
     process::Stdio,
@@ -272,11 +273,15 @@ impl RecordList {
     }
 
     pub fn mark(&mut self, position: usize) {
-        if position < self.visible_records.len() {
-            self.visible_records
-                .get_mut(position)
-                .unwrap()
-                .set_data("mark", "true".into());
+        if position >= self.visible_records.len() {
+            return;
+        }
+        let record = self.visible_records.get_mut(position).unwrap();
+
+        if record.get("mark").is_some() {
+            record.unset_data("mark");
+        } else {
+            record.set_data("mark", "true".into());
         }
     }
 }
