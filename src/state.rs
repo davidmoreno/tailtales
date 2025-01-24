@@ -348,7 +348,7 @@ impl TuiState {
 
         let filename = if filename.is_none() {
             // Create a settings file
-            let _ = self.settings.save_local_settings();
+            let _ = self.settings.save_default_settings();
 
             Settings::local_settings_filename().unwrap()
         } else {

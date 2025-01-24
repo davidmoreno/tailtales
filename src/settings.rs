@@ -246,7 +246,7 @@ impl Settings {
         let mut settings = Settings::default();
 
         settings
-            .read_from_string(include_str!("../settings.yaml"))
+            .read_from_string(Self::default_settings_yaml_data())
             .expect("Failed to read default settings from internal YAML");
 
         // Try to load from ~/.config/tailtales/settings.yaml. If does not exist, ignore.
@@ -261,6 +261,9 @@ impl Settings {
 
         settings
     }
+    pub fn default_settings_yaml_data() -> &'static str {
+        include_str!("../settings.yaml")
+    }
 
     pub fn local_settings_filename() -> Option<PathBuf> {
         let xdg = xdg::BaseDirectories::with_prefix("tailtales");
@@ -272,11 +275,11 @@ impl Settings {
         xdg.unwrap().find_config_file("settings.yaml")
     }
 
-    pub fn save_local_settings(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_default_settings(&self) -> Result<(), Box<dyn std::error::Error>> {
         let xdg = xdg::BaseDirectories::with_prefix("tailtales")?;
         let path = xdg.place_config_file("settings.yaml")?;
-        let file = std::fs::File::create(path)?;
-        serde_yaml::to_writer(file, self)?;
+        let filecontents = Self::default_settings_yaml_data();
+        std::fs::write(path, filecontents)?;
 
         Ok(())
     }
