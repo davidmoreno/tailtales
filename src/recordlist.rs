@@ -1,7 +1,6 @@
 use notify::Watcher;
 use rayon::{prelude::*, spawn};
 use std::{
-    f32::consts::E,
     io::{BufRead, Read, Seek},
     path::Path,
     process::Stdio,
