@@ -145,7 +145,14 @@ impl TuiChrome {
                 record.original.len() as i32,
                 state.scroll_offset_left as i32 + size.width as i32,
             ) as usize;
-            let cell = Cell::from(String::from(&record.original[vscroll_left..vscroll_right]));
+            let cell = Cell::from(String::from(
+                record
+                    .original
+                    .chars()
+                    .skip(vscroll_left)
+                    .take(vscroll_right - vscroll_left)
+                    .collect::<String>(),
+            ));
             cells.push(cell);
 
             let style = Self::get_row_style(state, &record);
