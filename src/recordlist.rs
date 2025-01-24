@@ -9,12 +9,13 @@ use std::{
 
 use crate::{ast::AST, events::TuiEvent, parser::Parser, record::Record};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct RecordList {
     pub all_records: Vec<Record>,
     pub visible_records: Vec<Record>,
     pub parsers: Vec<Parser>,
     pub filter: Option<AST>,
+    pub child_process: Option<std::process::Child>,
 }
 
 impl RecordList {
@@ -24,6 +25,7 @@ impl RecordList {
             visible_records: Vec::new(),
             parsers: vec![],
             filter: None,
+            child_process: None,
         }
     }
 
@@ -171,14 +173,15 @@ impl RecordList {
 
     // Executes a command line program and read the output. Waits as in readfile_stdint to send new lines.
     pub fn readfile_exec(&mut self, args: &Vec<&str>, tx: mpsc::Sender<TuiEvent>) {
-        let output = std::process::Command::new(args[0])
+        let mut child = std::process::Command::new(args[0])
             .args(&args[1..])
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .expect("could not execute command");
 
-        let stdout = std::io::BufReader::new(output.stdout.expect("could not read stdout"));
+        let stdout = std::io::BufReader::new(child.stdout.take().expect("could not read stdout"));
+        let stderr = std::io::BufReader::new(child.stderr.take().expect("could not read stderr"));
         let tx_stdout = tx.clone();
         let tx_stderr = tx;
         spawn(move || {
@@ -192,7 +195,6 @@ impl RecordList {
                 }
             }
         });
-        let stderr = std::io::BufReader::new(output.stderr.expect("could not read stderr"));
         spawn(move || {
             for line in stderr.lines() {
                 if let Ok(line) = line {
@@ -203,7 +205,9 @@ impl RecordList {
                     return;
                 }
             }
-        })
+        });
+
+        self.child_process = Some(child);
     }
 
     // pub fn filter(&mut self, search: AST) {
@@ -281,6 +285,14 @@ impl RecordList {
             record.unset_data("mark");
         } else {
             record.set_data("mark", "true".into());
+        }
+    }
+}
+
+impl Drop for RecordList {
+    fn drop(&mut self) {
+        if let Some(child) = self.child_process.as_mut() {
+            child.kill().expect("could not kill child process");
         }
     }
 }
