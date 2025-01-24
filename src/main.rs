@@ -112,12 +112,19 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
 }
 
 fn set_rule_from_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
-    if args.len() > 1 {
-        tui_chrome.state.current_rule = get_rule_by_filename(
-            &mut tui_chrome.state.settings,
-            args.get(1).unwrap().to_string(),
-        );
-    }
+    let filename = if args.len() > 1 {
+        args.get(1).unwrap().to_string()
+    } else {
+        tui_chrome
+            .state
+            .settings
+            .default_arguments
+            .get(0)
+            .unwrap()
+            .to_string()
+    };
+
+    tui_chrome.state.current_rule = get_rule_by_filename(&mut tui_chrome.state.settings, filename);
 
     if let Err(err) = load_parsers(
         &tui_chrome.state.current_rule,

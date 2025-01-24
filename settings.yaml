@@ -44,6 +44,8 @@ default_arguments:
   - -f
   - --since
   - today
+  - -o
+  - short-iso
 
 keybindings:
   ":": "command"
@@ -197,8 +199,10 @@ rules:
   - name: journald
     file_patterns:
       - /var/log/journal/
-    extractors:
-      - journald
+      - "!journalctl"
+    extractors: 
+      - "pattern <timestamp> <hostname> <service>: <_>"
+      - logfmt
 
   - name: default
     file_patterns:

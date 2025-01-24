@@ -392,20 +392,30 @@ impl TuiChrome {
             Style::default().fg(Color::Black).bg(Color::Blue),
         ));
         spans.push(Span::styled(
-            format!(" {:5} ", state.position),
-            Style::default().fg(Color::Blue).bg(Color::Black),
-        ));
-        spans.push(Span::styled(
-            "/",
-            Style::default().fg(Color::Black).bg(Color::Blue),
-        ));
-        spans.push(Span::styled(
-            format!(" {:5} ", state.records.visible_records.len()),
+            format!(
+                " {:5} / {:5}",
+                state.position,
+                state.records.visible_records.len()
+            ),
             Style::default().fg(Color::Blue).bg(Color::Black),
         ));
         spans.push(Span::styled(
             " ",
             Style::default().fg(Color::Black).bg(Color::Blue),
+        ));
+        spans.push(Span::styled(" ", Style::default()));
+
+        spans.push(Span::styled(
+            " Rule ",
+            Style::default().fg(Color::Black).bg(Color::Cyan),
+        ));
+        spans.push(Span::styled(
+            format!(" {} ", state.current_rule.name),
+            Style::default().fg(Color::Cyan).bg(Color::Black),
+        ));
+        spans.push(Span::styled(
+            " ",
+            Style::default().fg(Color::Black).bg(Color::Cyan),
         ));
 
         let line = Line::from(spans);

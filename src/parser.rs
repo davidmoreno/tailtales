@@ -127,6 +127,9 @@ impl Parser {
         match caps {
             Some(caps) => {
                 for name in self.regex.capture_names().flatten() {
+                    if name.starts_with("_") {
+                        continue; // ignore
+                    }
                     let value = caps[name].to_string();
                     data.insert(name.to_string(), value);
                 }
