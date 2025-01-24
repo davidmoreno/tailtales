@@ -98,7 +98,9 @@ impl TuiState {
         }
     }
     pub fn handle_command(&mut self) {
-        let command = self.command.trim();
+        let mut args = self.command.split_whitespace();
+        let command = args.next().unwrap_or("");
+
         match command {
             "quit" => {
                 self.running = false;
@@ -115,12 +117,6 @@ impl TuiState {
             "command" => {
                 self.command = String::new();
                 self.mode = Mode::Command;
-            }
-            "search" => {
-                self.mode = Mode::Search;
-            }
-            "filter" => {
-                self.mode = Mode::Filter;
             }
             "search_next" => {
                 self.search_next();
@@ -174,6 +170,10 @@ impl TuiState {
             "settings" => {
                 self.open_settings();
             }
+            "mode" => {
+                let args: Vec<String> = args.map(String::from).collect();
+                self.set_mode(args.get(0).unwrap_or(&"normal".to_string()));
+            }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
             }
@@ -182,6 +182,26 @@ impl TuiState {
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;
         self.mode = Mode::Warning;
+    }
+
+    pub fn set_mode(&mut self, mode: &str) {
+        match mode {
+            "normal" => {
+                self.mode = Mode::Normal;
+            }
+            "search" => {
+                self.mode = Mode::Search;
+            }
+            "filter" => {
+                self.mode = Mode::Filter;
+            }
+            "command" => {
+                self.mode = Mode::Command;
+            }
+            _ => {
+                self.set_warning(format!("Unknown mode: {}", mode));
+            }
+        }
     }
 
     pub fn move_selection(&mut self, delta: i32) {

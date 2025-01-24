@@ -194,94 +194,6 @@ impl TuiChrome {
         return Style::from(settings.global.colors.normal);
     }
 
-    // pub fn render_records<'a>(state: &'a TuiState, size: Size) -> Paragraph<'a> {
-    //     let height = size.height as usize - 2;
-    //     let width = size.width as usize;
-    //     let start = state.scroll_offset_top;
-
-    //     let mut lines: Vec<Line> = vec![];
-
-    //     let style_hightlight = Style::default().fg(Color::Black).bg(Color::White);
-    //     for record in state.records.visible_records
-    //         [start..std::cmp::min(start + height, state.records.visible_records.len())]
-    //         .iter()
-    //     {
-    //         let style = Self::get_style_for_record(record, state, &state.search_ast);
-
-    //         let line = Self::render_record_line(
-    //             record.original.as_str(),
-    //             state.search.as_str(),
-    //             style,
-    //             style_hightlight,
-    //             width,
-    //         );
-    //         // add white space to fill the line
-
-    //         lines.push(line);
-    //     }
-
-    //     let text = Text::from(lines);
-    //     let ret = Paragraph::new(text).scroll((0, state.scroll_offset_left as u16));
-
-    //     ret
-    // }
-
-    // pub fn get_style_for_record<'a>(
-    //     record: &'a record::Record,
-    //     state: &TuiState,
-    //     search: &Option<AST>,
-    // ) -> Style {
-    //     let settings = &state.settings;
-    //     let current_record = state.position;
-    //     let current_index = record.index;
-
-    //     if current_index == current_record {
-    //         return settings.global.colors.highlight.into();
-    //     } else if search.is_some() && record.matches(&search.as_ref().unwrap()) {
-    //         return settings.global.colors.normal.into();
-    //     }
-    //     Style::default().bg(Color::Black).fg(Color::White)
-    // }
-
-    // pub fn render_record_line<'a>(
-    //     record: &'a str,
-    //     search: &'a str,
-    //     style: Style,
-    //     style_hightlight: Style,
-    //     width: usize,
-    // ) -> Line<'a> {
-    //     let mut spans = vec![];
-
-    //     let parts = if search == "" {
-    //         vec![record]
-    //     } else {
-    //         record.split(search).collect()
-    //     };
-
-    //     if record.starts_with(search) {
-    //         spans.push(Span::styled(search, style_hightlight));
-    //     }
-
-    //     for part in parts[0..parts.len() - 1].iter() {
-    //         spans.push(Span::styled(*part, style));
-    //         spans.push(Span::styled(search, style_hightlight));
-    //     }
-
-    //     if parts[parts.len() - 1] == search {
-    //         spans.push(Span::styled(search, style_hightlight));
-    //     } else {
-    //         spans.push(Span::styled(parts[parts.len() - 1], style));
-    //     }
-
-    //     // must be i32 to void underflow
-    //     let remaining = width as i32 - record.len() as i32;
-    //     if remaining > 0 {
-    //         spans.push(Span::styled(" ".repeat(remaining as usize), style));
-    //     }
-
-    //     Line::from(spans)
-    // }
-
     pub fn render_record<'a>(state: &TuiState, record: &'a record::Record) -> Paragraph<'a> {
         let settings = &state.settings;
         let mut lines = vec![];
@@ -331,19 +243,13 @@ impl TuiChrome {
     }
 
     pub fn render_footer_search(state: &TuiState) -> Block {
-        Block::default()
-            .title(format!("/{}█", state.search))
-            .style(Style::default().fg(Color::Yellow))
+        Self::render_textinput_block("Search", &state.search, Color::Yellow)
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
-        Block::default()
-            .title(format!("|{}█", state.filter))
-            .style(Style::default().fg(Color::Yellow))
+        Self::render_textinput_block("Filter", &state.filter, Color::Green)
     }
     pub fn render_footer_command(state: &TuiState) -> Block {
-        Block::default()
-            .title(format!(":{}█", state.command))
-            .style(Style::default().fg(Color::Yellow))
+        Self::render_textinput_block("Command", &state.command, Color::Yellow)
     }
     pub fn render_footer_warning(state: &TuiState) -> Block {
         Block::default()
@@ -355,6 +261,43 @@ impl TuiChrome {
                     .bold(),
             )
     }
+
+    pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, color: Color) {
+        spans.push(Span::styled(
+            format!(" {} ", label),
+            Style::default().fg(Color::Black).bg(color),
+        ));
+        spans.push(Span::styled(
+            format!(" {} ", value),
+            Style::default().fg(color).bg(Color::Black),
+        ));
+        spans.push(Span::styled(
+            " ".to_string(),
+            Style::default().fg(Color::Black).bg(color),
+        ));
+        spans.push(Span::styled(
+            " ".to_string(),
+            Style::default().fg(Color::Black).bg(Color::Black),
+        ));
+    }
+
+    pub fn render_textinput_block<'a>(label: &'a str, value: &'a str, color: Color) -> Block<'a> {
+        let mut spans = vec![];
+
+        spans.push(Span::styled(
+            format!(" {} ", label),
+            Style::default().fg(Color::Black).bg(color),
+        ));
+        spans.push(Span::styled(
+            format!(" {}█", value),
+            Style::default().fg(color).bg(Color::Black),
+        ));
+
+        let line = Line::from(spans);
+
+        Block::default().title(line)
+    }
+
     pub fn render_footer_normal(state: &TuiState) -> Block {
         // let filter_ast = state.search_ast.as_ref().unwrap_or(&ast::AST::Empty);
 
@@ -366,57 +309,25 @@ impl TuiChrome {
         let mut spans = vec![];
 
         if state.search != "" {
-            spans.push(Span::styled(
-                " Search ",
-                Style::default().fg(Color::Black).bg(Color::Yellow),
-            ));
-            spans.push(Span::styled(
-                format!(" {} ", state.search),
-                Style::default().fg(Color::Yellow).bg(Color::Black),
-            ));
+            Self::render_tag(&mut spans, "Search", &state.search, Color::Yellow);
         }
 
         if state.filter != "" {
-            spans.push(Span::styled(
-                " Filter ",
-                Style::default().fg(Color::Black).bg(Color::Green),
-            ));
-            spans.push(Span::styled(
-                format!(" {} ", state.filter),
-                Style::default().fg(Color::Green).bg(Color::Black),
-            ));
+            Self::render_tag(&mut spans, "Filter", &state.filter, Color::Green);
         }
 
-        spans.push(Span::styled(
-            " Line ",
-            Style::default().fg(Color::Black).bg(Color::Blue),
-        ));
-        spans.push(Span::styled(
+        Self::render_tag(&mut spans, "Rule", &state.current_rule.name, Color::Cyan);
+        Self::render_tag(
+            &mut spans,
+            "Line",
             format!(
-                " {:5} / {:5}",
+                " {:5} / {:5} ",
                 state.position,
                 state.records.visible_records.len()
-            ),
-            Style::default().fg(Color::Blue).bg(Color::Black),
-        ));
-        spans.push(Span::styled(
-            " ",
-            Style::default().fg(Color::Black).bg(Color::Blue),
-        ));
-        spans.push(Span::styled(" ", Style::default()));
-
-        spans.push(Span::styled(
-            " Rule ",
-            Style::default().fg(Color::Black).bg(Color::Cyan),
-        ));
-        spans.push(Span::styled(
-            format!(" {} ", state.current_rule.name),
-            Style::default().fg(Color::Cyan).bg(Color::Black),
-        ));
-        spans.push(Span::styled(
-            " ",
-            Style::default().fg(Color::Black).bg(Color::Cyan),
-        ));
+            )
+            .as_str(),
+            Color::Blue,
+        );
 
         let line = Line::from(spans);
 
@@ -499,6 +410,7 @@ impl TuiChrome {
             Mode::Warning => {
                 // Any key will dismiss the warning
                 self.state.mode = Mode::Normal;
+                self.handle_key_event(key_event); // pass through
             }
         }
     }
