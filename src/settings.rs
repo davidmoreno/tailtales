@@ -1,12 +1,12 @@
 use ratatui::style::{Color, Style};
-use serde::{de::Deserializer, Deserialize};
-use std::{collections::HashMap, str::FromStr};
+use serde::{de::Deserializer, Deserialize, Serialize};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use crate::ast;
 
 // singleton load settings
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Settings {
     #[serde(default)]
     pub global: GlobalSettings,
@@ -20,7 +20,7 @@ pub struct Settings {
     pub keybindings: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct SettingsFromYaml {
     #[serde(default)]
     pub global: Option<GlobalSettings>,
@@ -34,46 +34,46 @@ pub struct SettingsFromYaml {
     pub keybindings: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GlobalSettings {
     // pub reload_on_truncate: bool,
     pub colors: GlobalColorSettings,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GlobalColorSettings {
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub normal: Style,
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub highlight: Style,
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub mark: Style,
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub mark_highlight: Style,
     pub details: DetailsColorSettings,
     pub table: TableColorSettings,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 
 pub struct TableColorSettings {
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub header: Style,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct DetailsColorSettings {
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub title: Style,
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub key: Style,
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub value: Style,
-    #[serde(deserialize_with = "parse_style")]
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub border: Style,
 }
 
-#[derive(Debug, Deserialize, Default, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, PartialEq, Clone)]
 pub enum Alignment {
     #[default]
     Left,
@@ -81,7 +81,7 @@ pub enum Alignment {
     Center,
 }
 
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct RulesSettings {
     pub name: String,
     #[serde(default)]
@@ -94,15 +94,27 @@ pub struct RulesSettings {
     pub columns: Vec<ColumnSettings>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FilterSettings {
     #[serde(default)]
     pub name: String,
-    #[serde(default, deserialize_with = "parse_expression")]
+    #[serde(
+        default,
+        deserialize_with = "parse_expression",
+        serialize_with = "serialize_expression"
+    )]
     pub expression: ast::AST,
-    #[serde(default, deserialize_with = "parse_style")]
+    #[serde(
+        default,
+        deserialize_with = "parse_style",
+        serialize_with = "serialize_style"
+    )]
     pub highlight: Style,
-    #[serde(default, deserialize_with = "optional_parse_style")]
+    #[serde(
+        default,
+        deserialize_with = "optional_parse_style",
+        serialize_with = "serialize_optional_style"
+    )]
     pub gutter: Option<Style>,
 }
 
@@ -112,6 +124,13 @@ where
 {
     let s: String = Deserialize::deserialize(deserializer)?;
     ast::AST::from_str(&s).map_err(serde::de::Error::custom)
+}
+
+fn serialize_expression<S>(expression: &ast::AST, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&expression.to_string())
 }
 
 fn parse_style<'de, D>(deserializer: D) -> Result<Style, D::Error>
@@ -140,6 +159,21 @@ fn string_to_style(s: &str) -> Result<Style, String> {
     Ok(style)
 }
 
+fn serialize_style<S>(style: &Style, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut s = String::new();
+    if let Some(fg) = style.fg {
+        s.push_str(&fg.to_string());
+        if let Some(bg) = style.bg {
+            s.push(' ');
+            s.push_str(&bg.to_string());
+        }
+    }
+    serializer.serialize_str(&s)
+}
+
 fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
 where
     D: Deserializer<'de>,
@@ -153,11 +187,25 @@ where
     }
 }
 
-#[derive(Debug, Deserialize, Clone)]
+fn serialize_optional_style<S>(style: &Option<Style>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    match style {
+        Some(style) => serialize_style(style, serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ColumnSettings {
     pub name: String,
     pub width: usize,
-    #[serde(default, deserialize_with = "parse_alignment")]
+    #[serde(
+        default,
+        deserialize_with = "parse_alignment",
+        serialize_with = "serialize_alignment"
+    )]
     pub align: Alignment,
 }
 
@@ -182,6 +230,17 @@ where
     Alignment::from_str(&s).map_err(|_| serde::de::Error::custom("Invalid alignment"))
 }
 
+fn serialize_alignment<S>(align: &Alignment, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(match align {
+        Alignment::Left => "left",
+        Alignment::Right => "right",
+        Alignment::Center => "center",
+    })
+}
+
 impl Settings {
     pub fn new() -> Settings {
         let mut settings = Settings::default();
@@ -192,18 +251,34 @@ impl Settings {
 
         // Try to load from ~/.config/tailtales/settings.yaml. If does not exist, ignore.
 
-        xdg::BaseDirectories::with_prefix("tailtales")
-            .map(|xdg| xdg.find_config_file("settings.yaml"))
-            .map(|path| {
-                path.map(|path| {
-                    if path.exists() {
-                        settings.read_from_yaml(path.to_str().unwrap()).unwrap();
-                    }
-                })
-            })
-            .unwrap_or(None);
+        let filename = Self::local_settings_filename();
+
+        if let Some(filename) = filename {
+            if filename.exists() {
+                let _ = settings.read_from_yaml(filename.to_str().unwrap());
+            }
+        }
 
         settings
+    }
+
+    pub fn local_settings_filename() -> Option<PathBuf> {
+        let xdg = xdg::BaseDirectories::with_prefix("tailtales");
+
+        if xdg.is_err() {
+            return None;
+        }
+
+        xdg.unwrap().find_config_file("settings.yaml")
+    }
+
+    pub fn save_local_settings(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let xdg = xdg::BaseDirectories::with_prefix("tailtales")?;
+        let path = xdg.place_config_file("settings.yaml")?;
+        let file = std::fs::File::create(path)?;
+        serde_yaml::to_writer(file, self)?;
+
+        Ok(())
     }
 
     pub fn read_from_yaml(&mut self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {

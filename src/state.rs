@@ -171,13 +171,16 @@ impl TuiState {
             "move_to_prev_mark" => {
                 self.move_to_prev_mark();
             }
+            "settings" => {
+                self.open_settings();
+            }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
             }
         }
     }
-    pub fn set_warning(&mut self, command: String) {
-        self.warning = format!("Unknown command: {}", command);
+    pub fn set_warning(&mut self, warning: String) {
+        self.warning = warning;
         self.mode = Mode::Warning;
     }
 
@@ -318,5 +321,27 @@ impl TuiState {
             }
         }
         self.set_warning("mark not found".into());
+    }
+
+    pub fn open_settings(&mut self) {
+        let filename = Settings::local_settings_filename();
+
+        let filename = if filename.is_none() {
+            // Create a settings file
+            let _ = self.settings.save_local_settings();
+
+            Settings::local_settings_filename().unwrap()
+        } else {
+            filename.unwrap()
+        };
+
+        // Open the file with xdg-open, using this same terminal, and wait for it to finish.
+        // stdin, stderr and stdout are inherited from the parent process.
+        let _output = std::process::Command::new("xdg-open")
+            .arg(filename.to_str().unwrap())
+            .spawn()
+            .expect("failed to execute process")
+            .wait()
+            .expect("failed to wait for process");
     }
 }

@@ -42,6 +42,26 @@ impl AST {
     pub fn from_str(input: &str) -> Result<AST, String> {
         parse(input)
     }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            AST::Variable(var) => format!("\"{}\"", var),
+            AST::String(s) => s.clone(),
+            AST::Number(n) => n.to_string(),
+            AST::Boolean(b) => b.to_string(),
+            AST::Equal(lhs, rhs) => format!("{} == {}", lhs.to_string(), rhs.to_string()),
+            AST::GreaterEqual(lhs, rhs) => format!("{} >= {}", lhs.to_string(), rhs.to_string()),
+            AST::Greater(lhs, rhs) => format!("{} > {}", lhs.to_string(), rhs.to_string()),
+            AST::LessEqual(lhs, rhs) => format!("{} <= {}", lhs.to_string(), rhs.to_string()),
+            AST::Less(lhs, rhs) => format!("{} < {}", lhs.to_string(), rhs.to_string()),
+            AST::Not(ast) => format!("!{}", ast.to_string()),
+            AST::And(lhs, rhs) => format!("{} && {}", lhs.to_string(), rhs.to_string()),
+            AST::Or(lhs, rhs) => format!("{} || {}", lhs.to_string(), rhs.to_string()),
+            AST::RegCompareBinary(lhs, rhs) => format!("{} ~ {}", lhs.to_string(), rhs.to_string()),
+            AST::RegCompareUnary(ast) => format!("~{}", ast.to_string()),
+            AST::Empty => "".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
