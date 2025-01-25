@@ -446,7 +446,14 @@ impl TuiChrome {
         };
 
         if self.state.settings.keybindings.contains_key(keyname) {
-            self.state.command = self.state.settings.keybindings[keyname].clone();
+            let command = self.state.settings.keybindings[keyname].clone();
+
+            if command == "refresh_screen" {
+                self.refresh_screen();
+                return;
+            }
+
+            self.state.command = command;
             self.state.handle_command();
         } else {
             self.state
@@ -535,6 +542,22 @@ impl TuiChrome {
             }
             _ => {}
         }
+    }
+
+    fn refresh_screen(&mut self) {
+        // force refresh of all screen contents, as some damaged info came into it
+        // just draw all black, and then render again
+        self.terminal
+            .draw(|rect| {
+                let chunks = Layout::default()
+                    .constraints([Constraint::Percentage(100)].as_ref())
+                    .split(rect.area());
+                rect.render_widget(
+                    Block::default().style(Style::default().bg(Color::Black)),
+                    chunks[0],
+                );
+            })
+            .unwrap();
     }
 
     pub fn run(&mut self) {

@@ -55,7 +55,7 @@ keybindings:
   "n": "search_next"
   "shift-n": "search_prev"
   "control-del": "clear_records"
-  "control-l": "refresh"
+  "control-l": "refresh_screen"
   "F1": "external_help"
   "h": "help"
   "q": "quit"
