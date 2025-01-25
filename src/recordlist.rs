@@ -1,5 +1,9 @@
+use nix::sys::signal::{kill, Signal};
+use nix::unistd::Pid;
 use notify::Watcher;
 use rayon::{prelude::*, spawn};
+use std::thread::sleep;
+use std::time::Duration;
 use std::{
     io::{BufRead, Read, Seek},
     path::Path,
@@ -172,9 +176,9 @@ impl RecordList {
     }
 
     // Executes a command line program and read the output. Waits as in readfile_stdint to send new lines.
-    pub fn readfile_exec(&mut self, args: &Vec<&str>, tx: mpsc::Sender<TuiEvent>) {
-        let mut child = std::process::Command::new(args[0])
-            .args(&args[1..])
+    pub fn readfile_exec(&mut self, args: &[&str], tx: mpsc::Sender<TuiEvent>) {
+        let mut child = std::process::Command::new("setsid")
+            .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -292,7 +296,12 @@ impl RecordList {
 impl Drop for RecordList {
     fn drop(&mut self) {
         if let Some(child) = self.child_process.as_mut() {
-            child.kill().expect("could not kill child process");
+            let pid = child.id();
+            let _result = kill(Pid::from_raw(-(pid as i32)), Signal::SIGTERM);
+            sleep(Duration::from_secs(1));
+            if child.try_wait().is_err() {
+                let _result = kill(Pid::from_raw(-(pid as i32)), Signal::SIGKILL);
+            }
         }
     }
 }
