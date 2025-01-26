@@ -278,19 +278,6 @@ impl RecordList {
         self.all_records.clear();
         self.visible_records.clear();
     }
-
-    pub fn mark(&mut self, position: usize) {
-        if position >= self.visible_records.len() {
-            return;
-        }
-        let record = self.visible_records.get_mut(position).unwrap();
-
-        if record.get("mark").is_some() {
-            record.unset_data("mark");
-        } else {
-            record.set_data("mark", "true".into());
-        }
-    }
 }
 
 impl Drop for RecordList {

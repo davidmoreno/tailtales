@@ -28,12 +28,31 @@ pub struct TuiState {
     pub search: String,
     pub filter: String,
     pub search_ast: Option<ast::AST>,
-    pub number: String,
     pub command: String,
     pub warning: String,
 }
 
 impl TuiState {
+    pub fn new() -> TuiState {
+        TuiState {
+            settings: Settings::new(),
+            current_rule: RulesSettings::default(),
+            records: recordlist::RecordList::new(),
+            total_visible_lines: 78,
+            position: 0,
+            scroll_offset_top: 0,
+            scroll_offset_left: 0,
+            running: true,
+            read_time: time::Duration::new(0, 0),
+            mode: Mode::Normal,
+            search: String::new(),
+            filter: String::new(),
+            search_ast: None,
+            command: String::new(),
+            warning: String::new(),
+        }
+    }
+
     pub fn search_next(&mut self) {
         let current = self.position;
         self.set_position_wrap(self.position as i32 + 1);
@@ -157,9 +176,11 @@ impl TuiState {
             "warning" => {
                 self.set_warning(format!("Warning: {}", command));
             }
-            "mark" => {
-                self.records.mark(self.position);
-                self.set_position_wrap(self.position as i32 + 1);
+            "toggle_mark" => {
+                let default_color = "yellow".to_string();
+                let args_vec: Vec<String> = args.map(String::from).collect();
+                let color = args_vec.get(0).unwrap_or(&default_color);
+                self.toggle_mark(color);
             }
             "move_to_next_mark" => {
                 self.move_to_next_mark();
@@ -202,6 +223,22 @@ impl TuiState {
                 self.set_warning(format!("Unknown mode: {}", mode));
             }
         }
+    }
+    pub fn toggle_mark(&mut self, color: &str) {
+        let color = color.to_string();
+        let current = self.position;
+        let record = self.records.visible_records.get_mut(current).unwrap();
+        let current_value = record.get("mark");
+        if current_value.is_some() {
+            if *current_value.unwrap() == color {
+                record.unset_data("mark");
+            } else {
+                record.set_data("mark", color);
+            }
+        } else {
+            record.set_data("mark", color);
+        }
+        self.set_position_wrap(self.position as i32 + 1);
     }
 
     pub fn move_selection(&mut self, delta: i32) {

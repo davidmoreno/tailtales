@@ -141,7 +141,7 @@ where
     string_to_style(&s).map_err(serde::de::Error::custom)
 }
 
-fn string_to_style(s: &str) -> Result<Style, String> {
+pub fn string_to_style(s: &str) -> Result<Style, String> {
     let mut parts = s.split_whitespace();
     let first = parts.next().ok_or_else(|| "Missing first color")?;
     let first_color = Color::from_str(first).map_err(|_| "Invalid color")?;

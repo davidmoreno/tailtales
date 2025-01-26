@@ -1,9 +1,7 @@
 use crate::ast;
 use crate::events::TuiEvent;
 use crate::record;
-use crate::recordlist;
-use crate::settings::RulesSettings;
-use crate::settings::Settings;
+use crate::settings::string_to_style;
 use crate::state::Mode;
 use crate::state::TuiState;
 
@@ -27,24 +25,7 @@ impl TuiChrome {
         let (tx, rx) = mpsc::channel();
 
         Ok(TuiChrome {
-            state: TuiState {
-                settings: Settings::new(),
-                current_rule: RulesSettings::default(),
-                records: recordlist::RecordList::new(),
-                total_visible_lines: 78,
-                position: 0,
-                scroll_offset_top: 0,
-                scroll_offset_left: 0,
-                running: true,
-                read_time: time::Duration::new(0, 0),
-                mode: Mode::Normal,
-                search: String::new(),
-                filter: String::new(),
-                search_ast: None,
-                number: String::new(),
-                command: String::new(),
-                warning: String::new(),
-            },
+            state: TuiState::new(),
             terminal,
             tx,
             rx,
@@ -182,13 +163,22 @@ impl TuiChrome {
         let settings = &state.settings;
         let filters = &state.current_rule;
 
-        let is_mark = record.get("mark").is_some();
+        let mark = record.get("mark");
+        let is_mark = mark.is_some();
         let is_selected = record.index == state.position;
 
         match (is_selected, is_mark) {
             (true, true) => return Style::from(settings.global.colors.mark_highlight),
             (true, false) => return Style::from(settings.global.colors.highlight),
-            (false, true) => return Style::from(settings.global.colors.mark),
+            (false, true) => {
+                let style = string_to_style(mark.unwrap());
+                let style = if style.is_ok() {
+                    style.unwrap()
+                } else {
+                    settings.global.colors.mark
+                };
+                return Style::from(style);
+            }
             _ => {}
         }
 
@@ -425,10 +415,6 @@ impl TuiChrome {
     pub fn handle_normal_mode(&mut self, key_event: KeyEvent) {
         let keyname: &str = match key_event.code {
             // numbers add to number
-            KeyCode::Char(c) if c.is_digit(10) => {
-                self.state.number.push(c);
-                return;
-            }
             KeyCode::Char(x) => &String::from(x).to_lowercase(),
             KeyCode::F(x) => &String::from(x as char),
 
