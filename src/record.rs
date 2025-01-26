@@ -13,7 +13,7 @@ pub struct Record {
 impl Record {
     pub fn new(line: String) -> Record {
         Record {
-            original: clean_ansi_text(&line),
+            original: line,
             data: HashMap::new(),
             index: 0,
         }
@@ -61,30 +61,4 @@ impl Record {
 
 lazy_static::lazy_static! {
     static ref TIMESTAMP_RE: Regex = Regex::new(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}").unwrap();
-}
-
-pub fn clean_ansi_text(orig: &str) -> String {
-    // Lenght in real text, skips ANIS codes
-    let mut text = String::new();
-    let mut in_ansi_escape = false;
-    for c in orig.chars() {
-        if in_ansi_escape {
-            if c == 'm' {
-                in_ansi_escape = false;
-            }
-        } else if c == '\t' {
-            // I need to put as many spaces to make for a multiple of 8 spaces
-            let spaces = 8 - text.len() % 8;
-            for _ in 0..spaces {
-                text.push(' ');
-            }
-        } else if c == '\r' {
-            // Ignore
-        } else if c == 0o33 as char {
-            in_ansi_escape = true;
-        } else {
-            text.push(c);
-        }
-    }
-    text
 }

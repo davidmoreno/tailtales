@@ -16,6 +16,7 @@ mod regex_cache;
 mod settings;
 mod state;
 mod tuichrome;
+mod utils;
 
 fn main() {
     let mut tui_chrome = tuichrome::TuiChrome::new().expect("could not create TuiChrome");

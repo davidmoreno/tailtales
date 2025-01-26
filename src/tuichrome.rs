@@ -4,6 +4,9 @@ use crate::record;
 use crate::settings::string_to_style;
 use crate::state::Mode;
 use crate::state::TuiState;
+use crate::utils::ansi_to_style;
+use crate::utils::clean_ansi_text;
+use crate::utils::reverse_style;
 
 use crossterm::ExecutableCommand;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
@@ -73,7 +76,10 @@ impl TuiChrome {
                 // rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[0]);
                 if let Some(current_record) = current_record {
-                    rect.render_widget(Self::render_record(&self.state, current_record), chunks[1]);
+                    rect.render_widget(
+                        Self::render_record_details(&self.state, current_record),
+                        chunks[1],
+                    );
                 }
                 rect.render_widget(footer, chunks[2]);
             })
@@ -126,18 +132,15 @@ impl TuiChrome {
                 record.original.len() as i32,
                 state.scroll_offset_left as i32 + size.width as i32,
             ) as usize;
-            let cell = Cell::from(String::from(
-                record
-                    .original
-                    .chars()
-                    .skip(vscroll_left)
-                    .take(vscroll_right - vscroll_left)
-                    .collect::<String>(),
+            let is_highlighted = state.position == record.index;
+            let cell = Cell::from(Self::render_record_original(
+                &state,
+                &record,
+                is_highlighted,
             ));
             cells.push(cell);
 
             let style = Self::get_row_style(state, &record);
-
             let row = Row::new(cells).style(style);
 
             rows.push(row);
@@ -157,6 +160,67 @@ impl TuiChrome {
 
         let table = Table::new(rows, columns).header(header);
         table
+    }
+
+    fn render_record_original<'a>(
+        state: &'a TuiState,
+        record: &record::Record,
+        highlight: bool,
+    ) -> Line<'a> {
+        let original = &record.original;
+        // Original has ANSI color codes, we want to create a list of spans with the right colors
+        // We will use the same colors as the table, but with a different background
+
+        // First split by ANSI codes
+        let mut in_ansi_escape = false;
+        let mut ansi_code = String::new();
+        let mut text = String::new();
+        let mut spans = vec![];
+
+        let mut current_style = Self::get_row_style(state, &record);
+        if highlight {
+            current_style = reverse_style(current_style);
+        }
+
+        for c in original.chars() {
+            if in_ansi_escape {
+                if c == 'm' {
+                    in_ansi_escape = false;
+                    current_style = ansi_to_style(current_style, &ansi_code);
+                    ansi_code.clear();
+                } else {
+                    ansi_code.push(c);
+                }
+            } else if c == 0o33 as char {
+                // Insert the current text (if any) with the current style
+                if text.len() > 0 {
+                    let style = if highlight {
+                        reverse_style(current_style)
+                    } else {
+                        current_style
+                    };
+                    spans.push(Span::styled(text.clone(), style));
+                    text.clear();
+                }
+
+                in_ansi_escape = true;
+                ansi_code.push(c);
+            } else {
+                text.push(c);
+            }
+        }
+
+        if text.len() > 0 {
+            let style = if highlight {
+                reverse_style(current_style)
+            } else {
+                current_style
+            };
+            spans.push(Span::styled(text.clone(), style));
+            text.clear();
+        }
+
+        Line::from(spans)
     }
 
     pub fn get_row_style(state: &TuiState, record: &record::Record) -> Style {
@@ -191,7 +255,10 @@ impl TuiChrome {
         return Style::from(settings.global.colors.normal);
     }
 
-    pub fn render_record<'a>(state: &TuiState, record: &'a record::Record) -> Paragraph<'a> {
+    pub fn render_record_details<'a>(
+        state: &TuiState,
+        record: &'a record::Record,
+    ) -> Paragraph<'a> {
         let settings = &state.settings;
         let mut lines = vec![];
 
@@ -215,7 +282,7 @@ impl TuiChrome {
 
         let text = Text::from(lines);
         let title_span = Span::styled(
-            record.original.clone(),
+            clean_ansi_text(&record.original),
             Style::from(settings.global.colors.details.title),
         );
 
