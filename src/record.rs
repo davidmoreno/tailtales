@@ -47,8 +47,7 @@ impl Record {
         data.insert("word_count".to_string(), word_count.to_string());
 
         for parser in parsers {
-            let more_data = parser.parse_line(line);
-            data.extend(more_data);
+            data = parser.parse_line(data, line);
         }
 
         data

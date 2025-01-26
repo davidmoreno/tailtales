@@ -1,9 +1,13 @@
+use chrono::prelude::*;
 use std::collections::HashMap;
+
+use crate::record::Record;
 
 #[derive(Debug, Clone)]
 pub struct Parser {
     regex: regex::Regex,
     is_logfmt: bool,
+    is_autodate: bool,
 }
 
 #[derive(Debug)]
@@ -26,6 +30,9 @@ impl Parser {
             "pattern" => {
                 let rest = parts.next().ok_or(ParserError::InvalidParser(s.into()))?;
                 return Ok(Parser::new_from_pattern(rest));
+            }
+            "autodatetime" => {
+                return Ok(Parser::new_autodate());
             }
             _ => Err(ParserError::InvalidParser(s.into())),
         }
@@ -77,6 +84,7 @@ impl Parser {
         Parser {
             regex: re,
             is_logfmt: false,
+            is_autodate: false,
         }
     }
 
@@ -85,6 +93,7 @@ impl Parser {
         Parser {
             regex: re,
             is_logfmt: true,
+            is_autodate: false,
         }
     }
 
@@ -93,18 +102,34 @@ impl Parser {
         Parser {
             regex: re,
             is_logfmt: false,
+            is_autodate: false,
         }
     }
 
-    pub fn parse_line(&self, line: &str) -> HashMap<String, String> {
+    pub fn new_autodate() -> Parser {
+        let re = regex::Regex::new(".*").unwrap();
+        Parser {
+            regex: re,
+            is_logfmt: false,
+            is_autodate: true,
+        }
+    }
+
+    pub fn parse_line(&self, data: HashMap<String, String>, line: &str) -> HashMap<String, String> {
         if self.is_logfmt {
-            return self.parse_logfmt(line);
+            return self.parse_logfmt(data, line);
+        } else if self.is_autodate {
+            return self.parse_autodate(data, line);
         } else {
-            return self.parse_regex(line);
+            return self.parse_regex(data, line);
         }
     }
 
-    fn parse_logfmt(&self, line: &str) -> HashMap<String, String> {
+    fn parse_logfmt(
+        &self,
+        mut _data: HashMap<String, String>,
+        line: &str,
+    ) -> HashMap<String, String> {
         let mut data = HashMap::new();
         for caps in self.regex.captures_iter(line) {
             let key = caps["key"].to_string();
@@ -121,7 +146,11 @@ impl Parser {
         data
     }
 
-    fn parse_regex(&self, line: &str) -> HashMap<String, String> {
+    fn parse_regex(
+        &self,
+        mut _data: HashMap<String, String>,
+        line: &str,
+    ) -> HashMap<String, String> {
         let mut data = HashMap::new();
         let caps = self.regex.captures(line);
         match caps {
@@ -136,6 +165,18 @@ impl Parser {
             }
             None => {}
         }
+        data
+    }
+    fn parse_autodate(
+        &self,
+        mut data: HashMap<String, String>,
+        _line: &str,
+    ) -> HashMap<String, String> {
+        if data.contains_key("timestamp") {
+            return data;
+        }
+        let now = Utc::now().to_rfc3339();
+        data.insert("timestamp".to_string(), now);
         data
     }
 }
