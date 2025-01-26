@@ -128,14 +128,22 @@ impl TuiChrome {
                     cell
                 })
                 .collect();
-            let vscroll_left = min(
-                max(0, record.original.len() as i32),
-                max(0, state.scroll_offset_left as i32),
-            ) as usize;
-            let vscroll_right: usize = min(
-                record.original.len() as i32,
-                state.scroll_offset_left as i32 + size.width as i32,
-            ) as usize;
+
+            let gutter = if let Some(gutter) = Self::get_gutter_from_record(state, &record) {
+                Cell::from(Span::styled(&settings.global.gutter_symbol, gutter))
+            } else {
+                Cell::from(Span::styled(" ", Style::default()))
+            };
+            cells.insert(0, gutter);
+
+            // let vscroll_left = min(
+            //     max(0, record.original.len() as i32),
+            //     max(0, state.scroll_offset_left as i32),
+            // ) as usize;
+            // let vscroll_right: usize = min(
+            //     record.original.len() as i32,
+            //     state.scroll_offset_left as i32 + size.width as i32,
+            // ) as usize;
             let is_highlighted = state.position == record.index;
             let cell = Cell::from(Self::render_record_original(
                 &state,
@@ -153,13 +161,14 @@ impl TuiChrome {
             .iter()
             .map(|column| Cell::from(column.name.clone()))
             .collect::<Vec<Cell>>();
+        header.insert(0, Cell::from(" "));
         header.push(Cell::from("Original"));
         let header = Row::new(header).style(Style::from(settings.global.colors.table.header));
         let mut columns = columns
             .iter()
             .map(|column| column.width as u16)
             .collect::<Vec<u16>>();
-
+        columns.insert(0, 1);
         columns.push(size.width - columns.iter().sum::<u16>());
 
         let table = Table::new(rows, columns).header(header);
@@ -225,6 +234,20 @@ impl TuiChrome {
         }
 
         Line::from(spans)
+    }
+
+    pub fn get_gutter_from_record(state: &TuiState, record: &record::Record) -> Option<Style> {
+        let filters = &state.current_rule.filters;
+
+        for filter in filters {
+            if record.matches(&filter.expression) {
+                if filter.gutter.is_some() {
+                    return Some(Style::from(filter.gutter.unwrap()));
+                }
+            }
+        }
+
+        return None;
     }
 
     pub fn get_row_style(state: &TuiState, record: &record::Record) -> Style {

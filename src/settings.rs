@@ -38,6 +38,7 @@ pub struct SettingsFromYaml {
 pub struct GlobalSettings {
     // pub reload_on_truncate: bool,
     pub colors: GlobalColorSettings,
+    pub gutter_symbol: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]

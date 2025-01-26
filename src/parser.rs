@@ -1,8 +1,6 @@
 use chrono::prelude::*;
 use std::collections::HashMap;
 
-use crate::record::Record;
-
 #[derive(Debug, Clone)]
 pub struct Parser {
     regex: regex::Regex,

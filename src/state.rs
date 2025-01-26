@@ -229,6 +229,7 @@ impl TuiState {
             }
         }
     }
+
     pub fn toggle_mark(&mut self, color: &str) {
         let color = color.to_string();
         let current = self.position;

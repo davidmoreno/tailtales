@@ -19,6 +19,9 @@ impl Record {
         }
     }
 
+    // pub fn has_data(&self, key: &str) -> bool {
+    //     self.data.contains_key(key)
+    // }
     pub fn set_data(&mut self, key: &str, value: String) {
         self.data.insert(key.to_string(), value);
     }

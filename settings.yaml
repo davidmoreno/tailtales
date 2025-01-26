@@ -18,6 +18,11 @@
 
 global:
   reload_on_truncate: false
+  gutter_symbol: "▌" # I like this one as it allows to have two colors (front and back) 
+  # gutter_symbol: "█"
+  # gutter_symbol: "♥"
+  # gutter_symbol: "✔"
+  # gutter_symbol: "│"
   colors:
     normal: white black
     highlight: white darkgray
@@ -211,6 +216,13 @@ rules:
     extractors: 
       - "pattern <timestamp> <hostname> <service>: <_>"
       - logfmt
+    filters:
+      - name: kernel
+        expression: "kernel"
+        gutter: blue
+      - name: systemd
+        expression: "systemd"
+        gutter: darkgrey
 
   - name: default
     file_patterns:
