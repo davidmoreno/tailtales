@@ -38,8 +38,8 @@ impl TuiChrome {
     pub fn render(&mut self) -> io::Result<()> {
         let size = self.terminal.size()?;
 
-        let mut visible_lines = size.height as usize - 4;
-        if self.state.records.visible_records.len() > 0 {
+        let mut visible_lines = size.height as usize - 2;
+        if self.state.view_details && self.state.records.visible_records.len() > 0 {
             visible_lines -= self.state.records.visible_records[self.state.position]
                 .data
                 .len();
@@ -55,7 +55,11 @@ impl TuiChrome {
             .draw(|rect| {
                 let layout = Layout::default().direction(Direction::Vertical);
 
-                let current_record = self.state.records.visible_records.get(self.state.position);
+                let current_record = if self.state.view_details {
+                    self.state.records.visible_records.get(self.state.position)
+                } else {
+                    None
+                };
 
                 let main_area_height = if let Some(current_record) = current_record {
                     min(size.height / 2, current_record.data.len() as u16 + 2)
@@ -75,9 +79,9 @@ impl TuiChrome {
                     .split(rect.area());
                 // rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[0]);
-                if let Some(current_record) = current_record {
+                if current_record.is_some() {
                     rect.render_widget(
-                        Self::render_record_details(&self.state, current_record),
+                        Self::render_record_details(&self.state, current_record.unwrap()),
                         chunks[1],
                     );
                 }

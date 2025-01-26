@@ -30,6 +30,7 @@ pub struct TuiState {
     pub search_ast: Option<ast::AST>,
     pub command: String,
     pub warning: String,
+    pub view_details: bool,
 }
 
 impl TuiState {
@@ -50,6 +51,7 @@ impl TuiState {
             search_ast: None,
             command: String::new(),
             warning: String::new(),
+            view_details: false,
         }
     }
 
@@ -194,6 +196,9 @@ impl TuiState {
             "mode" => {
                 let args: Vec<String> = args.map(String::from).collect();
                 self.set_mode(args.get(0).unwrap_or(&"normal".to_string()));
+            }
+            "toggle_details" => {
+                self.view_details = !self.view_details;
             }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));

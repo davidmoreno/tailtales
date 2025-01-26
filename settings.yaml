@@ -84,6 +84,7 @@ keybindings:
   "tab": "move_to_next_mark"
   "shift-back tab": "move_to_prev_mark"
   "esc": "mode normal"
+  "v": "toggle_details"
 
 
 # Uses the file_patterns to determine which rules to apply
