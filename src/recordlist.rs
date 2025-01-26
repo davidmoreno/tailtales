@@ -19,7 +19,7 @@ pub struct RecordList {
     pub visible_records: Vec<Record>,
     pub parsers: Vec<Parser>,
     pub filter: Option<AST>,
-    pub child_process: Option<std::process::Child>,
+    pub child_process: Option<u32>,
 }
 
 impl RecordList {
@@ -187,6 +187,7 @@ impl RecordList {
         let stdout = std::io::BufReader::new(child.stdout.take().expect("could not read stdout"));
         let stderr = std::io::BufReader::new(child.stderr.take().expect("could not read stderr"));
         let tx_stdout = tx.clone();
+        let tx_exit = tx.clone();
         let tx_stderr = tx;
         spawn(move || {
             for line in stdout.lines() {
@@ -211,7 +212,21 @@ impl RecordList {
             }
         });
 
-        self.child_process = Some(child);
+        let child_pid = child.id();
+        // wait for the process to finish
+        spawn(move || {
+            // wait, but using UNIX pid
+            let result = child.wait();
+            // wait a bit to send the exit message, to allow read stdin and stdout
+            sleep(Duration::from_millis(100));
+
+            let mut record = Record::new(format!("EXIT: {}", result.unwrap()));
+            record.set_data("filename", "stderr".into());
+            record.set_data("mark", "white red".into());
+            tx_exit.send(TuiEvent::NewRecord(record)).unwrap();
+        });
+
+        self.child_process = Some(child_pid);
     }
 
     // pub fn filter(&mut self, search: AST) {
@@ -282,13 +297,8 @@ impl RecordList {
 
 impl Drop for RecordList {
     fn drop(&mut self) {
-        if let Some(child) = self.child_process.as_mut() {
-            let pid = child.id();
+        if let Some(pid) = self.child_process {
             let _result = kill(Pid::from_raw(-(pid as i32)), Signal::SIGTERM);
-            sleep(Duration::from_secs(1));
-            if child.try_wait().is_err() {
-                let _result = kill(Pid::from_raw(-(pid as i32)), Signal::SIGKILL);
-            }
         }
     }
 }
