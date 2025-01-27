@@ -1,3 +1,4 @@
+use core::panic;
 use std::io::{self, IsTerminal};
 use std::time::{self};
 
@@ -73,7 +74,6 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
     };
 
     if args.len() <= 1 {
-        // If stdin is a file, open the file, else use settings.default_arguments
         tui_chrome
             .state
             .records
@@ -89,6 +89,14 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
                 .state
                 .records
                 .readfile_stdin(tui_chrome.tx.clone());
+        } else if filename == "--" {
+            // this is to exec a command and read the output
+            let args: Vec<&str> = args[(narg + 1)..].iter().map(|s| &**s).collect();
+            tui_chrome
+                .state
+                .records
+                .readfile_exec(&args, tui_chrome.tx.clone());
+            return;
         } else if filename.starts_with("!") {
             // this is to exec a command and read the output
             let mut args: Vec<&str> = args[narg..].iter().map(|s| &**s).collect();
