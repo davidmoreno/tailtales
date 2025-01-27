@@ -420,25 +420,24 @@ impl TuiChrome {
             Color::Blue,
         );
 
-        let line = Line::from(spans);
+        let right_line = Line::from(spans);
+
+        // On the left I want the text: "Tailtales (C) 2025 David Moreno"
+        // On the right the line
+
+        let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let mut spans = vec![];
+
+        Self::render_tag(&mut spans, "F1", "help", Color::Yellow);
+        Self::render_tag(&mut spans, ":", "commands", Color::Blue);
+        Self::render_tag(&mut spans, "Tailtales", version.as_str(), Color::Cyan);
+
+        let left_line = Line::from(spans);
 
         Block::default()
-            .title(line)
-            .title_alignment(ratatui::layout::Alignment::Right)
-
-        // let position_hints = format!(
-        //     "line {} of {}. Read time {}ms. Filter {:?}. Rules {}. Total {} lines.",
-        //     state.position,
-        //     state.records.visible_records.len(),
-        //     state.read_time.as_millis(),
-        //     filter_ast,
-        //     state.current_rule.name,
-        //     state.records.all_records.len(),
-        // );
-
-        // Block::default()
-        //     .title(position_hints)
-        //     .borders(Borders::BOTTOM)
+            .title_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
+            .title(left_line)
+            .title(right_line.right_aligned())
     }
 
     /**
