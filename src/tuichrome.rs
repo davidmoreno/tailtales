@@ -343,14 +343,12 @@ impl TuiChrome {
         Self::render_textinput_block("Command", &state.command, Color::Yellow)
     }
     pub fn render_footer_warning(state: &TuiState) -> Block {
-        Block::default()
-            .title(format!("Warning: {}", state.warning))
-            .style(
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::LightYellow)
-                    .bold(),
-            )
+        Block::default().title(state.warning.clone()).style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::LightYellow)
+                .bold(),
+        )
     }
 
     pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, color: Color) {
@@ -499,7 +497,8 @@ impl TuiChrome {
             }
             Mode::Warning => {
                 // Any key will dismiss the warning
-                self.state.mode = Mode::Normal;
+                self.state.mode = self.state.next_mode;
+                self.state.next_mode = Mode::Normal;
                 self.handle_key_event(key_event); // pass through
             }
         }
@@ -522,6 +521,22 @@ impl TuiChrome {
             &format!("control-{}", keyname)
         } else {
             keyname
+        };
+        // F1 - F12 are \u{1}... \u{c}
+        let keyname = match key_event.code {
+            KeyCode::F(1) => "F1",
+            KeyCode::F(2) => "F2",
+            KeyCode::F(3) => "F3",
+            KeyCode::F(4) => "F4",
+            KeyCode::F(5) => "F5",
+            KeyCode::F(6) => "F6",
+            KeyCode::F(7) => "F7",
+            KeyCode::F(8) => "F8",
+            KeyCode::F(9) => "F9",
+            KeyCode::F(10) => "F10",
+            KeyCode::F(11) => "F11",
+            KeyCode::F(12) => "F12",
+            _ => keyname,
         };
 
         if self.state.settings.keybindings.contains_key(keyname) {
@@ -573,6 +588,9 @@ impl TuiChrome {
     pub fn handle_command_mode(&mut self, key_event: KeyEvent) {
         let state = &mut self.state;
         match key_event.code {
+            KeyCode::Tab => {
+                self.show_completions();
+            }
             KeyCode::Esc => {
                 state.mode = Mode::Normal;
             }
@@ -580,6 +598,14 @@ impl TuiChrome {
                 state.mode = Mode::Normal;
                 state.handle_command();
             }
+            // Control k is delete line
+            KeyCode::Char('k') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                state.command = String::new();
+            }
+            KeyCode::Char('h') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                state.command = String::new();
+            }
+
             KeyCode::Char(c) => {
                 state.command.push(c);
             }
@@ -591,6 +617,26 @@ impl TuiChrome {
                 state.handle_command();
             }
             _ => {}
+        }
+    }
+
+    pub fn show_completions(&mut self) {
+        let state = &mut self.state;
+        let (common_prefix, completions) = state.get_completions();
+
+        if common_prefix != state.command {
+            state.command = common_prefix;
+            return;
+        }
+        if completions.len() == 1 {
+            state.command = completions[0].clone();
+        } else if completions.len() > 1 {
+            let completions = completions.join(" █ ");
+            state.next_mode = Mode::Command;
+            state.set_warning(format!("{}", completions));
+        } else {
+            state.next_mode = Mode::Command;
+            state.set_warning("No completions found".to_string());
         }
     }
 

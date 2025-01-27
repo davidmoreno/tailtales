@@ -5,7 +5,7 @@ use crate::{
     settings::{RulesSettings, Settings},
 };
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Mode {
     Normal,
     Search,
@@ -25,6 +25,7 @@ pub struct TuiState {
     pub running: bool,
     pub read_time: time::Duration,
     pub mode: Mode,
+    pub next_mode: Mode,
     pub search: String,
     pub filter: String,
     pub search_ast: Option<ast::AST>,
@@ -46,6 +47,7 @@ impl TuiState {
             running: true,
             read_time: time::Duration::new(0, 0),
             mode: Mode::Normal,
+            next_mode: Mode::Normal,
             search: String::new(),
             filter: String::new(),
             search_ast: None,
@@ -123,6 +125,7 @@ impl TuiState {
         let command = args.next().unwrap_or("");
 
         match command {
+            "" => {}
             "quit" => {
                 self.running = false;
             }
@@ -132,8 +135,17 @@ impl TuiState {
                 self.scroll_offset_top = 0;
                 self.scroll_offset_left = 0;
             }
-            "help" => {
+            "open_help" => {
                 self.open_help();
+            }
+            "open_url" => {
+                let args_vec: Vec<String> = args.map(String::from).collect();
+                let url = args_vec.get(0);
+                if let Some(url) = url {
+                    self.open_url(url);
+                } else {
+                    self.set_warning("No URL provided".into());
+                }
             }
             "command" => {
                 self.command = String::new();
@@ -342,8 +354,12 @@ impl TuiState {
 
         // open xdg-open
         let urlencodedline = urlencoding::encode(&line);
+        self.open_url(&self.settings.help_url.replace("{}", &urlencodedline));
+    }
+
+    pub fn open_url(&self, url: &str) {
         let _output = std::process::Command::new("xdg-open")
-            .arg(self.settings.help_url.replace("{}", &urlencodedline))
+            .arg(url)
             .output()
             .expect("failed to execute process");
     }
@@ -406,5 +422,68 @@ impl TuiState {
             .expect("failed to execute process")
             .wait()
             .expect("failed to wait for process");
+    }
+
+    pub fn get_completions(&self) -> (String, Vec<String>) {
+        let current = self.command.trim();
+        let mut completions: Vec<&str> = vec![
+            "command",
+            "quit",
+            "clear",
+            "open_help",
+            "open_url",
+            "search_next",
+            "search_prev",
+            "move_up",
+            "move_down",
+            "move_left",
+            "move_right",
+            "move_pageup",
+            "move_pagedown",
+            "move_top",
+            "move_bottom",
+            "clear_records",
+            "warning",
+            "toggle_mark",
+            "move_to_next_mark",
+            "move_to_prev_mark",
+            "settings",
+            "mode",
+            "toggle_details",
+        ];
+
+        completions.retain(|&c| c.starts_with(current));
+        let completions: Vec<String> = completions.iter().map(|&s| s.to_string()).collect();
+
+        // Find common prefix
+        let mut common_prefix = String::new();
+        if completions.len() == 1 {
+            common_prefix = completions[0].to_string();
+        } else if completions.len() > 1 {
+            let mut pos = 0;
+            let mut done = false;
+
+            while !done {
+                let mut c: Option<char> = None;
+                for completion in &completions {
+                    if pos >= completion.len() {
+                        done = true;
+                        break;
+                    }
+                    let current_char = completion.chars().nth(pos).unwrap();
+                    if c.is_none() {
+                        c = Some(current_char);
+                    } else if c.unwrap() != current_char {
+                        done = true;
+                        break;
+                    }
+                }
+                if !done {
+                    common_prefix.push(c.unwrap());
+                    pos += 1;
+                }
+            }
+        }
+        return (common_prefix, completions);
     }
 }
