@@ -218,6 +218,11 @@ impl TuiChrome {
 
                 in_ansi_escape = true;
                 ansi_code.push(c);
+            } else if c == '\t' {
+                let spaces_for_next_tab = 8 - text.len() % 8;
+                for _ in 0..spaces_for_next_tab {
+                    text.push(' ');
+                }
             } else {
                 text.push(c);
             }
