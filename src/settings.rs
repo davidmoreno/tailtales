@@ -53,10 +53,28 @@ pub struct GlobalColorSettings {
     pub mark_highlight: Style,
     pub details: DetailsColorSettings,
     pub table: TableColorSettings,
+    pub footer: FooterColorSettings,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
+pub struct FooterColorSettings {
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub command: Style,
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub filter: Style,
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub search: Style,
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub version: Style,
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub rule: Style,
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub line_number: Style,
+    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    pub other: Style,
+}
 
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TableColorSettings {
     #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub header: Style,

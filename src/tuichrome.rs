@@ -339,13 +339,25 @@ impl TuiChrome {
     }
 
     pub fn render_footer_search(state: &TuiState) -> Block {
-        Self::render_textinput_block("Search", &state.search, Color::Yellow)
+        Self::render_textinput_block(
+            "Search",
+            &state.search,
+            state.settings.global.colors.footer.search,
+        )
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
-        Self::render_textinput_block("Filter", &state.filter, Color::Green)
+        Self::render_textinput_block(
+            "Filter",
+            &state.filter,
+            state.settings.global.colors.footer.filter,
+        )
     }
     pub fn render_footer_command(state: &TuiState) -> Block {
-        Self::render_textinput_block("Command", &state.command, Color::Yellow)
+        Self::render_textinput_block(
+            "Command",
+            &state.command,
+            state.settings.global.colors.footer.command,
+        )
     }
     pub fn render_footer_warning(state: &TuiState) -> Block {
         Block::default().title(state.warning.clone()).style(
@@ -356,36 +368,24 @@ impl TuiChrome {
         )
     }
 
-    pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, color: Color) {
-        spans.push(Span::styled(
-            format!(" {} ", label),
-            Style::default().fg(Color::Black).bg(color),
-        ));
-        spans.push(Span::styled(
-            format!(" {} ", value),
-            Style::default().fg(color).bg(Color::Black),
-        ));
-        spans.push(Span::styled(
-            " ".to_string(),
-            Style::default().fg(Color::Black).bg(color),
-        ));
+    pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
+        let rstyle = reverse_style(style);
+
+        spans.push(Span::styled(format!(" {} ", label), style));
+        spans.push(Span::styled(format!(" {} ", value), rstyle));
+        spans.push(Span::styled(" ".to_string(), style));
         spans.push(Span::styled(
             " ".to_string(),
             Style::default().fg(Color::Black).bg(Color::Black),
         ));
     }
 
-    pub fn render_textinput_block<'a>(label: &'a str, value: &'a str, color: Color) -> Block<'a> {
+    pub fn render_textinput_block<'a>(label: &'a str, value: &'a str, style: Style) -> Block<'a> {
         let mut spans = vec![];
+        let rstyle = reverse_style(style);
 
-        spans.push(Span::styled(
-            format!(" {} ", label),
-            Style::default().fg(Color::Black).bg(color),
-        ));
-        spans.push(Span::styled(
-            format!(" {}█", value),
-            Style::default().fg(color).bg(Color::Black),
-        ));
+        spans.push(Span::styled(format!(" {} ", label), style));
+        spans.push(Span::styled(format!(" {}█", value), rstyle));
 
         let line = Line::from(spans);
 
@@ -402,17 +402,42 @@ impl TuiChrome {
 
         let mut spans = vec![];
 
-        Self::render_tag(&mut spans, "F1", "help", Color::Yellow);
-        Self::render_tag(&mut spans, ":", "commands", Color::Blue);
+        Self::render_tag(
+            &mut spans,
+            "F1",
+            "help",
+            state.settings.global.colors.footer.other,
+        );
+        Self::render_tag(
+            &mut spans,
+            ":",
+            "commands",
+            state.settings.global.colors.footer.other,
+        );
         if state.search != "" {
-            Self::render_tag(&mut spans, "Search", &state.search, Color::Yellow);
+            Self::render_tag(
+                &mut spans,
+                "Search",
+                &state.search,
+                state.settings.global.colors.footer.search,
+            );
         }
 
         if state.filter != "" {
-            Self::render_tag(&mut spans, "Filter", &state.filter, Color::Green);
+            Self::render_tag(
+                &mut spans,
+                "Filter",
+                &state.filter,
+                state.settings.global.colors.footer.filter,
+            );
         }
 
-        Self::render_tag(&mut spans, "Rule", &state.current_rule.name, Color::Cyan);
+        Self::render_tag(
+            &mut spans,
+            "Rule",
+            &state.current_rule.name,
+            state.settings.global.colors.footer.rule,
+        );
         Self::render_tag(
             &mut spans,
             "Line",
@@ -422,7 +447,7 @@ impl TuiChrome {
                 state.records.visible_records.len()
             )
             .as_str(),
-            Color::Blue,
+            state.settings.global.colors.footer.line_number,
         );
 
         let right_line = Line::from(spans);
@@ -433,7 +458,12 @@ impl TuiChrome {
         let version = format!("v{}", env!("CARGO_PKG_VERSION"));
         let mut spans = vec![];
 
-        Self::render_tag(&mut spans, "Tailtales", version.as_str(), Color::Cyan);
+        Self::render_tag(
+            &mut spans,
+            "Tailtales",
+            version.as_str(),
+            state.settings.global.colors.footer.version,
+        );
 
         let left_line = Line::from(spans);
 

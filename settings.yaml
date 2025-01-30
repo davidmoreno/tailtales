@@ -35,6 +35,14 @@ global:
       key: green black
       value: yellow black
       border: green black
+    footer:
+      command: black cyan
+      filter: black yellow
+      search: black magenta
+      version: black blue
+      rule: black green
+      other: black cyan
+      line_number: black blue
 
 # this is the URL to open when press F1. The {} will be replaced with the selected text
 help_url: https://duckduckgo.com/?q={}
