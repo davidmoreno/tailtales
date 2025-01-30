@@ -402,6 +402,8 @@ impl TuiChrome {
 
         let mut spans = vec![];
 
+        Self::render_tag(&mut spans, "F1", "help", Color::Yellow);
+        Self::render_tag(&mut spans, ":", "commands", Color::Blue);
         if state.search != "" {
             Self::render_tag(&mut spans, "Search", &state.search, Color::Yellow);
         }
@@ -431,8 +433,6 @@ impl TuiChrome {
         let version = format!("v{}", env!("CARGO_PKG_VERSION"));
         let mut spans = vec![];
 
-        Self::render_tag(&mut spans, "F1", "help", Color::Yellow);
-        Self::render_tag(&mut spans, ":", "commands", Color::Blue);
         Self::render_tag(&mut spans, "Tailtales", version.as_str(), Color::Cyan);
 
         let left_line = Line::from(spans);
