@@ -18,6 +18,8 @@ pub struct Settings {
     pub help_url: String,
     #[serde(default)]
     pub keybindings: HashMap<String, String>,
+    #[serde(default)]
+    pub colors: GlobalColorSettings,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -32,12 +34,13 @@ pub struct SettingsFromYaml {
     pub help_url: Option<String>,
     #[serde(default)]
     pub keybindings: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub colors: Option<GlobalColorSettings>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct GlobalSettings {
     // pub reload_on_truncate: bool,
-    pub colors: GlobalColorSettings,
     pub gutter_symbol: String,
 }
 
@@ -337,6 +340,17 @@ impl Settings {
 
         if other.keybindings.is_some() {
             self.keybindings.extend(other.keybindings.unwrap());
+        }
+
+        if other.colors.is_some() {
+            let other_colors = other.colors.unwrap();
+            self.colors.normal = other_colors.normal;
+            self.colors.highlight = other_colors.highlight;
+            self.colors.mark = other_colors.mark;
+            self.colors.mark_highlight = other_colors.mark_highlight;
+            self.colors.details = other_colors.details;
+            self.colors.table = other_colors.table;
+            self.colors.footer = other_colors.footer;
         }
 
         self.rules = other_rules

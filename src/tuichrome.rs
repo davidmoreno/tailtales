@@ -163,7 +163,7 @@ impl TuiChrome {
             .collect::<Vec<Cell>>();
         header.insert(0, Cell::from(" "));
         header.push(Cell::from("Original"));
-        let header = Row::new(header).style(Style::from(settings.global.colors.table.header));
+        let header = Row::new(header).style(Style::from(settings.colors.table.header));
         let mut columns = columns
             .iter()
             .map(|column| column.width as u16)
@@ -264,14 +264,14 @@ impl TuiChrome {
         let is_selected = record.index == state.position;
 
         match (is_selected, is_mark) {
-            (true, true) => return Style::from(settings.global.colors.mark_highlight),
-            (true, false) => return Style::from(settings.global.colors.highlight),
+            (true, true) => return Style::from(settings.colors.mark_highlight),
+            (true, false) => return Style::from(settings.colors.highlight),
             (false, true) => {
                 let style = string_to_style(mark.unwrap());
                 let style = if style.is_ok() {
                     style.unwrap()
                 } else {
-                    settings.global.colors.mark
+                    settings.colors.mark
                 };
                 return Style::from(style);
             }
@@ -284,7 +284,7 @@ impl TuiChrome {
             }
         }
 
-        return Style::from(settings.global.colors.normal);
+        return Style::from(settings.colors.normal);
     }
 
     pub fn render_record_details<'a>(
@@ -303,11 +303,11 @@ impl TuiChrome {
             lines.push(Line::from(vec![
                 Span::styled(
                     format!("{}: ", key),
-                    Style::from(settings.global.colors.details.key),
+                    Style::from(settings.colors.details.key),
                 ),
                 Span::styled(
                     record.data.get(key).unwrap(),
-                    Style::from(settings.global.colors.details.value),
+                    Style::from(settings.colors.details.value),
                 ),
             ]));
         }
@@ -315,7 +315,7 @@ impl TuiChrome {
         let text = Text::from(lines);
         let title_span = Span::styled(
             clean_ansi_text(&record.original),
-            Style::from(settings.global.colors.details.title),
+            Style::from(settings.colors.details.title),
         );
 
         Paragraph::new(text)
@@ -323,9 +323,9 @@ impl TuiChrome {
                 Block::default()
                     .borders(Borders::ALL)
                     .title(title_span)
-                    .border_style(Style::from(settings.global.colors.details.border)),
+                    .border_style(Style::from(settings.colors.details.border)),
             )
-            .style(Style::from(settings.global.colors.details.border))
+            .style(Style::from(settings.colors.details.border))
     }
 
     pub fn render_footer<'a>(state: &'a TuiState) -> Block<'a> {
@@ -339,24 +339,16 @@ impl TuiChrome {
     }
 
     pub fn render_footer_search(state: &TuiState) -> Block {
-        Self::render_textinput_block(
-            "Search",
-            &state.search,
-            state.settings.global.colors.footer.search,
-        )
+        Self::render_textinput_block("Search", &state.search, state.settings.colors.footer.search)
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
-        Self::render_textinput_block(
-            "Filter",
-            &state.filter,
-            state.settings.global.colors.footer.filter,
-        )
+        Self::render_textinput_block("Filter", &state.filter, state.settings.colors.footer.filter)
     }
     pub fn render_footer_command(state: &TuiState) -> Block {
         Self::render_textinput_block(
             "Command",
             &state.command,
-            state.settings.global.colors.footer.command,
+            state.settings.colors.footer.command,
         )
     }
     pub fn render_footer_warning(state: &TuiState) -> Block {
@@ -402,24 +394,19 @@ impl TuiChrome {
 
         let mut spans = vec![];
 
-        Self::render_tag(
-            &mut spans,
-            "F1",
-            "help",
-            state.settings.global.colors.footer.other,
-        );
+        Self::render_tag(&mut spans, "F1", "help", state.settings.colors.footer.other);
         Self::render_tag(
             &mut spans,
             ":",
             "commands",
-            state.settings.global.colors.footer.other,
+            state.settings.colors.footer.other,
         );
         if state.search != "" {
             Self::render_tag(
                 &mut spans,
                 "Search",
                 &state.search,
-                state.settings.global.colors.footer.search,
+                state.settings.colors.footer.search,
             );
         }
 
@@ -428,7 +415,7 @@ impl TuiChrome {
                 &mut spans,
                 "Filter",
                 &state.filter,
-                state.settings.global.colors.footer.filter,
+                state.settings.colors.footer.filter,
             );
         }
 
@@ -436,7 +423,7 @@ impl TuiChrome {
             &mut spans,
             "Rule",
             &state.current_rule.name,
-            state.settings.global.colors.footer.rule,
+            state.settings.colors.footer.rule,
         );
         Self::render_tag(
             &mut spans,
@@ -447,7 +434,7 @@ impl TuiChrome {
                 state.records.visible_records.len()
             )
             .as_str(),
-            state.settings.global.colors.footer.line_number,
+            state.settings.colors.footer.line_number,
         );
 
         let right_line = Line::from(spans);
@@ -462,7 +449,7 @@ impl TuiChrome {
             &mut spans,
             "Tailtales",
             version.as_str(),
-            state.settings.global.colors.footer.version,
+            state.settings.colors.footer.version,
         );
 
         let left_line = Line::from(spans);
