@@ -363,9 +363,9 @@ impl TuiChrome {
     pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
         let rstyle = reverse_style(style);
 
-        spans.push(Span::styled(format!(" {} ", label), style));
-        spans.push(Span::styled(format!(" {} ", value), rstyle));
-        spans.push(Span::styled(" ".to_string(), style));
+        spans.push(Span::styled(format!(" {} ", label), rstyle));
+        spans.push(Span::styled(format!(" {} ", value), style));
+        spans.push(Span::styled(" ".to_string(), rstyle));
         spans.push(Span::styled(
             " ".to_string(),
             Style::default().fg(Color::Black).bg(Color::Black),
@@ -376,8 +376,8 @@ impl TuiChrome {
         let mut spans = vec![];
         let rstyle = reverse_style(style);
 
-        spans.push(Span::styled(format!(" {} ", label), style));
-        spans.push(Span::styled(format!(" {}█", value), rstyle));
+        spans.push(Span::styled(format!(" {} ", label), rstyle));
+        spans.push(Span::styled(format!(" {}█", value), style));
 
         let line = Line::from(spans);
 

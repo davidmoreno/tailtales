@@ -37,13 +37,13 @@ colors:
     value: yellow black
     border: green black
   footer:
-    command: black cyan
-    filter: black yellow
-    search: black magenta
-    version: black blue
-    rule: black green
-    other: black cyan
-    line_number: black blue
+    command: cyan black
+    filter: yellow black
+    search: magenta black
+    version: blue black
+    rule: green black
+    other: cyan black
+    line_number: blue black
 
 # this is the URL to open when press F1. The {} will be replaced with the selected text
 help_url: https://duckduckgo.com/?q={}
