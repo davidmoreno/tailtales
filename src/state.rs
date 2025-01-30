@@ -188,7 +188,9 @@ impl TuiState {
                 self.set_vposition(0);
             }
             "warning" => {
-                self.set_warning(format!("Warning: {}", command));
+                let args_vec: Vec<String> = args.map(String::from).collect();
+                let message = args_vec.join(" ");
+                self.set_warning(message);
             }
             "toggle_mark" => {
                 let default_color = "yellow".to_string();
