@@ -28,14 +28,9 @@ command mode (: by default).
 | command             | Opens command mode with a new command (not enough with `mode command` as that woudl not clear the current command)         |
 | search_next         | Search for the next occurrence                                                                                             |
 | search_prev         | Search for the previous occurrence                                                                                         |
-| move_up             | Move the cursor up                                                                                                         |
-| move_down           | Move the cursor down                                                                                                       |
-| move_left           | Move the cursor left                                                                                                       |
-| move_right          | Move the cursor right                                                                                                      |
-| move_pageup         | Move one page up (10 lines)                                                                                                |
-| move_pagedown       | Move one page down (10 lines)                                                                                              |
-| move_top            | Move to the top of the document                                                                                            |
-| move_bottom         | Move to the bottom of the document                                                                                         |
+| vmove <ammount>     | Move vertically, positive down, negative up                                                                                |
+| hmove <ammount>     | Move horizontally, positive right, negative left                                                                           |
+| vgoto <lineno>      | Goto to specific line number                                                                                               |
 | clear_records       | Clear all records                                                                                                          |
 | warning <msg...>    | Display a warning message                                                                                                  |
 | toggle_mark <color> | Toggle a mark on the current line. Its a data for the record with that color as mark, and will be used at render.          |
@@ -62,16 +57,18 @@ command mode (: by default).
 | q              | quit                                                   |
 | control-c      | quit                                                   |
 | o              | help                                                   |
-| j              | move_down                                              |
-| k              | move_up                                                |
-| up             | move_up                                                |
-| down           | move_down                                              |
-| left           | move_left                                              |
-| right          | move_right                                             |
-| page up        | move_pageup                                            |
-| page down      | move_pagedown                                          |
-| home           | move_top                                               |
-| end            | move_bottom                                            |
+| up             | vmove -1                                               |
+| k              | vmove -1                                               |
+| page up        | vmove -10                                              |
+| down           | vmove 1                                                |
+| j              | vmove 1                                                |
+| page down      | vmove 10                                               |
+| left           | hmove -1                                               |
+| control-left   | hmove -10                                              |
+| right          | hmove 1                                                |
+| control-right  | hmove 10                                               |
+| home           | vgoto 0                                                |
+| end            | vgoto 2000000000                                       |
 | G              | goto_line                                              |
 | space          | toggle_mark yellow                                     |
 | 1              | toggle_mark red                                        |

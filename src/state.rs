@@ -157,23 +157,19 @@ impl TuiState {
             "search_prev" => {
                 self.search_prev();
             }
-            "move_up" => {
-                self.move_selection(-1);
+            "vmove" => {
+                let args: Vec<String> = args.map(String::from).collect();
+                let def_arg1 = "1".to_string();
+                let position = args.get(0).unwrap_or(&def_arg1);
+
+                self.move_selection(position.parse::<i32>().unwrap());
             }
-            "move_down" => {
-                self.move_selection(1);
-            }
-            "move_left" => {
-                self.set_vposition(self.scroll_offset_left as i32 - 1);
-            }
-            "move_right" => {
-                self.set_vposition(self.scroll_offset_left as i32 + 1);
-            }
-            "move_pageup" => {
-                self.move_selection(-10);
-            }
-            "move_pagedown" => {
-                self.move_selection(10);
+            "vgoto" => {
+                let args: Vec<String> = args.map(String::from).collect();
+                let def_arg1 = "0".to_string();
+                let position = args.get(0).unwrap_or(&def_arg1);
+
+                self.set_position(position.parse::<usize>().unwrap());
             }
             "move_top" => {
                 self.set_position(0);
@@ -213,6 +209,14 @@ impl TuiState {
             }
             "toggle_details" => {
                 self.view_details = !self.view_details;
+            }
+            "hmove" => {
+                let args_vec: Vec<String> = args.map(String::from).collect();
+                let def_arg1 = "1".to_string();
+                let position = args_vec.get(0).unwrap_or(&def_arg1);
+                self.set_vposition(
+                    self.scroll_offset_left as i32 + position.parse::<i32>().unwrap(),
+                );
             }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
@@ -436,14 +440,9 @@ impl TuiState {
             "open_url",
             "search_next",
             "search_prev",
-            "move_up",
-            "move_down",
-            "move_left",
-            "move_right",
-            "move_pageup",
-            "move_pagedown",
-            "move_top",
-            "move_bottom",
+            "vmove",
+            "hmove",
+            "vgoto",
             "clear_records",
             "warning",
             "toggle_mark",

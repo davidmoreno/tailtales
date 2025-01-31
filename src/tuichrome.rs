@@ -189,6 +189,7 @@ impl TuiChrome {
         let mut ansi_code = String::new();
         let mut text = String::new();
         let mut spans = vec![];
+        let mut voffset = state.scroll_offset_left;
 
         let mut current_style = Self::get_row_style(state, &record);
         if highlight {
@@ -218,13 +219,19 @@ impl TuiChrome {
 
                 in_ansi_escape = true;
                 ansi_code.push(c);
-            } else if c == '\t' {
-                let spaces_for_next_tab = 8 - text.len() % 8;
-                for _ in 0..spaces_for_next_tab {
-                    text.push(' ');
-                }
             } else {
-                text.push(c);
+                if voffset > 0 {
+                    voffset -= 1;
+                    continue;
+                }
+                if c == '\t' {
+                    let spaces_for_next_tab = 8 - text.len() % 8;
+                    for _ in 0..spaces_for_next_tab {
+                        text.push(' ');
+                    }
+                } else {
+                    text.push(c);
+                }
             }
         }
 
