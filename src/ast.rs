@@ -368,6 +368,7 @@ pub fn execute(ast: &AST, record: &Record) -> Value {
         AST::String(s) | AST::Variable(s) => {
             Value::Boolean(record.original.to_lowercase().contains(&s.to_lowercase()))
         }
+        AST::Number(n) => Value::Boolean(record.original.to_lowercase().contains(&n.to_string())),
         _ => execute_rec(ast, record),
     }
 }
@@ -610,12 +611,12 @@ mod tests {
 
     #[test]
     fn test_execute() {
-        let record = Record::new("2024-01-01 00:00:00".to_string())
-            .set_data("hostname", "localhost".to_string())
-            .set_data("program", "test".to_string())
-            .set_data("rest", "message".to_string())
-            .set_data("var1", "10".to_string())
-            .set_data("var2", "20".to_string());
+        let mut record = Record::new("2024-01-01 00:00:00".to_string());
+        record.set_data("hostname", "localhost".to_string());
+        record.set_data("program", "test".to_string());
+        record.set_data("rest", "message".to_string());
+        record.set_data("var1", "10".to_string());
+        record.set_data("var2", "20".to_string());
         assert_eq!(
             execute(
                 &AST::Equal(
@@ -709,13 +710,13 @@ mod tests {
 
     #[test]
     fn test_tokenize_parse_execute() {
-        let record = Record::new("2024-01-01 00:00:00 text to find".to_string())
-            .set_data("hostname", "localhost".to_string())
-            .set_data("program", "test".to_string())
-            .set_data("rest", "message".to_string())
-            .set_data("var1", "10".to_string())
-            .set_data("var2", "20".to_string())
-            .set_data("timestamp", "2024-01-01 00:00:00".to_string());
+        let mut record = Record::new("2024-01-01 00:00:00 text to find".to_string());
+        record.set_data("hostname", "localhost".to_string());
+        record.set_data("program", "test".to_string());
+        record.set_data("rest", "message".to_string());
+        record.set_data("var1", "10".to_string());
+        record.set_data("var2", "20".to_string());
+        record.set_data("timestamp", "2024-01-01 00:00:00".to_string());
 
         // Empty is always true
         assert_eq!(execute(&parse("").unwrap(), &record), Value::Boolean(true));
@@ -753,6 +754,14 @@ mod tests {
                 &record
             ),
             Value::Boolean(false)
+        );
+        assert_eq!(
+            execute(&parse("2024").unwrap(), &record),
+            Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(&parse("2024-01").unwrap(), &record),
+            Value::Boolean(true)
         );
         // regex unary
         assert_eq!(
