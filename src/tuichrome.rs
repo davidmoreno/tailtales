@@ -586,18 +586,13 @@ impl TuiChrome {
 
     pub fn handle_search_mode(&mut self, key_event: KeyEvent) {
         let state = &mut self.state;
+
         match key_event.code {
             KeyCode::Esc => {
                 self.state.mode = Mode::Normal;
             }
             KeyCode::Char('\n') => {
                 state.mode = Mode::Normal;
-                state.search_fwd();
-            }
-            KeyCode::Char(c) => {
-                // search for c
-                state.search.push(c);
-                state.search_ast = ast::parse(&state.search).ok();
                 state.search_fwd();
             }
             KeyCode::Backspace => {
@@ -610,8 +605,35 @@ impl TuiChrome {
             KeyCode::F(3) => {
                 state.search_next();
             }
-            _ => {}
+            _ => {
+                Self::handle_textinput(&mut state.search, key_event);
+                state.search_ast = ast::parse(&state.search).ok();
+                state.search_fwd();
+            }
         }
+    }
+
+    pub fn handle_textinput(text: &mut String, keyevent: KeyEvent) {
+        match keyevent.code {
+            KeyCode::Char('u') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                text.clear();
+            }
+            // this is what gets received on control backspace
+            KeyCode::Char('h') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                text.clear();
+            }
+            KeyCode::Backspace if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                text.clear();
+            }
+
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            KeyCode::Char(c) => {
+                text.push(c);
+            }
+            _ => {}
+        };
     }
 
     pub fn handle_command_mode(&mut self, key_event: KeyEvent) {
@@ -627,25 +649,13 @@ impl TuiChrome {
                 state.mode = Mode::Normal;
                 state.handle_command();
             }
-            // Control k is delete line
-            KeyCode::Char('k') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                state.command = String::new();
-            }
-            KeyCode::Char('h') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                state.command = String::new();
-            }
-
-            KeyCode::Char(c) => {
-                state.command.push(c);
-            }
-            KeyCode::Backspace => {
-                state.command.pop();
-            }
             KeyCode::Enter => {
                 state.mode = Mode::Normal;
                 state.handle_command();
             }
-            _ => {}
+            _ => {
+                Self::handle_textinput(&mut state.command, key_event);
+            }
         }
     }
 
@@ -681,20 +691,14 @@ impl TuiChrome {
                 state.mode = Mode::Normal;
                 state.handle_filter()
             }
-            KeyCode::Char(c) => {
-                // filter for c
-                state.filter.push(c);
-                state.handle_filter()
-            }
-            KeyCode::Backspace => {
-                state.filter.pop();
-                state.handle_filter()
-            }
             KeyCode::Enter => {
                 state.mode = Mode::Normal;
                 state.handle_filter()
             }
-            _ => {}
+            _ => {
+                Self::handle_textinput(&mut state.filter, key_event);
+                state.handle_filter();
+            }
         }
     }
 
