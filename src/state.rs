@@ -27,11 +27,13 @@ pub struct TuiState {
     pub mode: Mode,
     pub next_mode: Mode,
     pub search: String,
-    pub filter: String,
     pub search_ast: Option<ast::AST>,
+    pub filter: String,
+    pub filter_ok: bool,
     pub command: String,
     pub warning: String,
     pub view_details: bool,
+    pub text_edit_position: usize,
 }
 
 impl TuiState {
@@ -49,11 +51,13 @@ impl TuiState {
             mode: Mode::Normal,
             next_mode: Mode::Normal,
             search: String::new(),
-            filter: String::new(),
             search_ast: None,
+            filter: String::new(),
+            filter_ok: true,
             command: String::new(),
             warning: String::new(),
             view_details: false,
+            text_edit_position: 0,
         }
     }
 
@@ -114,8 +118,10 @@ impl TuiState {
             Ok(parsed) => {
                 self.records.filter_parallel(parsed);
                 self.set_position(0);
+                self.filter_ok = true;
             }
             Err(_err) => {
+                self.filter_ok = false;
                 // panic!("TODO show error parsing: {}", err);
             }
         }

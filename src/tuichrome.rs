@@ -346,15 +346,26 @@ impl TuiChrome {
     }
 
     pub fn render_footer_search(state: &TuiState) -> Block {
-        Self::render_textinput_block("Search", &state.search, state.settings.colors.footer.search)
+        Self::render_textinput_block(
+            "Search",
+            &state.search,
+            state.position,
+            state.settings.colors.footer.search,
+        )
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
-        Self::render_textinput_block("Filter", &state.filter, state.settings.colors.footer.filter)
+        let style = if state.filter_ok {
+            state.settings.colors.footer.filter
+        } else {
+            Style::default().fg(Color::Red).bg(Color::Black)
+        };
+        Self::render_textinput_block("Filter", &state.filter, state.text_edit_position, style)
     }
     pub fn render_footer_command(state: &TuiState) -> Block {
         Self::render_textinput_block(
             "Command",
             &state.command,
+            state.text_edit_position,
             state.settings.colors.footer.command,
         )
     }
@@ -379,12 +390,26 @@ impl TuiChrome {
         ));
     }
 
-    pub fn render_textinput_block<'a>(label: &'a str, value: &'a str, style: Style) -> Block<'a> {
+    pub fn render_textinput_block<'a>(
+        label: &'a str,
+        value: &'a str,
+        position: usize,
+        style: Style,
+    ) -> Block<'a> {
         let mut spans = vec![];
         let rstyle = reverse_style(style);
 
         spans.push(Span::styled(format!(" {} ", label), rstyle));
-        spans.push(Span::styled(format!(" {}█", value), style));
+
+        // we split value in three, before cursor, cursor, after cursor
+        let before_cursor = value.chars().take(position).collect::<String>();
+        let cursor = value.chars().nth(position).unwrap_or(' ');
+        let after_cursor = value.chars().skip(position + 1).collect::<String>();
+        spans.push(Span::styled(" ", style));
+        spans.push(Span::styled(before_cursor, style));
+        spans.push(Span::styled(cursor.to_string(), rstyle));
+        spans.push(Span::styled(after_cursor, style));
+        spans.push(Span::styled(" ", style));
 
         let line = Line::from(spans);
 
@@ -606,31 +631,57 @@ impl TuiChrome {
                 state.search_next();
             }
             _ => {
-                Self::handle_textinput(&mut state.search, key_event);
+                Self::handle_textinput(&mut state.search, &mut state.text_edit_position, key_event);
                 state.search_ast = ast::parse(&state.search).ok();
                 state.search_fwd();
             }
         }
     }
 
-    pub fn handle_textinput(text: &mut String, keyevent: KeyEvent) {
+    pub fn handle_textinput(text: &mut String, position: &mut usize, keyevent: KeyEvent) {
         match keyevent.code {
             KeyCode::Char('u') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 text.clear();
+                *position = 0;
             }
             // this is what gets received on control backspace
             KeyCode::Char('h') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 text.clear();
+                *position = 0;
             }
             KeyCode::Backspace if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
                 text.clear();
+                *position = 0;
+            }
+            KeyCode::Left => {
+                *position = if *position > 0 { *position - 1 } else { 0 };
+            }
+            KeyCode::Right => {
+                *position = min(text.len(), *position + 1);
+            }
+            KeyCode::Home => {
+                *position = 0;
+            }
+            KeyCode::End => {
+                *position = text.len();
+            }
+            KeyCode::Delete => {
+                if *position < text.len() {
+                    text.remove(*position);
+                }
             }
 
             KeyCode::Backspace => {
-                text.pop();
+                // remove at position, and go back
+                if *position > 0 {
+                    text.remove(*position - 1);
+                    *position -= 1;
+                }
             }
             KeyCode::Char(c) => {
-                text.push(c);
+                // insert at position, and advance
+                text.insert(*position, c);
+                *position += 1;
             }
             _ => {}
         };
@@ -654,7 +705,11 @@ impl TuiChrome {
                 state.handle_command();
             }
             _ => {
-                Self::handle_textinput(&mut state.command, key_event);
+                Self::handle_textinput(
+                    &mut state.command,
+                    &mut state.text_edit_position,
+                    key_event,
+                );
             }
         }
     }
@@ -696,7 +751,7 @@ impl TuiChrome {
                 state.handle_filter()
             }
             _ => {
-                Self::handle_textinput(&mut state.filter, key_event);
+                Self::handle_textinput(&mut state.filter, &mut state.text_edit_position, key_event);
                 state.handle_filter();
             }
         }
