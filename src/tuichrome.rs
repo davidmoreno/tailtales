@@ -349,7 +349,7 @@ impl TuiChrome {
         Self::render_textinput_block(
             "Search",
             &state.search,
-            state.position,
+            state.text_edit_position,
             state.settings.colors.footer.search,
         )
     }
@@ -672,6 +672,9 @@ impl TuiChrome {
             }
 
             KeyCode::Backspace => {
+                if *position > text.len() {
+                    *position = text.len();
+                }
                 // remove at position, and go back
                 if *position > 0 {
                     text.remove(*position - 1);
@@ -679,6 +682,9 @@ impl TuiChrome {
                 }
             }
             KeyCode::Char(c) => {
+                if *position > text.len() {
+                    *position = text.len();
+                }
                 // insert at position, and advance
                 text.insert(*position, c);
                 *position += 1;
@@ -720,10 +726,12 @@ impl TuiChrome {
 
         if common_prefix != state.command {
             state.command = common_prefix;
+            state.text_edit_position = state.command.len();
             return;
         }
         if completions.len() == 1 {
             state.command = completions[0].clone();
+            state.text_edit_position = state.command.len();
         } else if completions.len() > 1 {
             let completions = completions.join(" █ ");
             state.next_mode = Mode::Command;
