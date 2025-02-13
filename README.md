@@ -2,6 +2,15 @@
 
 A TUI log viewer written in Rust
 
+<p align="center" >
+      <a href="./screenshot.png" >
+            <img src="./screenshot.png" alt="Screenshot of TAIL TALES" style="width: 25%">
+      </a>
+      <a href="./screenshot2.png">
+            <img src="./screenshot2.png" alt="Screenshot of TAIL TALES" style="width: 25%">
+      </a>
+</p>
+
 ## Objetives
 
 To easy inspect existing logs or streaming logs, with some filters, marking of messages
