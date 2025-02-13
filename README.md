@@ -1,6 +1,6 @@
 # TAIL TALES
 
-A TUI log parser written in Rust
+A TUI log viewer written in Rust
 
 ## Objetives
 
