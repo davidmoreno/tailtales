@@ -25,8 +25,6 @@ fn main() {
 
     parse_args(&std::env::args().collect(), &mut tui_chrome);
 
-    keyboard_input::start_event_thread(tui_chrome.tx.clone());
-
     tui_chrome.state.read_time = start_parse_time.elapsed();
 
     tui_chrome.run();

@@ -1,5 +1,6 @@
 use crate::ast;
 use crate::events::TuiEvent;
+use crate::keyboard_input;
 use crate::record;
 use crate::settings::string_to_style;
 use crate::state::Mode;
@@ -18,6 +19,7 @@ use std::{cmp::max, io, time};
 pub struct TuiChrome {
     pub state: TuiState,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    pub keyboard_input: keyboard_input::KeyboardInput,
     pub tx: mpsc::Sender<TuiEvent>,
     pub rx: mpsc::Receiver<TuiEvent>,
 }
@@ -28,7 +30,8 @@ impl TuiChrome {
         let (tx, rx) = mpsc::channel();
 
         Ok(TuiChrome {
-            state: TuiState::new(),
+            state: TuiState::new(tx.clone()),
+            keyboard_input: keyboard_input::KeyboardInput::new(tx.clone()),
             terminal,
             tx,
             rx,
@@ -528,6 +531,19 @@ impl TuiChrome {
                     timeout = time::Duration::from_millis(100);
                     // self.wait_for_event_timeout(time::Duration::from_millis(100))?;
                 }
+                TuiEvent::Pause => {
+                    self.keyboard_input.pause();
+                    return Ok(());
+                }
+                TuiEvent::Resume => {
+                    self.refresh_screen();
+                    self.keyboard_input.resume();
+                    return Ok(());
+                }
+                TuiEvent::RefreshScreen => {
+                    self.refresh_screen();
+                    return Ok(());
+                }
             }
             if timeout.as_millis() <= 0 {
                 return Ok(());
@@ -595,11 +611,6 @@ impl TuiChrome {
 
         if self.state.settings.keybindings.contains_key(keyname) {
             let command = self.state.settings.keybindings[keyname].clone();
-
-            if command == "refresh_screen" {
-                self.refresh_screen();
-                return;
-            }
 
             self.state.command = command;
             self.state.handle_command();

@@ -15,8 +15,6 @@ pub struct Settings {
     #[serde(default)]
     pub default_arguments: Vec<String>,
     #[serde(default)]
-    pub help_url: String,
-    #[serde(default)]
     pub keybindings: HashMap<String, String>,
     #[serde(default)]
     pub colors: GlobalColorSettings,
@@ -42,6 +40,8 @@ pub struct SettingsFromYaml {
 pub struct GlobalSettings {
     // pub reload_on_truncate: bool,
     pub gutter_symbol: String,
+    pub help_url: String,
+    pub editor: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -325,14 +325,11 @@ impl Settings {
 
     pub fn merge_with(&mut self, other: SettingsFromYaml) {
         if other.global.is_some() {
-            self.global = other.global.unwrap();
+            self.merge_global(&other.global.unwrap());
         }
 
         if other.default_arguments.len() > 0 {
             self.default_arguments = other.default_arguments.clone();
-        }
-        if other.help_url.is_some() {
-            self.help_url = other.help_url.unwrap();
         }
 
         let mut other_rules = other.rules.clone();
@@ -354,6 +351,17 @@ impl Settings {
         }
 
         self.rules = other_rules
+    }
+    fn merge_global(&mut self, other: &GlobalSettings) {
+        if other.editor.len() > 0 {
+            self.global.editor = other.editor.clone();
+        }
+        if other.gutter_symbol.len() > 0 {
+            self.global.gutter_symbol = other.gutter_symbol.clone();
+        }
+        if other.help_url.len() > 0 {
+            self.global.help_url = other.help_url.clone();
+        }
     }
 }
 

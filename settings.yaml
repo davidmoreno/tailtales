@@ -23,6 +23,8 @@ global:
   # gutter_symbol: "♥"
   # gutter_symbol: "✔"
   # gutter_symbol: "│"
+  help_url: https://duckduckgo.com/?q={}
+  editor: vim
 
 colors:
   normal: white black
@@ -46,7 +48,6 @@ colors:
     line_number: blue black
 
 # this is the URL to open when press F1. The {} will be replaced with the selected text
-help_url: https://duckduckgo.com/?q={}
 # help_url: https://www.perplexity.ai/search/new?q={}
 # help_url: https://google.com/search/?q={}
 # help_url: https://chatgpt.com/?q={}

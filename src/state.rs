@@ -1,4 +1,9 @@
-use std::time;
+use crossterm::terminal::enable_raw_mode;
+use std::{
+    io::{self, Stderr, Stdout, Write},
+    process::Stdio,
+    thread, time,
+};
 
 use crate::{
     ast, recordlist,
@@ -34,10 +39,11 @@ pub struct TuiState {
     pub warning: String,
     pub view_details: bool,
     pub text_edit_position: usize,
+    pub chrome_tx: std::sync::mpsc::Sender<crate::events::TuiEvent>,
 }
 
 impl TuiState {
-    pub fn new() -> TuiState {
+    pub fn new(chrome_tx: std::sync::mpsc::Sender<crate::events::TuiEvent>) -> TuiState {
         TuiState {
             settings: Settings::new(),
             current_rule: RulesSettings::default(),
@@ -58,6 +64,7 @@ impl TuiState {
             warning: String::new(),
             view_details: false,
             text_edit_position: 0,
+            chrome_tx,
         }
     }
 
@@ -208,6 +215,11 @@ impl TuiState {
             }
             "settings" => {
                 self.open_settings();
+            }
+            "refresh_screen" => {
+                self.chrome_tx
+                    .send(crate::events::TuiEvent::RefreshScreen)
+                    .unwrap();
             }
             "mode" => {
                 let args: Vec<String> = args.map(String::from).collect();
@@ -366,7 +378,7 @@ impl TuiState {
 
         // open xdg-open
         let urlencodedline = urlencoding::encode(&line);
-        self.open_url(&self.settings.help_url.replace("{}", &urlencodedline));
+        self.open_url(&self.settings.global.help_url.replace("{}", &urlencodedline));
     }
 
     pub fn open_url(&self, url: &str) {
@@ -426,14 +438,52 @@ impl TuiState {
             filename.unwrap()
         };
 
-        // Open the file with xdg-open, using this same terminal, and wait for it to finish.
+        let mut command: &str = &self.settings.global.editor;
+        if command.len() == 0 {
+            command = "xdg-open";
+        }
+
+        // Open the file with the default command, and wait for it to finish.
         // stdin, stderr and stdout are inherited from the parent process.
-        let _output = std::process::Command::new("xdg-open")
+        let mut output = std::process::Command::new(command)
             .arg(filename.to_str().unwrap())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
-            .expect("failed to execute process")
-            .wait()
-            .expect("failed to wait for process");
+            .expect("failed to execute process");
+
+        self.chrome_tx.send(crate::events::TuiEvent::Pause).unwrap();
+
+        let mut child_stdin = output.stdin.take().unwrap();
+        thread::spawn(move || {
+            let mut stdin = io::stdin();
+            match io::copy(&mut stdin, &mut child_stdin) {
+                Ok(_) => {}
+                Err(e) => {
+                    let _ = writeln!(io::stderr(), "Error writing to child stdin: {}", e);
+                }
+            }
+        });
+
+        match output.wait() {
+            Ok(exit_status) if exit_status.success() => {
+                self.set_warning("Settings file closed".into());
+                // self.settings.reload_settings();
+            }
+            Ok(n) => {
+                self.set_warning(format!("Settings file closed with error code: {}", n));
+            }
+            Err(e) => {
+                self.set_warning(format!("Error opening settings: {}", e));
+            }
+        }
+
+        self.chrome_tx
+            .send(crate::events::TuiEvent::Resume)
+            .unwrap();
+
+        crossterm::terminal::enable_raw_mode().unwrap();
     }
 
     pub fn get_completions(&self) -> (String, Vec<String>) {
