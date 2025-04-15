@@ -1,4 +1,4 @@
-use std::{hash::Hash, time};
+use std::time;
 
 use crate::{
     ast,
@@ -129,11 +129,22 @@ impl TuiState {
         }
     }
     pub fn handle_command(&mut self) {
+        let lines: Vec<String> = self.command.lines().map(String::from).collect();
+        for line in lines {
+            let ok = self.handle_one_command_line(&line);
+            if !ok {
+                self.set_warning(format!("Error executing command: {}", line));
+                return;
+            }
+        }
+    }
+
+    pub fn handle_one_command_line(&mut self, line: &str) -> bool {
         let record = match self.records.get(self.position) {
             Some(record) => record,
             None => &Record::new("".to_string()),
         };
-        let parsed_command = placeholder_render(&self.command, &record);
+        let parsed_command = placeholder_render(line, &record);
         let mut args = sh_style_split(&parsed_command).into_iter();
         // Remove the first argument, which is the command itself
 
@@ -141,7 +152,7 @@ impl TuiState {
             Some(command) => command,
             None => {
                 self.set_warning("No command provided".into());
-                return;
+                return false;
             }
         };
 
@@ -228,12 +239,13 @@ impl TuiState {
                 );
             }
             "exec" => {
-                self.exec(args.into_iter().collect());
+                return self.exec(args.into_iter().collect());
             }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
             }
         }
+        true
     }
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;
@@ -348,19 +360,16 @@ impl TuiState {
         }
     }
 
-    pub fn exec(&mut self, args: Vec<String>) {
-        let mut args = args.into_iter();
-        // Remove the first argument, which is the command itself
-        let command = match args.next() {
-            Some(command) => command,
-            None => {
-                self.set_warning("No command provided".into());
-                return;
-            }
-        };
+    pub fn exec(&mut self, args: Vec<String>) -> bool {
+        let command = args.join(" "); // Join all arguments into a single command string
 
-        // Execute the command
-        let child = std::process::Command::new(&command).args(args).spawn();
+        // Execute the command inside a shell
+        let child = std::process::Command::new("sh")
+            .arg("-c") // Pass the command string to the shell
+            .arg(&command)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
 
         match child {
             Ok(mut child) => {
@@ -371,10 +380,11 @@ impl TuiState {
                     "Failed to execute command: {}. Error: {}",
                     &command, e
                 ));
+                return false;
             }
         };
+        true
     }
-
     pub fn move_to_next_mark(&mut self) {
         let current = self.position;
         let max = self.records.visible_records.len();

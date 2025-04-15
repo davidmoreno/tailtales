@@ -57,7 +57,7 @@ default_arguments:
 
 keybindings:
   ":": "command"
-  "=": "warning {{lineno}}"
+  "=": "warning {{line_number}}"
   "|": "mode filter"
   "f": "mode filter"
   "/": "mode search"
@@ -70,9 +70,10 @@ keybindings:
   "F3": "exec xdg-open https://www.duckduckgo.com/?q={{lineqs}}"
   "F4": "exec xdg-open https://google.com/search?q={{lineqs}}"
   "q": "quit"
-  "control-c": "quit"
+  "control-c": |
+    exec wl-copy "{{line}}" || echo "{{line}}" | xclip -i -selection clipboard
+    warning "Line copied to clipboard"
   "o": "help"
-
   "j": "vmove 1"
   "k": "vmove -1"
   "up": "vmove -1"
