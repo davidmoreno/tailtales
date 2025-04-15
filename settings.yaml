@@ -73,7 +73,6 @@ keybindings:
   "control-c": |
     exec wl-copy "{{line}}" || echo "{{line}}" | xclip -i -selection clipboard
     warning "Line copied to clipboard"
-  "o": "help"
   "j": "vmove 1"
   "k": "vmove -1"
   "up": "vmove -1"

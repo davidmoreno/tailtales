@@ -32,9 +32,8 @@ command mode (: by default).
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | quit                | Exit the application                                                                                                       |
 | clear               | Refresh the screen, usefull when its damaged because of non controlled ANSI characters                                     |
-| open_help           | Opens the help URL with teh current record original data, slightly anonymized                                              |
-| open_url <url>      | Open a specified URL. Used in default keybindings to open help                                                             |
 | command             | Opens command mode with a new command (not enough with `mode command` as that woudl not clear the current command)         |
+| exec                | Executes a command, as wl-copy, xdg-open.. or any helper. With placeholders you can pass the original line or urlencoded   |
 | search_next         | Search for the next occurrence                                                                                             |
 | search_prev         | Search for the previous occurrence                                                                                         |
 | vmove <ammount>     | Move vertically, positive down, negative up                                                                                |
@@ -51,44 +50,45 @@ command mode (: by default).
 
 ## Keybindings
 
-| Key            | Command                                                |
-| -------------- | ------------------------------------------------------ |
-| :              | command                                                |
-| \|             | mode filter                                            |
-| f              | mode filter                                            |
-| /              | mode search                                            |
-| n              | search_next                                            |
-| shift-n        | search_prev                                            |
-| control-del    | clear_records                                          |
-| control-l      | refresh_screen                                         |
-| F1             | open_url https://github.com/davidmoreno/tailtales/#use |
-| F2             | open_help                                              |
-| q              | quit                                                   |
-| control-c      | quit                                                   |
-| o              | help                                                   |
-| up             | vmove -1                                               |
-| k              | vmove -1                                               |
-| page up        | vmove -10                                              |
-| down           | vmove 1                                                |
-| j              | vmove 1                                                |
-| page down      | vmove 10                                               |
-| left           | hmove -1                                               |
-| control-left   | hmove -10                                              |
-| right          | hmove 1                                                |
-| control-right  | hmove 10                                               |
-| home           | vgoto 0                                                |
-| end            | vgoto 2000000000                                       |
-| G              | goto_line                                              |
-| space          | toggle_mark yellow                                     |
-| 1              | toggle_mark red                                        |
-| 2              | toggle_mark green                                      |
-| 3              | toggle_mark blue                                       |
-| 4              | toggle_mark magenta                                    |
-| 5              | toggle_mark cyan                                       |
-| tab            | move_to_next_mark                                      |
-| shift-back tab | move_to_prev_mark                                      |
-| esc            | mode normal                                            |
-| v              | toggle_details                                         |
+| Key            | Command                                                         |
+| -------------- | --------------------------------------------------------------- |
+| :              | command                                                         |
+| \|             | mode filter                                                     |
+| f              | mode filter                                                     |
+| /              | mode search                                                     |
+| n              | search_next                                                     |
+| shift-n        | search_prev                                                     |
+| control-del    | clear_records                                                   |
+| control-l      | refresh_screen                                                  |
+| F1             | exec xdg-open https://github.com/davidmoreno/tailtales/#use     |
+| F2             | exec xdg-open https://www.perplexity.ai/search/new?q={{lineqs}} |
+| F3             | exec xdg-open https://www.duckduckgo.com/?q={{lineqs}}          |
+| F4             | exec xdg-open https://google.com/search?q={{lineqs}}            |
+| q              | quit                                                            |
+| control-c      | -- copy to clipboard --                                         |
+| up             | vmove -1                                                        |
+| k              | vmove -1                                                        |
+| page up        | vmove -10                                                       |
+| down           | vmove 1                                                         |
+| j              | vmove 1                                                         |
+| page down      | vmove 10                                                        |
+| left           | hmove -1                                                        |
+| control-left   | hmove -10                                                       |
+| right          | hmove 1                                                         |
+| control-right  | hmove 10                                                        |
+| home           | vgoto 0                                                         |
+| end            | vgoto 2000000000                                                |
+| G              | goto_line                                                       |
+| space          | toggle_mark yellow                                              |
+| 1              | toggle_mark red                                                 |
+| 2              | toggle_mark green                                               |
+| 3              | toggle_mark blue                                                |
+| 4              | toggle_mark magenta                                             |
+| 5              | toggle_mark cyan                                                |
+| tab            | move_to_next_mark                                               |
+| shift-back tab | move_to_prev_mark                                               |
+| esc            | mode normal                                                     |
+| v              | toggle_details                                                  |
 
 ## Settings
 
