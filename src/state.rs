@@ -1,7 +1,9 @@
-use std::time;
+use std::{hash::Hash, time};
 
 use crate::{
-    ast, recordlist,
+    ast,
+    record::Record,
+    recordlist,
     settings::{RulesSettings, Settings},
 };
 
@@ -127,10 +129,23 @@ impl TuiState {
         }
     }
     pub fn handle_command(&mut self) {
-        let mut args = self.command.split_whitespace();
-        let command = args.next().unwrap_or("");
+        let record = match self.records.get(self.position) {
+            Some(record) => record,
+            None => &Record::new("".to_string()),
+        };
+        let parsed_command = placeholder_render(&self.command, &record);
+        let mut args = sh_style_split(&parsed_command).into_iter();
+        // Remove the first argument, which is the command itself
 
-        match command {
+        let command = match args.next() {
+            Some(command) => command,
+            None => {
+                self.set_warning("No command provided".into());
+                return;
+            }
+        };
+
+        match command.as_str() {
             "" => {}
             "quit" => {
                 self.running = false;
@@ -493,4 +508,53 @@ impl TuiState {
         }
         return (common_prefix, completions);
     }
+}
+
+lazy_static::lazy_static! {
+    static ref PLACEHOLDER_RE: regex::Regex = regex::Regex::new(r"\$([a-zA-Z0-9_]+)").unwrap();
+}
+
+fn placeholder_render(orig: &str, context: &Record) -> String {
+    let context = &context.data;
+    let mut result = orig.to_string();
+
+    // regex get all the $key, and replace with value or "none"
+    let captures = PLACEHOLDER_RE.captures_iter(orig);
+    for cap in captures {
+        let key = &cap[1];
+        let value = context
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| "none".to_string());
+        result = result.replace(&cap[0], &value);
+    }
+
+    result
+}
+
+fn sh_style_split(line: &str) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+    let mut current_arg = String::new();
+    let mut in_quotes = false;
+    let mut in_single_quotes = false;
+
+    for c in line.chars() {
+        if c == '"' {
+            in_quotes = !in_quotes;
+        } else if c == '\'' {
+            in_single_quotes = !in_single_quotes;
+        } else if c.is_whitespace() && !in_quotes && !in_single_quotes {
+            if !current_arg.is_empty() {
+                let trimmed_arg = current_arg.trim();
+                args.push(trimmed_arg.to_string());
+                current_arg.clear();
+            }
+        } else {
+            current_arg.push(c);
+        }
+    }
+    if !current_arg.is_empty() {
+        args.push(current_arg.trim().to_string());
+    }
+    args
 }

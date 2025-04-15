@@ -293,6 +293,14 @@ impl RecordList {
         self.all_records.clear();
         self.visible_records.clear();
     }
+
+    pub fn get(&self, index: usize) -> Option<&Record> {
+        if index < self.visible_records.len() {
+            Some(&self.visible_records[index])
+        } else {
+            None
+        }
+    }
 }
 
 impl Drop for RecordList {
