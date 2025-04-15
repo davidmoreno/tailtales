@@ -15,8 +15,6 @@ pub struct Settings {
     #[serde(default)]
     pub default_arguments: Vec<String>,
     #[serde(default)]
-    pub help_url: String,
-    #[serde(default)]
     pub keybindings: HashMap<String, String>,
     #[serde(default)]
     pub colors: GlobalColorSettings,
@@ -30,8 +28,6 @@ pub struct SettingsFromYaml {
     pub rules: Vec<RulesSettings>,
     #[serde(default)]
     pub default_arguments: Vec<String>,
-    #[serde(default)]
-    pub help_url: Option<String>,
     #[serde(default)]
     pub keybindings: Option<HashMap<String, String>>,
     #[serde(default)]
@@ -330,9 +326,6 @@ impl Settings {
 
         if other.default_arguments.len() > 0 {
             self.default_arguments = other.default_arguments.clone();
-        }
-        if other.help_url.is_some() {
-            self.help_url = other.help_url.unwrap();
         }
 
         let mut other_rules = other.rules.clone();
