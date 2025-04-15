@@ -45,12 +45,6 @@ colors:
     other: cyan black
     line_number: blue black
 
-# this is the URL to open when press F1. The {} will be replaced with the selected text
-help_url: https://duckduckgo.com/?q={}
-# help_url: https://www.perplexity.ai/search/new?q={}
-# help_url: https://google.com/search/?q={}
-# help_url: https://chatgpt.com/?q={}
-
 # If called without any argument, this is what it opens.
 # With ! at the begining it will execute the command with the rest of the argumments
 default_arguments:
@@ -63,6 +57,7 @@ default_arguments:
 
 keybindings:
   ":": "command"
+  "=": "warning {{lineno}}"
   "|": "mode filter"
   "f": "mode filter"
   "/": "mode search"
@@ -70,8 +65,10 @@ keybindings:
   "shift-n": "search_prev"
   "control-del": "clear_records"
   "control-l": "refresh_screen"
-  "F1": "open_url https://github.com/davidmoreno/tailtales/#use"
-  "F2": "open_help"
+  "F1": "exec xdg-open https://github.com/davidmoreno/tailtales/#use"
+  "F2": "exec xdg-open https://www.perplexity.ai/search/new?q={{lineqs}}"
+  "F3": "exec xdg-open https://www.duckduckgo.com/?q={{lineqs}}"
+  "F4": "exec xdg-open https://google.com/search?q={{lineqs}}"
   "q": "quit"
   "control-c": "quit"
   "o": "help"

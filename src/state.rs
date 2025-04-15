@@ -156,18 +156,6 @@ impl TuiState {
                 self.scroll_offset_top = 0;
                 self.scroll_offset_left = 0;
             }
-            "open_help" => {
-                self.open_help();
-            }
-            "open_url" => {
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let url = args_vec.get(0);
-                if let Some(url) = url {
-                    self.open_url(url);
-                } else {
-                    self.set_warning("No URL provided".into());
-                }
-            }
             "command" => {
                 self.command = String::new();
                 self.mode = Mode::Command;
@@ -238,6 +226,9 @@ impl TuiState {
                 self.set_vposition(
                     self.scroll_offset_left as i32 + position.parse::<i32>().unwrap(),
                 );
+            }
+            "exec" => {
+                self.exec(args.into_iter().collect());
             }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
@@ -357,38 +348,31 @@ impl TuiState {
         }
     }
 
-    pub fn open_help(&self) {
-        let line = &self
-            .records
-            .visible_records
-            .get(self.position)
-            .unwrap()
-            .original;
-
-        // remove host name
-        let hostname = match hostname::get() {
-            Ok(name) => name.to_string_lossy().into_owned(),
-            Err(_) => String::from("unknown"),
+    pub fn exec(&mut self, args: Vec<String>) {
+        let mut args = args.into_iter();
+        // Remove the first argument, which is the command itself
+        let command = match args.next() {
+            Some(command) => command,
+            None => {
+                self.set_warning("No command provided".into());
+                return;
+            }
         };
-        let line = line.replace(&hostname, "");
-        // remove ips to xxx.xxx.xxx.xx
-        let line = regex::Regex::new(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
-            .unwrap()
-            .replace_all(&line, "xxx.xxx.xxx.xxx");
-        // remove username
-        let username = whoami::username();
-        let line = line.replace(&username, "username");
 
-        // open xdg-open
-        let urlencodedline = urlencoding::encode(&line);
-        self.open_url(&self.settings.help_url.replace("{}", &urlencodedline));
-    }
+        // Execute the command
+        let child = std::process::Command::new(&command).args(args).spawn();
 
-    pub fn open_url(&self, url: &str) {
-        let _output = std::process::Command::new("xdg-open")
-            .arg(url)
-            .output()
-            .expect("failed to execute process");
+        match child {
+            Ok(mut child) => {
+                let _ = child.wait();
+            }
+            Err(e) => {
+                self.set_warning(format!(
+                    "Failed to execute command: {}. Error: {}",
+                    &command, e
+                ));
+            }
+        };
     }
 
     pub fn move_to_next_mark(&mut self) {
@@ -457,8 +441,6 @@ impl TuiState {
             "command",
             "quit",
             "clear",
-            "open_help",
-            "open_url",
             "search_next",
             "search_prev",
             "vmove",
@@ -472,6 +454,7 @@ impl TuiState {
             "settings",
             "mode",
             "toggle_details",
+            "exec",
         ];
 
         completions.retain(|&c| c.starts_with(current));
@@ -511,11 +494,11 @@ impl TuiState {
 }
 
 lazy_static::lazy_static! {
-    static ref PLACEHOLDER_RE: regex::Regex = regex::Regex::new(r"\$([a-zA-Z0-9_]+)").unwrap();
+    static ref PLACEHOLDER_RE: regex::Regex = regex::Regex::new(r"\{\{(.*?)\}\}").unwrap();
 }
 
-fn placeholder_render(orig: &str, context: &Record) -> String {
-    let context = &context.data;
+fn placeholder_render(orig: &str, record: &Record) -> String {
+    let context = &record.data;
     let mut result = orig.to_string();
 
     // regex get all the $key, and replace with value or "none"
@@ -525,11 +508,49 @@ fn placeholder_render(orig: &str, context: &Record) -> String {
         let value = context
             .get(key)
             .cloned()
-            .unwrap_or_else(|| "none".to_string());
+            .unwrap_or_else(|| get_default_value(key, record));
         result = result.replace(&cap[0], &value);
     }
 
     result
+}
+
+fn get_default_value(key: &str, record: &Record) -> String {
+    match key {
+        "line" => record.original.clone(),
+        "lineqs" => safe_qs_string(&record.original),
+        _ => "none".to_string(),
+    }
+}
+
+fn safe_qs_string(line: &str) -> String {
+    let hostname = match hostname::get() {
+        Ok(name) => name.to_string_lossy().into_owned(),
+        Err(_) => String::from("unknown"),
+    };
+    let line = line.replace(&hostname, "");
+    // remove ips to xxx.xxx.xxx.xx
+    let line = regex::Regex::new(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
+        .unwrap()
+        .replace_all(&line, "xxx.xxx.xxx.xxx");
+
+    // remove date
+    let line = regex::Regex::new(r"\d{4}-\d{2}-\d{2}")
+        .unwrap()
+        .replace_all(&line, "");
+    // remove time
+    let line = regex::Regex::new(r"\d{2}:\d{2}:\d{2}")
+        .unwrap()
+        .replace_all(&line, "");
+
+    // remove username
+    let username = whoami::username();
+    let line = line.replace(&username, "username");
+
+    // open xdg-open
+    let urlencodedline = urlencoding::encode(&line);
+
+    urlencodedline.to_string()
 }
 
 fn sh_style_split(line: &str) -> Vec<String> {
