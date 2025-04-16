@@ -1,5 +1,7 @@
 use std::time;
 
+use ratatui::text::ToLine;
+
 use crate::{
     ast,
     record::Record,
@@ -131,15 +133,17 @@ impl TuiState {
     pub fn handle_command(&mut self) {
         let lines: Vec<String> = self.command.lines().map(String::from).collect();
         for line in lines {
-            let ok = self.handle_one_command_line(&line);
-            if !ok {
-                self.set_warning(format!("Error executing command: {}", line));
-                return;
+            match self.handle_one_command_line(&line) {
+                Ok(_) => (),
+                Err(err) => {
+                    self.set_warning(format!("Error executing command: {} | {}", line, err));
+                    return;
+                }
             }
         }
     }
 
-    pub fn handle_one_command_line(&mut self, line: &str) -> bool {
+    pub fn handle_one_command_line(&mut self, line: &str) -> Result<(), String> {
         let record = match self.records.get(self.position) {
             Some(record) => record,
             None => &Record::new("".to_string()),
@@ -152,7 +156,7 @@ impl TuiState {
             Some(command) => command,
             None => {
                 self.set_warning("No command provided".into());
-                return false;
+                return Err("No command provided".into());
             }
         };
 
@@ -245,7 +249,7 @@ impl TuiState {
                 self.set_warning(format!("Unknown command: {}", command));
             }
         }
-        true
+        Ok(())
     }
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;
@@ -360,30 +364,59 @@ impl TuiState {
         }
     }
 
-    pub fn exec(&mut self, args: Vec<String>) -> bool {
-        let command = args.join(" "); // Join all arguments into a single command string
+    pub fn exec(&mut self, args: Vec<String>) -> Result<(), String> {
+        let mut allargs: Vec<String> = Vec::new();
+        allargs.push("-c".to_string());
+        allargs.push(
+            args.iter()
+                .map(|arg| {
+                    if arg.contains(" ") {
+                        format!("\"{}\"", arg.replace("\"", "\\\""))
+                    } else {
+                        arg.to_string()
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join(" "),
+        );
 
         // Execute the command inside a shell
         let child = std::process::Command::new("sh")
-            .arg("-c") // Pass the command string to the shell
-            .arg(&command)
+            .args(&allargs) // Pass the command string to the shell
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
 
         match child {
             Ok(mut child) => {
-                let _ = child.wait();
+                let exit_code = child.wait();
+                match exit_code {
+                    Ok(status) => {
+                        if status.code().unwrap_or(0) != 0 {
+                            return Err(format!(
+                                "Command exited with code {}",
+                                status.code().unwrap_or(0)
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        self.set_warning(format!("Failed to get exit code: {}", e));
+                        return Err(format!("Failed to get exit code: {}", e));
+                    }
+                }
             }
             Err(e) => {
                 self.set_warning(format!(
                     "Failed to execute command: {}. Error: {}",
-                    &command, e
+                    &allargs[1], e
                 ));
-                return false;
+                return Err(format!(
+                    "Failed to execute command: {}. Error: {}",
+                    &allargs[1], e
+                ));
             }
         };
-        true
+        Ok(())
     }
     pub fn move_to_next_mark(&mut self) {
         let current = self.position;
