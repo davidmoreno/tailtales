@@ -1,7 +1,5 @@
 use std::time;
 
-use ratatui::text::ToLine;
-
 use crate::{
     ast,
     record::Record,
