@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "tailtales"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "chrono",
  "crossterm",
