@@ -2,9 +2,11 @@ use core::panic;
 use std::io::{self, IsTerminal};
 use std::time::{self};
 
+use parser::Parser;
+use ratatui::symbols::DOT;
 use regex::Regex;
-use settings::RulesSettings;
 use settings::Settings;
+use settings::{Alignment, RulesSettings};
 use tuichrome::TuiChrome;
 
 mod ast;
@@ -117,6 +119,26 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
                 .readfile_parallel(&filename, tui_chrome.tx.clone());
         }
         narg += 1;
+    }
+
+    // If the parser is CSV, we auto add the columns from the headers
+    for parser_i in &tui_chrome.state.records.parsers {
+        if let Parser::Csv(parser) = parser_i {
+            let headers = &parser.read().unwrap().headers;
+            for header in headers {
+                tui_chrome
+                    .state
+                    .current_rule
+                    .columns
+                    .push(settings::ColumnSettings {
+                        name: header.clone(),
+                        width: header
+                            .len()
+                            .max(tui_chrome.state.records.max_record_size(header)),
+                        align: Alignment::Left,
+                    });
+            }
+        }
     }
 }
 

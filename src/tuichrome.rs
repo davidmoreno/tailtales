@@ -169,7 +169,10 @@ impl TuiChrome {
             .map(|column| column.width as u16)
             .collect::<Vec<u16>>();
         columns.insert(0, 1);
-        columns.push(size.width - columns.iter().sum::<u16>());
+        columns.push(min(
+            state.records.max_record_size("Original") as i32,
+            (size.width as i32) - (columns.iter().sum::<u16>() as i32),
+        ) as u16);
 
         let table = Table::new(rows, columns).header(header);
         table

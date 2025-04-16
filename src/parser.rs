@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::RwLock};
 
 #[derive(Debug)]
 pub(crate) struct CsvParser {
-    headers: Vec<String>,
+    pub headers: Vec<String>,
     separator: char,
 }
 

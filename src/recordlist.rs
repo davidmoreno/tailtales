@@ -82,7 +82,20 @@ impl RecordList {
         let file_size = reader.seek(std::io::SeekFrom::End(0)).unwrap();
         reader.seek(std::io::SeekFrom::Start(0)).unwrap();
 
+        let mut first_line = String::new();
+
+        if let Ok(size) = reader.read_line(&mut first_line) {
+            if size > 0 {
+                let mut record = Record::new(first_line);
+                record.set_data("filename", filename.to_string());
+                record.set_data("line_number", "0".to_string());
+                record.parse(&self.parsers);
+                self.all_records.push(record);
+            }
+        }
+
         let lines: Vec<String> = reader.lines().map(|line| line.unwrap()).collect();
+
         let records: Vec<Record> = lines
             .par_iter()
             .enumerate()
@@ -300,6 +313,15 @@ impl RecordList {
         } else {
             None
         }
+    }
+
+    pub fn max_record_size(&self, key: &str) -> usize {
+        let mut max_size = 0;
+        let empty = "".to_string();
+        for record in &self.visible_records {
+            max_size = max_size.max(record.get(key).unwrap_or(&empty).len());
+        }
+        max_size
     }
 }
 
