@@ -164,7 +164,7 @@ impl RecordList {
     }
 
     pub fn add(&mut self, mut record: Record) {
-        record.parse(&self.parsers);
+        record.parse(&mut self.parsers);
         record.set_data("line_number", self.all_records.len().to_string());
 
         self.all_records.push(record.clone());

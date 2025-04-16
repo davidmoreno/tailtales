@@ -37,7 +37,7 @@ fn load_parsers(
     parsers: &mut Vec<parser::Parser>,
 ) -> Result<(), parser::ParserError> {
     for extractor in rule.extractors.iter() {
-        parsers.push(parser::Parser::parse(extractor)?);
+        parsers.push(parser::Parser::new(extractor)?);
     }
 
     Ok(())

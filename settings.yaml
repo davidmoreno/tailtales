@@ -160,7 +160,7 @@ rules:
 
   - name: nginx
     file_patterns:
-      - nginx/*.log
+      - nginx/\*\.log
     extractors:
       # 127.0.0.1 - - [02/Jan/2024:12:10:46 +0100] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0"
       - pattern <ip> - <user> [<timestamp>] "<method> <url> <protocol>" <status> <bytes> "<referer>" "<user_agent>"
@@ -228,6 +228,12 @@ rules:
         expression: "systemd"
         gutter: darkgrey
 
+  - name: csv
+    file_patterns:
+      - .*\.csv
+    extractors:
+      - csv
+
   - name: default
     file_patterns:
       - ".*"
@@ -240,9 +246,3 @@ rules:
       - regex (?P<date>\d{4}-\d{2}-\d{2})
       - regex (?P<what>status|upgrade|startup)
       - autodatetime
-    columns:
-      - name: line_number
-        align: right
-        width: 5
-      - name: timestamp
-        width: 19
