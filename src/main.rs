@@ -3,7 +3,6 @@ use std::io::{self, IsTerminal};
 use std::time::{self};
 
 use parser::Parser;
-use ratatui::symbols::DOT;
 use regex::Regex;
 use settings::Settings;
 use settings::{Alignment, RulesSettings};
