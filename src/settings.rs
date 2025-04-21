@@ -48,11 +48,19 @@ pub struct GlobalColorSettings {
     pub highlight: Style,
     #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
     pub mark: Style,
-    #[serde(deserialize_with = "parse_style", serialize_with = "serialize_style")]
+    #[serde(
+        deserialize_with = "parse_style",
+        serialize_with = "serialize_style",
+        default = "default_highlight"
+    )]
     pub mark_highlight: Style,
     pub details: DetailsColorSettings,
     pub table: TableColorSettings,
     pub footer: FooterColorSettings,
+}
+
+fn default_highlight() -> Style {
+    Style::new().fg(Color::White).bg(Color::Black)
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -123,9 +131,9 @@ pub struct FilterSettings {
     )]
     pub expression: ast::AST,
     #[serde(
-        default,
         deserialize_with = "parse_style",
-        serialize_with = "serialize_style"
+        serialize_with = "serialize_style",
+        default = "default_highlight"
     )]
     pub highlight: Style,
     #[serde(

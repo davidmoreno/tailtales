@@ -132,7 +132,7 @@ impl TuiChrome {
             let gutter = if let Some(gutter) = Self::get_gutter_from_record(state, &record) {
                 Cell::from(Span::styled(&settings.global.gutter_symbol, gutter))
             } else {
-                Cell::from(Span::styled(" ", Style::default()))
+                Cell::from(Span::styled(" ", settings.colors.normal))
             };
             cells.insert(0, gutter);
 
