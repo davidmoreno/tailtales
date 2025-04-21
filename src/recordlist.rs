@@ -20,6 +20,7 @@ pub struct RecordList {
     pub parsers: Vec<Parser>,
     pub filter: Option<AST>,
     pub child_process: Option<u32>,
+    pub max_record_size: usize,
 }
 
 impl RecordList {
@@ -30,6 +31,7 @@ impl RecordList {
             parsers: vec![],
             filter: None,
             child_process: None,
+            max_record_size: 0,
         }
     }
 
@@ -71,6 +73,12 @@ impl RecordList {
         self.visible_records = records.clone();
         self.all_records.extend(records);
         self.renumber();
+        self.max_record_size = self
+            .visible_records
+            .iter()
+            .map(|r| r.original.len())
+            .max()
+            .unwrap_or(0);
     }
 
     pub fn readfile_parallel(&mut self, filename: &str, tx: mpsc::Sender<TuiEvent>) {
@@ -113,6 +121,12 @@ impl RecordList {
         self.renumber();
 
         Self::wait_for_changes(filename.to_string(), tx, file_size.try_into().unwrap());
+        self.max_record_size = self
+            .visible_records
+            .iter()
+            .map(|r| r.original.len())
+            .max()
+            .unwrap_or(0);
     }
 
     pub fn wait_for_changes(filename: String, tx: mpsc::Sender<TuiEvent>, position: usize) {
@@ -179,7 +193,7 @@ impl RecordList {
     pub fn add(&mut self, mut record: Record) {
         record.parse(&mut self.parsers);
         record.set_data("line_number", self.all_records.len().to_string());
-
+        self.max_record_size = self.max_record_size.max(record.original.len());
         self.all_records.push(record.clone());
 
         if self.filter.is_none() || record.matches(&self.filter.as_ref().unwrap()) {
@@ -316,6 +330,10 @@ impl RecordList {
     }
 
     pub fn max_record_size(&self, key: &str) -> usize {
+        if self.max_record_size > 0 {
+            return self.max_record_size;
+        }
+
         let mut max_size = 0;
         let empty = "".to_string();
         for record in &self.visible_records {
