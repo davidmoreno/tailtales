@@ -3,7 +3,7 @@ use std::time;
 use crate::{
     ast,
     record::Record,
-    recordlist,
+    recordlist::{self, load_parsers},
     settings::{RulesSettings, Settings},
 };
 
@@ -226,6 +226,9 @@ impl TuiState {
             }
             "settings" => {
                 self.open_settings();
+            }
+            "reload_settings" => {
+                self.reload_settings();
             }
             "mode" => {
                 let args: Vec<String> = args.map(String::from).collect();
@@ -501,6 +504,8 @@ impl TuiState {
             "mode",
             "toggle_details",
             "exec",
+            "reload_settings",
+            "refresh_screen",
         ];
 
         completions.retain(|&c| c.starts_with(current));
@@ -540,6 +545,33 @@ impl TuiState {
 
     pub fn refresh_screen(&mut self) {
         self.pending_refresh = true;
+    }
+    pub fn reload_settings(&mut self) {
+        let filename = Settings::local_settings_filename().unwrap();
+        let result = self.settings.read_from_yaml(filename.to_str().unwrap());
+        match result {
+            Ok(_) => {
+                self.current_rule = self
+                    .settings
+                    .rules
+                    .iter()
+                    .find(|r| r.name == self.current_rule.name)
+                    .unwrap()
+                    .clone();
+                match load_parsers(&self.current_rule, &mut self.records.parsers) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        self.set_warning(format!("Error loading parsers: {:?}", err));
+                    }
+                }
+                self.records.reparse();
+                self.set_warning("Settings reloaded".into());
+                self.refresh_screen();
+            }
+            Err(err) => {
+                self.set_warning(format!("Error reloading settings: {}", err));
+            }
+        }
     }
 }
 

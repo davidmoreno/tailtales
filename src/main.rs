@@ -8,6 +8,8 @@ use regex::Regex;
 use settings::Settings;
 use settings::{Alignment, RulesSettings};
 
+use crate::recordlist::load_parsers;
+
 mod application;
 mod ast;
 mod events;
@@ -33,17 +35,6 @@ fn main() {
     app.state.read_time = start_parse_time.elapsed();
 
     app.run();
-}
-
-fn load_parsers(
-    rule: &RulesSettings,
-    parsers: &mut Vec<parser::Parser>,
-) -> Result<(), parser::ParserError> {
-    for extractor in rule.extractors.iter() {
-        parsers.push(parser::Parser::new(extractor)?);
-    }
-
-    Ok(())
 }
 
 fn get_rule_by_filename(settings: &mut Settings, filename: String) -> RulesSettings {
