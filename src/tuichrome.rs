@@ -42,6 +42,11 @@ impl TuiChrome {
             state.total_visible_lines = visible_lines as usize;
         }
 
+        if state.pending_refresh {
+            self.refresh_screen(state);
+            state.pending_refresh = false;
+        }
+
         Ok(())
     }
 

@@ -36,6 +36,7 @@ pub struct TuiState {
     pub warning: String,
     pub view_details: bool,
     pub text_edit_position: usize,
+    pub pending_refresh: bool, // If true, the screen will be refreshed when the screen receives render request
 }
 
 impl TuiState {
@@ -60,6 +61,7 @@ impl TuiState {
             warning: String::new(),
             view_details: false,
             text_edit_position: 0,
+            pending_refresh: false,
         }
     }
 
@@ -242,6 +244,9 @@ impl TuiState {
             }
             "exec" => {
                 return self.exec(args.into_iter().collect());
+            }
+            "refresh_screen" => {
+                self.refresh_screen();
             }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
@@ -531,6 +536,10 @@ impl TuiState {
             }
         }
         return (common_prefix, completions);
+    }
+
+    pub fn refresh_screen(&mut self) {
+        self.pending_refresh = true;
     }
 }
 
