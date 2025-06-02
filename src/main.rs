@@ -6,8 +6,9 @@ use parser::Parser;
 use regex::Regex;
 use settings::Settings;
 use settings::{Alignment, RulesSettings};
-use tuichrome::TuiChrome;
+use application::Application;
 
+mod application;
 mod ast;
 mod events;
 mod keyboard_input;
@@ -21,16 +22,16 @@ mod tuichrome;
 mod utils;
 
 fn main() {
-    let mut tui_chrome = tuichrome::TuiChrome::new().expect("could not create TuiChrome");
+    let mut app = Application::new().expect("could not create Application");
     let start_parse_time = time::Instant::now();
 
-    parse_args(&std::env::args().collect(), &mut tui_chrome);
+    parse_args(&std::env::args().collect(), &mut app);
 
-    keyboard_input::start_event_thread(tui_chrome.tx.clone());
+    keyboard_input::start_event_thread(app.ui.tx.clone());
 
-    tui_chrome.state.read_time = start_parse_time.elapsed();
+    app.state.read_time = start_parse_time.elapsed();
 
-    tui_chrome.run();
+    app.run();
 }
 
 fn load_parsers(
@@ -63,22 +64,21 @@ fn get_rule_by_filename(settings: &mut Settings, filename: String) -> RulesSetti
     );
 }
 
-fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
-    set_rule_from_args(&args, tui_chrome);
+fn parse_args(args: &Vec<String>, app: &mut Application) {
+    set_rule_from_args(&args, app);
 
     let args = if args.len() == 1 && !stdin_is_a_file() {
         let mut args = vec![args[0].clone()];
-        args.extend(tui_chrome.state.settings.default_arguments.clone());
+        args.extend(app.state.settings.default_arguments.clone());
         args
     } else {
         args.clone()
     };
 
     if args.len() <= 1 {
-        tui_chrome
-            .state
+        app.state
             .records
-            .readfile_stdin(tui_chrome.tx.clone());
+            .readfile_stdin(app.ui.tx.clone());
         return;
     }
 
@@ -86,17 +86,15 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
     while narg < args.len() {
         let filename = &args[narg];
         if filename == "-" {
-            tui_chrome
-                .state
+            app.state
                 .records
-                .readfile_stdin(tui_chrome.tx.clone());
+                .readfile_stdin(app.ui.tx.clone());
         } else if filename == "--" {
             // this is to exec a command and read the output
             let args: Vec<&str> = args[(narg + 1)..].iter().map(|s| &**s).collect();
-            tui_chrome
-                .state
+            app.state
                 .records
-                .readfile_exec(&args, tui_chrome.tx.clone());
+                .readfile_exec(&args, app.ui.tx.clone());
             return;
         } else if filename.starts_with("!") {
             // this is to exec a command and read the output
@@ -104,36 +102,32 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
             if let Some(first_arg) = args.first_mut() {
                 *first_arg = &first_arg[1..];
             }
-            tui_chrome
-                .state
+            app.state
                 .records
-                .readfile_exec(&args, tui_chrome.tx.clone());
-            return;
+                .readfile_exec(&args, app.ui.tx.clone());
         } else if filename.ends_with(".gz") {
-            tui_chrome.state.records.readfile_gz(&filename);
+            app.state.records.readfile_gz(&filename);
         } else {
-            tui_chrome
-                .state
+            app.state
                 .records
-                .readfile_parallel(&filename, tui_chrome.tx.clone());
+                .readfile_parallel(&filename, app.ui.tx.clone());
         }
         narg += 1;
     }
 
     // If the parser is CSV, we auto add the columns from the headers
-    for parser_i in &tui_chrome.state.records.parsers {
+    for parser_i in &app.state.records.parsers {
         if let Parser::Csv(parser) = parser_i {
             let headers = &parser.read().unwrap().headers;
             for header in headers {
-                tui_chrome
-                    .state
+                app.state
                     .current_rule
                     .columns
                     .push(settings::ColumnSettings {
                         name: header.clone(),
                         width: header
                             .len()
-                            .max(tui_chrome.state.records.max_record_size(header)),
+                            .max(app.state.records.max_record_size(header)),
                         align: Alignment::Left,
                     });
             }
@@ -141,12 +135,11 @@ fn parse_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
     }
 }
 
-fn set_rule_from_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
+fn set_rule_from_args(args: &Vec<String>, app: &mut Application) {
     let filename = if args.len() > 1 {
         args.get(1).unwrap().to_string()
     } else {
-        tui_chrome
-            .state
+        app.state
             .settings
             .default_arguments
             .get(0)
@@ -154,11 +147,11 @@ fn set_rule_from_args(args: &Vec<String>, tui_chrome: &mut TuiChrome) {
             .to_string()
     };
 
-    tui_chrome.state.current_rule = get_rule_by_filename(&mut tui_chrome.state.settings, filename);
+    app.state.current_rule = get_rule_by_filename(&mut app.state.settings, filename);
 
     if let Err(err) = load_parsers(
-        &tui_chrome.state.current_rule,
-        &mut tui_chrome.state.records.parsers,
+        &app.state.current_rule,
+        &mut app.state.records.parsers,
     ) {
         panic!("Could not load parsers from settings: {:?}", err);
     }

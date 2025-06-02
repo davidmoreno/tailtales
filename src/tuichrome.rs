@@ -16,7 +16,6 @@ use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
 pub struct TuiChrome {
-    pub state: TuiState,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub tx: mpsc::Sender<TuiEvent>,
     pub rx: mpsc::Receiver<TuiEvent>,
@@ -28,35 +27,44 @@ impl TuiChrome {
         let (tx, rx) = mpsc::channel();
 
         Ok(TuiChrome {
-            state: TuiState::new(),
             terminal,
             tx,
             rx,
         })
     }
 
-    pub fn render(&mut self) -> io::Result<()> {
+    pub fn update_state(&mut self, state: &mut TuiState) -> io::Result<()> {
+        // update the state
+        let mut visible_lines = self.terminal.size()?.height as i32 - 2;
+        if state.view_details && state.records.visible_records.len() > 0 {
+            visible_lines = visible_lines - state.records.visible_records[state.position]
+                .data
+                .len() as i32;
+        }
+
+        if visible_lines < 0 {
+            visible_lines = 0;
+        }
+        if visible_lines != state.total_visible_lines as i32 {
+            state.total_visible_lines = visible_lines as usize;
+        }
+
+        Ok(())
+    }
+
+    pub fn render(&mut self, state: &TuiState) -> io::Result<()> {
         let size = self.terminal.size()?;
 
-        let mut visible_lines = size.height as usize - 2;
-        if self.state.view_details && self.state.records.visible_records.len() > 0 {
-            visible_lines -= self.state.records.visible_records[self.state.position]
-                .data
-                .len();
-        }
-        if self.state.total_visible_lines != visible_lines {
-            self.state.total_visible_lines = visible_lines;
-        }
 
-        let mainarea = Self::render_records_table(&self.state, size);
-        let footer = Self::render_footer(&self.state);
+        let mainarea = Self::render_records_table(state, size);
+        let footer = Self::render_footer(state);
 
         self.terminal
             .draw(|rect| {
                 let layout = Layout::default().direction(Direction::Vertical);
 
-                let current_record = if self.state.view_details {
-                    self.state.records.visible_records.get(self.state.position)
+                let current_record = if state.view_details {
+                    state.records.visible_records.get(state.position)
                 } else {
                     None
                 };
@@ -77,11 +85,10 @@ impl TuiChrome {
                         .as_ref(),
                     )
                     .split(rect.area());
-                // rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[0]);
                 if current_record.is_some() {
                     rect.render_widget(
-                        Self::render_record_details(&self.state, current_record.unwrap()),
+                        Self::render_record_details(state, current_record.unwrap()),
                         chunks[1],
                     );
                 }
@@ -298,7 +305,7 @@ impl TuiChrome {
     }
 
     pub fn render_record_details<'a>(
-        state: &TuiState,
+        state: &'a TuiState,
         record: &'a record::Record,
     ) -> Paragraph<'a> {
         let settings = &state.settings;
@@ -503,8 +510,9 @@ impl TuiChrome {
      *
      * So if there are a lot of new records, will get them all, and at max 100ms will render.
      */
-    pub fn wait_for_events(&mut self) -> io::Result<()> {
+    pub fn wait_for_events(&mut self, state: &mut TuiState) -> io::Result<()> {
         let mut timeout = time::Duration::from_millis(60000);
+        let mut events_received = 0;
         loop {
             let event = self.rx.recv_timeout(timeout);
 
@@ -512,56 +520,57 @@ impl TuiChrome {
                 return Ok(());
             }
             let event = event.unwrap();
-
+            
             match event {
                 TuiEvent::Key(event) => match event {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        self.handle_key_event(key_event);
-                        return Ok(());
-                    }
+                        self.handle_key_event(key_event, state);
+                        timeout = time::Duration::from_millis(10);
+                }
                     _ => {
                         // Do nothing
                     }
                 },
                 TuiEvent::NewRecord(record) => {
-                    self.state.records.add(record);
-                    if self.state.position == max(0, self.state.records.len() as i32 - 2) as usize {
-                        self.state.move_selection(1);
+                    state.records.add(record);
+                    if state.position == max(0, state.records.len() as i32 - 2) as usize {
+                        state.move_selection(1);
                     }
-                    timeout = time::Duration::from_millis(100);
                     // self.wait_for_event_timeout(time::Duration::from_millis(100))?;
+                    timeout = time::Duration::from_millis(100);
                 }
             }
-            if timeout.as_millis() <= 0 {
-                return Ok(());
+            events_received += 1;
+            if events_received > 100 {
+                return Ok(())
             }
         }
     }
 
-    pub fn handle_key_event(&mut self, key_event: KeyEvent) {
-        match self.state.mode {
+    pub fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut TuiState) {
+        match state.mode {
             Mode::Normal => {
-                self.handle_normal_mode(key_event);
+                self.handle_normal_mode(key_event, state);
             }
             Mode::Search => {
-                self.handle_search_mode(key_event);
+                self.handle_search_mode(key_event, state);
             }
             Mode::Filter => {
-                self.handle_filter_mode(key_event);
+                self.handle_filter_mode(key_event, state);
             }
             Mode::Command => {
-                self.handle_command_mode(key_event);
+                self.handle_command_mode(key_event, state);
             }
             Mode::Warning => {
                 // Any key will dismiss the warning
-                self.state.mode = self.state.next_mode;
-                self.state.next_mode = Mode::Normal;
-                self.handle_key_event(key_event); // pass through
+                state.mode = state.next_mode;
+                state.next_mode = Mode::Normal;
+                self.handle_key_event(key_event, state); // pass through
             }
         }
     }
 
-    pub fn handle_normal_mode(&mut self, key_event: KeyEvent) {
+    pub fn handle_normal_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
         let keyname: &str = match key_event.code {
             // numbers add to number
             KeyCode::Char(x) => &String::from(x).to_lowercase(),
@@ -596,28 +605,26 @@ impl TuiChrome {
             _ => keyname,
         };
 
-        if self.state.settings.keybindings.contains_key(keyname) {
-            let command = self.state.settings.keybindings[keyname].clone();
+        if state.settings.keybindings.contains_key(keyname) {
+            let command = state.settings.keybindings[keyname].clone();
 
             if command == "refresh_screen" {
-                self.refresh_screen();
+                self.refresh_screen(state);
                 return;
             }
 
-            self.state.command = command;
-            self.state.handle_command();
+            state.command = command;
+            state.handle_command();
         } else {
-            self.state
+            state
                 .set_warning(format!("Unknown keybinding: {:?}", keyname));
         }
     }
 
-    pub fn handle_search_mode(&mut self, key_event: KeyEvent) {
-        let state = &mut self.state;
-
+    pub fn handle_search_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
         match key_event.code {
             KeyCode::Esc => {
-                self.state.mode = Mode::Normal;
+                state.mode = Mode::Normal;
             }
             KeyCode::Char('\n') => {
                 state.mode = Mode::Normal;
@@ -696,11 +703,10 @@ impl TuiChrome {
         };
     }
 
-    pub fn handle_command_mode(&mut self, key_event: KeyEvent) {
-        let state = &mut self.state;
+    pub fn handle_command_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
         match key_event.code {
             KeyCode::Tab => {
-                self.show_completions();
+                self.show_completions(state);
             }
             KeyCode::Esc => {
                 state.mode = Mode::Normal;
@@ -723,8 +729,7 @@ impl TuiChrome {
         }
     }
 
-    pub fn show_completions(&mut self) {
-        let state = &mut self.state;
+    pub fn show_completions(&mut self, state: &mut TuiState) {
         let (common_prefix, completions) = state.get_completions();
 
         if common_prefix != state.command {
@@ -745,8 +750,7 @@ impl TuiChrome {
         }
     }
 
-    pub fn handle_filter_mode(&mut self, key_event: KeyEvent) {
-        let state = &mut self.state;
+    pub fn handle_filter_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
         match key_event.code {
             KeyCode::Esc => {
                 state.mode = Mode::Normal;
@@ -768,7 +772,7 @@ impl TuiChrome {
         }
     }
 
-    fn refresh_screen(&mut self) {
+    fn refresh_screen(&mut self, _state: &TuiState) {
         // force refresh of all screen contents, as some damaged info came into it
         // just draw all black, and then render again
         self.terminal
@@ -782,17 +786,6 @@ impl TuiChrome {
                 );
             })
             .unwrap();
-    }
-
-    pub fn run(&mut self) {
-        loop {
-            self.render().unwrap();
-            self.wait_for_events().unwrap();
-
-            if !self.state.running {
-                break;
-            }
-        }
     }
 }
 
