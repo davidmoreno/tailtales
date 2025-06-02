@@ -1,4 +1,3 @@
-use crate::ast;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::settings::string_to_style;
@@ -9,11 +8,10 @@ use crate::utils::clean_ansi_text;
 use crate::utils::reverse_style;
 
 use crossterm::ExecutableCommand;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
 use std::cmp::min;
+use std::io;
 use std::sync::mpsc;
-use std::{cmp::max, io, time};
 
 pub struct TuiChrome {
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
@@ -26,20 +24,15 @@ impl TuiChrome {
         let terminal = ratatui::init();
         let (tx, rx) = mpsc::channel();
 
-        Ok(TuiChrome {
-            terminal,
-            tx,
-            rx,
-        })
+        Ok(TuiChrome { terminal, tx, rx })
     }
 
     pub fn update_state(&mut self, state: &mut TuiState) -> io::Result<()> {
         // update the state
         let mut visible_lines = self.terminal.size()?.height as i32 - 2;
         if state.view_details && state.records.visible_records.len() > 0 {
-            visible_lines = visible_lines - state.records.visible_records[state.position]
-                .data
-                .len() as i32;
+            visible_lines =
+                visible_lines - state.records.visible_records[state.position].data.len() as i32;
         }
 
         if visible_lines < 0 {
@@ -54,7 +47,6 @@ impl TuiChrome {
 
     pub fn render(&mut self, state: &TuiState) -> io::Result<()> {
         let size = self.terminal.size()?;
-
 
         let mainarea = Self::render_records_table(state, size);
         let footer = Self::render_footer(state);
@@ -500,276 +492,6 @@ impl TuiChrome {
             .title_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
             .title(left_line)
             .title(right_line.right_aligned())
-    }
-
-    /**
-     * It waits a lot first time, for any event.
-     *
-     * If its a key event returns inmediatly, to render changes.
-     * If its a new record, keeps 100ms waiting for more records.
-     *
-     * So if there are a lot of new records, will get them all, and at max 100ms will render.
-     */
-    pub fn wait_for_events(&mut self, state: &mut TuiState) -> io::Result<()> {
-        let mut timeout = time::Duration::from_millis(60000);
-        let mut events_received = 0;
-        loop {
-            let event = self.rx.recv_timeout(timeout);
-
-            if event.is_err() {
-                return Ok(());
-            }
-            let event = event.unwrap();
-            
-            match event {
-                TuiEvent::Key(event) => match event {
-                    Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        self.handle_key_event(key_event, state);
-                        timeout = time::Duration::from_millis(10);
-                }
-                    _ => {
-                        // Do nothing
-                    }
-                },
-                TuiEvent::NewRecord(record) => {
-                    state.records.add(record);
-                    if state.position == max(0, state.records.len() as i32 - 2) as usize {
-                        state.move_selection(1);
-                    }
-                    // self.wait_for_event_timeout(time::Duration::from_millis(100))?;
-                    timeout = time::Duration::from_millis(100);
-                }
-            }
-            events_received += 1;
-            if events_received > 100 {
-                return Ok(())
-            }
-        }
-    }
-
-    pub fn handle_key_event(&mut self, key_event: KeyEvent, state: &mut TuiState) {
-        match state.mode {
-            Mode::Normal => {
-                self.handle_normal_mode(key_event, state);
-            }
-            Mode::Search => {
-                self.handle_search_mode(key_event, state);
-            }
-            Mode::Filter => {
-                self.handle_filter_mode(key_event, state);
-            }
-            Mode::Command => {
-                self.handle_command_mode(key_event, state);
-            }
-            Mode::Warning => {
-                // Any key will dismiss the warning
-                state.mode = state.next_mode;
-                state.next_mode = Mode::Normal;
-                self.handle_key_event(key_event, state); // pass through
-            }
-        }
-    }
-
-    pub fn handle_normal_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
-        let keyname: &str = match key_event.code {
-            // numbers add to number
-            KeyCode::Char(x) => &String::from(x).to_lowercase(),
-            KeyCode::F(x) => &String::from(x as char),
-
-            x => &x.to_string().to_lowercase(),
-        };
-        let keyname = if key_event.modifiers.contains(event::KeyModifiers::SHIFT) {
-            &format!("shift-{}", keyname)
-        } else {
-            keyname
-        };
-        let keyname = if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
-            &format!("control-{}", keyname)
-        } else {
-            keyname
-        };
-        // F1 - F12 are \u{1}... \u{c}
-        let keyname = match key_event.code {
-            KeyCode::F(1) => "F1",
-            KeyCode::F(2) => "F2",
-            KeyCode::F(3) => "F3",
-            KeyCode::F(4) => "F4",
-            KeyCode::F(5) => "F5",
-            KeyCode::F(6) => "F6",
-            KeyCode::F(7) => "F7",
-            KeyCode::F(8) => "F8",
-            KeyCode::F(9) => "F9",
-            KeyCode::F(10) => "F10",
-            KeyCode::F(11) => "F11",
-            KeyCode::F(12) => "F12",
-            _ => keyname,
-        };
-
-        if state.settings.keybindings.contains_key(keyname) {
-            let command = state.settings.keybindings[keyname].clone();
-
-            if command == "refresh_screen" {
-                self.refresh_screen(state);
-                return;
-            }
-
-            state.command = command;
-            state.handle_command();
-        } else {
-            state
-                .set_warning(format!("Unknown keybinding: {:?}", keyname));
-        }
-    }
-
-    pub fn handle_search_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
-        match key_event.code {
-            KeyCode::Esc => {
-                state.mode = Mode::Normal;
-            }
-            KeyCode::Char('\n') => {
-                state.mode = Mode::Normal;
-                state.search_fwd();
-            }
-            KeyCode::Backspace => {
-                state.search.pop();
-            }
-            KeyCode::Enter => {
-                state.mode = Mode::Normal;
-                state.search_fwd();
-            }
-            KeyCode::F(3) => {
-                state.search_next();
-            }
-            _ => {
-                Self::handle_textinput(&mut state.search, &mut state.text_edit_position, key_event);
-                state.search_ast = ast::parse(&state.search).ok();
-                state.search_fwd();
-            }
-        }
-    }
-
-    pub fn handle_textinput(text: &mut String, position: &mut usize, keyevent: KeyEvent) {
-        match keyevent.code {
-            KeyCode::Char('u') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                text.clear();
-                *position = 0;
-            }
-            // this is what gets received on control backspace
-            KeyCode::Char('h') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                text.clear();
-                *position = 0;
-            }
-            KeyCode::Backspace if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                text.clear();
-                *position = 0;
-            }
-            KeyCode::Left => {
-                *position = if *position > 0 { *position - 1 } else { 0 };
-            }
-            KeyCode::Right => {
-                *position = min(text.len(), *position + 1);
-            }
-            KeyCode::Home => {
-                *position = 0;
-            }
-            KeyCode::End => {
-                *position = text.len();
-            }
-            KeyCode::Delete => {
-                if *position < text.len() {
-                    text.remove(*position);
-                }
-            }
-
-            KeyCode::Backspace => {
-                if *position > text.len() {
-                    *position = text.len();
-                }
-                // remove at position, and go back
-                if *position > 0 {
-                    text.remove(*position - 1);
-                    *position -= 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                if *position > text.len() {
-                    *position = text.len();
-                }
-                // insert at position, and advance
-                text.insert(*position, c);
-                *position += 1;
-            }
-            _ => {}
-        };
-    }
-
-    pub fn handle_command_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
-        match key_event.code {
-            KeyCode::Tab => {
-                self.show_completions(state);
-            }
-            KeyCode::Esc => {
-                state.mode = Mode::Normal;
-            }
-            KeyCode::Char('\n') => {
-                state.mode = Mode::Normal;
-                state.handle_command();
-            }
-            KeyCode::Enter => {
-                state.mode = Mode::Normal;
-                state.handle_command();
-            }
-            _ => {
-                Self::handle_textinput(
-                    &mut state.command,
-                    &mut state.text_edit_position,
-                    key_event,
-                );
-            }
-        }
-    }
-
-    pub fn show_completions(&mut self, state: &mut TuiState) {
-        let (common_prefix, completions) = state.get_completions();
-
-        if common_prefix != state.command {
-            state.command = common_prefix;
-            state.text_edit_position = state.command.len();
-            return;
-        }
-        if completions.len() == 1 {
-            state.command = completions[0].clone();
-            state.text_edit_position = state.command.len();
-        } else if completions.len() > 1 {
-            let completions = completions.join(" █ ");
-            state.next_mode = Mode::Command;
-            state.set_warning(format!("{}", completions));
-        } else {
-            state.next_mode = Mode::Command;
-            state.set_warning("No completions found".to_string());
-        }
-    }
-
-    pub fn handle_filter_mode(&mut self, key_event: KeyEvent, state: &mut TuiState) {
-        match key_event.code {
-            KeyCode::Esc => {
-                state.mode = Mode::Normal;
-                state.filter = String::new();
-                state.handle_filter()
-            }
-            KeyCode::Char('\n') => {
-                state.mode = Mode::Normal;
-                state.handle_filter()
-            }
-            KeyCode::Enter => {
-                state.mode = Mode::Normal;
-                state.handle_filter()
-            }
-            _ => {
-                Self::handle_textinput(&mut state.filter, &mut state.text_edit_position, key_event);
-                state.handle_filter();
-            }
-        }
     }
 
     fn refresh_screen(&mut self, _state: &TuiState) {
