@@ -1,3 +1,5 @@
+use notify::{Event as NotifyEvent, RecommendedWatcher, RecursiveMode, Watcher};
+use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
 use crate::keyboard_management::handle_key_event;
@@ -7,6 +9,8 @@ use crossterm::event::{Event, KeyEventKind};
 pub struct Application {
     pub state: TuiState,
     pub ui: TuiChrome,
+    watcher: RecommendedWatcher,
+    settings_rx: mpsc::Receiver<NotifyEvent>,
 }
 
 impl Application {
@@ -14,11 +18,62 @@ impl Application {
         let ui = TuiChrome::new()?;
         let state = TuiState::new();
 
-        Ok(Application { state, ui })
+        let (watcher, rx) = Application::create_watcher()?;
+
+        Ok(Application {
+            state,
+            ui,
+            watcher,
+            settings_rx: rx,
+        })
+    }
+
+    fn create_watcher() -> io::Result<(RecommendedWatcher, mpsc::Receiver<NotifyEvent>)> {
+        // Create a channel for file events
+        let (tx, rx) = mpsc::channel();
+
+        // Create the watcher
+        let mut watcher = notify::recommended_watcher(move |res: Result<NotifyEvent, _>| {
+            if let Ok(event) = res {
+                let _ = tx.send(event);
+            }
+        })
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
+        // Watch the settings file
+        if let Some(settings_path) = crate::settings::Settings::local_settings_filename() {
+            watcher
+                .watch(settings_path.as_ref(), RecursiveMode::NonRecursive)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        }
+        Ok((watcher, rx))
+    }
+
+    pub fn rearm_watcher(&mut self) {
+        match Application::create_watcher() {
+            Ok((watcher, rx)) => {
+                self.watcher = watcher;
+                self.settings_rx = rx;
+            }
+            Err(e) => {
+                self.state
+                    .set_warning(format!("Error creating watcher: {}", e));
+            }
+        }
     }
 
     pub fn run(&mut self) {
         loop {
+            // Check for settings file changes
+            if let Ok(event) = self.settings_rx.try_recv() {
+                match event.kind {
+                    notify::EventKind::Access(_) => {
+                        self.state.reload_settings();
+                    }
+                    _ => {}
+                }
+            }
+
             // Update the state
             if let Err(e) = self.ui.update_state(&mut self.state) {
                 eprintln!("Error updating state: {}", e);
@@ -29,6 +84,19 @@ impl Application {
             if let Err(e) = self.ui.render(&self.state) {
                 eprintln!("Error rendering UI: {}", e);
                 break;
+            }
+
+            // Check for settings file changes
+            if let Ok(event) = self.settings_rx.try_recv() {
+                self.state.set_warning("Settings reloaded".into());
+                match event.kind {
+                    _ => {
+                        // Add a small delay to ensure the file is fully written
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        self.state.reload_settings();
+                        self.rearm_watcher();
+                    }
+                }
             }
 
             // Handle events
