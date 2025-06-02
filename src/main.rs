@@ -98,6 +98,7 @@ fn parse_args(args: &Vec<String>, app: &mut Application) {
                 *first_arg = &first_arg[1..];
             }
             app.state.records.readfile_exec(&args, app.ui.tx.clone());
+            return;
         } else if filename.ends_with(".gz") {
             app.state.records.readfile_gz(&filename);
         } else {
