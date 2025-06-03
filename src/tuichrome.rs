@@ -9,6 +9,7 @@ use crate::utils::reverse_style;
 
 use crossterm::ExecutableCommand;
 use ratatui::{prelude::*, widgets::*};
+use std::cmp::max;
 use std::cmp::min;
 use std::io;
 use std::sync::mpsc;
@@ -17,6 +18,13 @@ pub struct TuiChrome {
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub tx: mpsc::Sender<TuiEvent>,
     pub rx: mpsc::Receiver<TuiEvent>,
+}
+
+// Helper struct to track style changes and search matches
+#[derive(Debug, Clone)]
+struct StyleChange {
+    position: usize,
+    style: Style,
 }
 
 impl TuiChrome {
@@ -148,12 +156,7 @@ impl TuiChrome {
             //     record.original.len() as i32,
             //     state.scroll_offset_left as i32 + size.width as i32,
             // ) as usize;
-            let is_highlighted = state.position == record.index;
-            let cell = Cell::from(Self::render_record_original(
-                &state,
-                &record,
-                is_highlighted,
-            ));
+            let cell = Cell::from(Self::render_record_original(&state, &record));
             cells.push(cell);
 
             let style = Self::get_row_style(state, &record);
@@ -182,74 +185,115 @@ impl TuiChrome {
         table
     }
 
-    fn render_record_original<'a>(
-        state: &'a TuiState,
-        record: &record::Record,
-        highlight: bool,
-    ) -> Line<'a> {
-        let original = &record.original;
-        // Original has ANSI color codes, we want to create a list of spans with the right colors
-        // We will use the same colors as the table, but with a different background
-
-        // First split by ANSI codes
+    // Process text and return a list of style changes
+    fn process_text_styles(text: &str, search: &str, initial_style: Style) -> Vec<StyleChange> {
+        let mut style_changes = Vec::new();
+        let mut current_style = initial_style;
         let mut in_ansi_escape = false;
         let mut ansi_code = String::new();
-        let mut text = String::new();
-        let mut spans = vec![];
-        let mut voffset = state.scroll_offset_left;
+        let mut plain_text = String::new();
+        let mut current_pos = 0;
 
-        let mut current_style = Self::get_row_style(state, &record);
-        if highlight {
-            current_style = reverse_style(current_style);
-        }
-
-        for c in original.chars() {
+        // First pass: collect ANSI codes and build plain text
+        for c in text.chars() {
             if in_ansi_escape {
                 if c == 'm' {
                     in_ansi_escape = false;
                     current_style = ansi_to_style(current_style, &ansi_code);
+                    style_changes.push(StyleChange {
+                        position: current_pos,
+                        style: current_style,
+                    });
                     ansi_code.clear();
                 } else {
                     ansi_code.push(c);
                 }
             } else if c == 0o33 as char {
-                // Insert the current text (if any) with the current style
-                if text.len() > 0 {
-                    let style = if highlight {
-                        reverse_style(current_style)
-                    } else {
-                        current_style
-                    };
-                    spans.push(Span::styled(text.clone(), style));
-                    text.clear();
-                }
-
                 in_ansi_escape = true;
                 ansi_code.push(c);
             } else {
-                if voffset > 0 {
-                    voffset -= 1;
-                    continue;
-                }
-                if c == '\t' {
-                    let spaces_for_next_tab = 8 - text.len() % 8;
-                    for _ in 0..spaces_for_next_tab {
-                        text.push(' ');
-                    }
-                } else {
-                    text.push(c);
-                }
+                plain_text.push(c);
+                current_pos += 1;
             }
         }
 
-        if text.len() > 0 {
-            let style = if highlight {
-                reverse_style(current_style)
+        // Second pass: find search matches and add them to style changes
+        if !search.is_empty() {
+            let text_lower = plain_text.to_lowercase();
+            let search_lower = search.to_lowercase();
+            let mut start = 0;
+
+            while let Some(pos) = text_lower[start..].find(&search_lower) {
+                let match_start = start + pos;
+                let match_end = match_start + search.len();
+
+                // Find the style at match_start
+                let style_at_match = style_changes
+                    .iter()
+                    .rev()
+                    .find(|change| change.position <= match_start)
+                    .map(|change| change.style)
+                    .unwrap_or(initial_style);
+
+                // Add start of match
+                style_changes.push(StyleChange {
+                    position: match_start,
+                    style: reverse_style(style_at_match),
+                });
+
+                // Add end of match
+                style_changes.push(StyleChange {
+                    position: match_end,
+                    style: style_at_match,
+                });
+
+                start = match_end;
+            }
+        }
+
+        // Sort style changes by position
+        style_changes.sort_by_key(|change| change.position);
+        style_changes
+    }
+
+    fn render_record_original<'a>(state: &'a TuiState, record: &record::Record) -> Line<'a> {
+        let original = &record.original;
+        let voffset = state.scroll_offset_left;
+        let initial_style = Self::get_row_style(state, &record);
+
+        // Skip characters at the beginning based on voffset, this converts from utf8 chars to skip to bytes to skip
+        let mut skip_chars = voffset;
+        let mut start_pos = 0;
+        for (i, c) in original.char_indices() {
+            if skip_chars > 0 {
+                skip_chars -= 1;
+                start_pos = i + c.len_utf8();
             } else {
-                current_style
-            };
-            spans.push(Span::styled(text.clone(), style));
-            text.clear();
+                break;
+            }
+        }
+
+        // Process text and get style changes, we get an array of style changes, with the position of the change, the style, and if it is a match
+        let style_changes = Self::process_text_styles(original, &state.search, initial_style);
+
+        // Build spans based on style changes
+        let mut spans = Vec::new();
+        let mut current_pos = start_pos;
+        let mut current_style = initial_style;
+
+        for change in style_changes {
+            if change.position > current_pos {
+                let text = original[current_pos..change.position].to_string();
+                spans.push(Span::styled(text, current_style));
+            }
+            current_style = change.style;
+            current_pos = max(current_pos, change.position);
+        }
+
+        // Add remaining text
+        if current_pos < original.len() {
+            let text = original[current_pos..].to_string();
+            spans.push(Span::styled(text, current_style));
         }
 
         Line::from(spans)

@@ -48,8 +48,7 @@ colors:
 # If called without any argument, this is what it opens.
 # With ! at the begining it will execute the command with the rest of the argumments
 default_arguments:
-  - "--"
-  - "journalctl"
+  - "!journalctl"
   - -f
   - --since
   - today
