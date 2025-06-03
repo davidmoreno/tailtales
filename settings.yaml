@@ -32,7 +32,7 @@ colors:
   table:
     header: black lightgreen
   details:
-    title: green black
+    title: white black
     key: green black
     value: yellow black
     border: green black

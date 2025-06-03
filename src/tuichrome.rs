@@ -46,8 +46,12 @@ impl TuiChrome {
         if visible_lines < 0 {
             visible_lines = 0;
         }
-        if visible_lines != state.total_visible_lines as i32 {
-            state.total_visible_lines = visible_lines as usize;
+        if visible_lines != state.visible_height as i32 {
+            state.visible_height = visible_lines as usize;
+        }
+        let visible_width = self.terminal.size()?.width as i32;
+        if visible_width != state.visible_width as i32 {
+            state.visible_width = visible_width as usize;
         }
 
         if state.pending_refresh {
@@ -75,7 +79,12 @@ impl TuiChrome {
                 };
 
                 let main_area_height = if let Some(current_record) = current_record {
-                    min(size.height / 2, current_record.data.len() as u16 + 2)
+                    min(
+                        size.height / 2,
+                        current_record.data.len() as u16
+                            + 3
+                            + Self::record_wrap_lines_count(current_record, state) as u16,
+                    )
                 } else {
                     0
                 };
@@ -117,7 +126,7 @@ impl TuiChrome {
         let columns = &current_rules.columns;
         let start = state.scroll_offset_top;
         let end = min(
-            start + state.total_visible_lines,
+            start + state.visible_height,
             state.records.visible_records.len(),
         );
 
@@ -345,6 +354,47 @@ impl TuiChrome {
         return Style::from(settings.colors.normal);
     }
 
+    // Helper function to wrap text at word boundaries
+    fn wrap_text(text: &str, width: usize) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+        let mut current_width = 0;
+
+        for word in text.split_whitespace() {
+            let word_width = word.chars().count();
+
+            // If adding this word would exceed the width, start a new line
+            if current_width + word_width + (if current_width > 0 { 1 } else { 0 }) > width {
+                if !current_line.is_empty() {
+                    lines.push(current_line.trim().to_string());
+                }
+                current_line = word.to_string();
+                current_width = word_width;
+            } else {
+                if current_width > 0 {
+                    current_line.push(' ');
+                    current_width += 1;
+                }
+                current_line.push_str(word);
+                current_width += word_width;
+            }
+        }
+
+        // Add the last line if it's not empty
+        if !current_line.is_empty() {
+            lines.push(current_line.trim().to_string());
+        }
+
+        lines
+    }
+
+    fn record_wrap_lines_count(record: &record::Record, state: &TuiState) -> usize {
+        let title_width = state.visible_width - 2; // Account for borders
+        let title_text = clean_ansi_text(&record.original);
+        let wrapped_title = Self::wrap_text(&title_text, title_width);
+        wrapped_title.len()
+    }
+
     pub fn render_record_details<'a>(
         state: &'a TuiState,
         record: &'a record::Record,
@@ -352,15 +402,32 @@ impl TuiChrome {
         let settings = &state.settings;
         let mut lines = vec![];
 
-        // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
+        // Get the available width for the title (accounting for borders)
+        let title_width = state.visible_width - 2; // Account for borders
+        let title_text = clean_ansi_text(&record.original);
+        let wrapped_title = Self::wrap_text(&title_text, title_width);
 
+        // Add all wrapped lines at the beginning
+        for line in &wrapped_title {
+            lines.push(Line::from(vec![Span::styled(
+                line.clone(),
+                Style::from(settings.colors.details.title),
+            )]));
+        }
+
+        // Add a blank line between title and key-value pairs
+        if !wrapped_title.is_empty() {
+            lines.push(Line::from(""));
+        }
+
+        // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
         let mut keys: Vec<&String> = record.data.keys().collect();
         keys.sort();
 
         for key in keys {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("{}: ", key),
+                    format!("{} = ", key),
                     Style::from(settings.colors.details.key),
                 ),
                 Span::styled(
@@ -371,16 +438,11 @@ impl TuiChrome {
         }
 
         let text = Text::from(lines);
-        let title_span = Span::styled(
-            clean_ansi_text(&record.original),
-            Style::from(settings.colors.details.title),
-        );
 
         Paragraph::new(text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(title_span)
                     .border_style(Style::from(settings.colors.details.border)),
             )
             .style(Style::from(settings.colors.details.border))

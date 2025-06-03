@@ -20,7 +20,8 @@ pub struct TuiState {
     pub settings: Settings,
     pub current_rule: RulesSettings,
     pub records: recordlist::RecordList,
-    pub total_visible_lines: usize,
+    pub visible_height: usize,
+    pub visible_width: usize,
     pub position: usize,
     pub scroll_offset_top: usize,
     pub scroll_offset_left: usize,
@@ -45,7 +46,8 @@ impl TuiState {
             settings: Settings::new(),
             current_rule: RulesSettings::default(),
             records: recordlist::RecordList::new(),
-            total_visible_lines: 78,
+            visible_height: 25,
+            visible_width: 80,
             position: 0,
             scroll_offset_top: 0,
             scroll_offset_left: 0,
@@ -317,7 +319,7 @@ impl TuiState {
     }
 
     pub fn ensure_visible(&mut self, current: usize) {
-        let visible_lines = self.total_visible_lines as i32;
+        let visible_lines = self.visible_height as i32;
         let current_i32 = current as i32;
 
         let mut scroll_offset = self.scroll_offset_top as i32;
