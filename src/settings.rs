@@ -121,9 +121,10 @@ pub struct RulesSettings {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct FilterSettings {
     #[serde(default)]
-    pub name: String,
+    pub name: Option<String>,
     #[serde(
         default,
         deserialize_with = "parse_expression",
@@ -131,14 +132,14 @@ pub struct FilterSettings {
     )]
     pub expression: ast::AST,
     #[serde(
-        deserialize_with = "parse_style",
-        serialize_with = "serialize_style",
-        default = "default_highlight"
+        default,
+        deserialize_with = "parse_optional_style",
+        serialize_with = "serialize_optional_style"
     )]
-    pub highlight: Style,
+    pub highlight: Option<Style>,
     #[serde(
         default,
-        deserialize_with = "optional_parse_style",
+        deserialize_with = "parse_optional_style",
         serialize_with = "serialize_optional_style"
     )]
     pub gutter: Option<Style>,
@@ -200,7 +201,7 @@ where
     serializer.serialize_str(&s)
 }
 
-fn optional_parse_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
+fn parse_optional_style<'de, D>(deserializer: D) -> Result<Option<Style>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -268,12 +269,10 @@ where
 }
 
 impl Settings {
-    pub fn new() -> Settings {
+    pub fn new() -> Result<Settings, Box<dyn std::error::Error>> {
         let mut settings = Settings::default();
 
-        settings
-            .read_from_string(Self::default_settings_yaml_data())
-            .expect("Failed to read default settings from internal YAML");
+        settings.read_from_string(Self::default_settings_yaml_data())?;
 
         // Try to load from ~/.config/tailtales/settings.yaml. If does not exist, ignore.
 
@@ -281,11 +280,15 @@ impl Settings {
 
         if let Some(filename) = filename {
             if filename.exists() {
-                let _ = settings.read_from_yaml(filename.to_str().unwrap());
+                settings
+                    .read_from_yaml(filename.to_str().unwrap_or("unknown"))
+                    .map_err(|e| {
+                        format!("Error reading settings from {}: {}", filename.display(), e)
+                    })?;
             }
         }
 
-        settings
+        Ok(settings)
     }
     pub fn default_settings_yaml_data() -> &'static str {
         include_str!("../settings.yaml")
@@ -385,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_parse_settings() {
-        let mut settings = Settings::new();
+        let mut settings = Settings::new().unwrap();
         settings.read_from_yaml("settings.yaml").unwrap();
         println!("{:#?}", settings);
     }

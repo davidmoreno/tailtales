@@ -41,9 +41,10 @@ pub struct TuiState {
 }
 
 impl TuiState {
-    pub fn new() -> TuiState {
-        TuiState {
-            settings: Settings::new(),
+    pub fn new() -> Result<TuiState, Box<dyn std::error::Error>> {
+        let settings = Settings::new()?;
+        Ok(TuiState {
+            settings,
             current_rule: RulesSettings::default(),
             records: recordlist::RecordList::new(),
             visible_height: 25,
@@ -64,7 +65,7 @@ impl TuiState {
             view_details: false,
             text_edit_position: 0,
             pending_refresh: false,
-        }
+        })
     }
 
     pub fn search_next(&mut self) {
@@ -465,7 +466,7 @@ impl TuiState {
     }
 
     pub fn open_settings(&mut self) {
-        let filename = Settings::local_settings_filename();
+        let filename: Option<std::path::PathBuf> = Settings::local_settings_filename();
 
         let filename = if filename.is_none() {
             // Create a settings file

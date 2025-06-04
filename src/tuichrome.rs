@@ -347,7 +347,9 @@ impl TuiChrome {
 
         for filter in &filters.filters {
             if record.matches(&filter.expression) {
-                return Style::from(filter.highlight);
+                if filter.highlight.is_some() {
+                    return Style::from(filter.highlight.unwrap());
+                }
             }
         }
 

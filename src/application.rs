@@ -14,9 +14,9 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new() -> io::Result<Application> {
+    pub fn new() -> Result<Application, Box<dyn std::error::Error>> {
         let ui = TuiChrome::new()?;
-        let state = TuiState::new();
+        let state = TuiState::new()?;
 
         let (watcher, rx) = Application::create_watcher()?;
 

@@ -168,13 +168,13 @@ rules:
     filters:
       - name: errors
         expression: status ~ "5\d\d"
-        color: white red
+        highlight: white red
       - name: not_found
         expression: status == 404
-        color: white yellow
+        highlight: white yellow
       - name: successful
         expression: status == 200
-        color: white green
+        highlight: white green
       - name: too big
         expression: bytes > 1000000
       - name: empty requests
@@ -186,11 +186,11 @@ rules:
     extractors:
       - json
     filters:
-      - color: white red
+      - highlight: white red
         expression: level == "error"
-      - color: white yellow
+      - highlight: white yellow
         expression: level == "warning"
-      - color: white green
+      - highlight: white green
         expression: level == "info"
 
   - name: django

@@ -25,7 +25,15 @@ mod tuichrome;
 mod utils;
 
 fn main() {
-    let mut app = Application::new().expect("could not create Application");
+    let app = Application::new();
+
+    if app.is_err() {
+        eprintln!("Error starting application: {}", app.err().unwrap());
+        std::process::exit(1);
+    }
+
+    let mut app = app.unwrap();
+
     let start_parse_time = time::Instant::now();
 
     parse_args(&std::env::args().collect(), &mut app);
