@@ -3,7 +3,7 @@ use std::time;
 use crate::{
     ast,
     record::Record,
-    recordlist,
+    recordlist::{self, load_parsers},
     settings::{RulesSettings, Settings},
 };
 
@@ -20,7 +20,8 @@ pub struct TuiState {
     pub settings: Settings,
     pub current_rule: RulesSettings,
     pub records: recordlist::RecordList,
-    pub total_visible_lines: usize,
+    pub visible_height: usize,
+    pub visible_width: usize,
     pub position: usize,
     pub scroll_offset_top: usize,
     pub scroll_offset_left: usize,
@@ -36,15 +37,18 @@ pub struct TuiState {
     pub warning: String,
     pub view_details: bool,
     pub text_edit_position: usize,
+    pub pending_refresh: bool, // If true, the screen will be refreshed when the screen receives render request
 }
 
 impl TuiState {
-    pub fn new() -> TuiState {
-        TuiState {
-            settings: Settings::new(),
+    pub fn new() -> Result<TuiState, Box<dyn std::error::Error>> {
+        let settings = Settings::new()?;
+        Ok(TuiState {
+            settings,
             current_rule: RulesSettings::default(),
             records: recordlist::RecordList::new(),
-            total_visible_lines: 78,
+            visible_height: 25,
+            visible_width: 80,
             position: 0,
             scroll_offset_top: 0,
             scroll_offset_left: 0,
@@ -60,7 +64,8 @@ impl TuiState {
             warning: String::new(),
             view_details: false,
             text_edit_position: 0,
-        }
+            pending_refresh: false,
+        })
     }
 
     pub fn search_next(&mut self) {
@@ -225,6 +230,9 @@ impl TuiState {
             "settings" => {
                 self.open_settings();
             }
+            "reload_settings" => {
+                self.reload_settings();
+            }
             "mode" => {
                 let args: Vec<String> = args.map(String::from).collect();
                 self.set_mode(args.get(0).unwrap_or(&"normal".to_string()));
@@ -242,6 +250,9 @@ impl TuiState {
             }
             "exec" => {
                 return self.exec(args.into_iter().collect());
+            }
+            "refresh_screen" => {
+                self.refresh_screen();
             }
             _ => {
                 self.set_warning(format!("Unknown command: {}", command));
@@ -309,7 +320,7 @@ impl TuiState {
     }
 
     pub fn ensure_visible(&mut self, current: usize) {
-        let visible_lines = self.total_visible_lines as i32;
+        let visible_lines = self.visible_height as i32;
         let current_i32 = current as i32;
 
         let mut scroll_offset = self.scroll_offset_top as i32;
@@ -455,7 +466,7 @@ impl TuiState {
     }
 
     pub fn open_settings(&mut self) {
-        let filename = Settings::local_settings_filename();
+        let filename: Option<std::path::PathBuf> = Settings::local_settings_filename();
 
         let filename = if filename.is_none() {
             // Create a settings file
@@ -496,6 +507,8 @@ impl TuiState {
             "mode",
             "toggle_details",
             "exec",
+            "reload_settings",
+            "refresh_screen",
         ];
 
         completions.retain(|&c| c.starts_with(current));
@@ -531,6 +544,37 @@ impl TuiState {
             }
         }
         return (common_prefix, completions);
+    }
+
+    pub fn refresh_screen(&mut self) {
+        self.pending_refresh = true;
+    }
+    pub fn reload_settings(&mut self) {
+        let filename = Settings::local_settings_filename().unwrap();
+        let result = self.settings.read_from_yaml(filename.to_str().unwrap());
+        match result {
+            Ok(_) => {
+                self.current_rule = self
+                    .settings
+                    .rules
+                    .iter()
+                    .find(|r| r.name == self.current_rule.name)
+                    .unwrap()
+                    .clone();
+                match load_parsers(&self.current_rule, &mut self.records.parsers) {
+                    Ok(_) => {}
+                    Err(err) => {
+                        self.set_warning(format!("Error loading parsers: {:?}", err));
+                    }
+                }
+                self.records.reparse();
+                self.set_warning("Settings reloaded".into());
+                self.refresh_screen();
+            }
+            Err(err) => {
+                self.set_warning(format!("Error reloading settings: {}", err));
+            }
+        }
     }
 }
 

@@ -1,4 +1,3 @@
-use crate::ast;
 use crate::events::TuiEvent;
 use crate::record;
 use crate::settings::string_to_style;
@@ -9,17 +8,23 @@ use crate::utils::clean_ansi_text;
 use crate::utils::reverse_style;
 
 use crossterm::ExecutableCommand;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{prelude::*, widgets::*};
+use std::cmp::max;
 use std::cmp::min;
+use std::io;
 use std::sync::mpsc;
-use std::{cmp::max, io, time};
 
 pub struct TuiChrome {
-    pub state: TuiState,
     pub terminal: Terminal<CrosstermBackend<io::Stdout>>,
     pub tx: mpsc::Sender<TuiEvent>,
     pub rx: mpsc::Receiver<TuiEvent>,
+}
+
+// Helper struct to track style changes and search matches
+#[derive(Debug, Clone)]
+struct StyleChange {
+    position: usize,
+    style: Style,
 }
 
 impl TuiChrome {
@@ -27,42 +32,59 @@ impl TuiChrome {
         let terminal = ratatui::init();
         let (tx, rx) = mpsc::channel();
 
-        Ok(TuiChrome {
-            state: TuiState::new(),
-            terminal,
-            tx,
-            rx,
-        })
+        Ok(TuiChrome { terminal, tx, rx })
     }
 
-    pub fn render(&mut self) -> io::Result<()> {
+    pub fn update_state(&mut self, state: &mut TuiState) -> io::Result<()> {
+        // update the state
+        let mut visible_lines = self.terminal.size()?.height as i32 - 2;
+        if state.view_details && state.records.visible_records.len() > 0 {
+            visible_lines =
+                visible_lines - state.records.visible_records[state.position].data.len() as i32;
+        }
+
+        if visible_lines < 0 {
+            visible_lines = 0;
+        }
+        if visible_lines != state.visible_height as i32 {
+            state.visible_height = visible_lines as usize;
+        }
+        let visible_width = self.terminal.size()?.width as i32;
+        if visible_width != state.visible_width as i32 {
+            state.visible_width = visible_width as usize;
+        }
+
+        if state.pending_refresh {
+            self.refresh_screen(state);
+            state.pending_refresh = false;
+        }
+
+        Ok(())
+    }
+
+    pub fn render(&mut self, state: &TuiState) -> io::Result<()> {
         let size = self.terminal.size()?;
 
-        let mut visible_lines = size.height as usize - 2;
-        if self.state.view_details && self.state.records.visible_records.len() > 0 {
-            visible_lines -= self.state.records.visible_records[self.state.position]
-                .data
-                .len();
-        }
-        if self.state.total_visible_lines != visible_lines {
-            self.state.total_visible_lines = visible_lines;
-        }
-
-        let mainarea = Self::render_records_table(&self.state, size);
-        let footer = Self::render_footer(&self.state);
+        let mainarea = Self::render_records_table(state, size);
+        let footer = Self::render_footer(state);
 
         self.terminal
             .draw(|rect| {
                 let layout = Layout::default().direction(Direction::Vertical);
 
-                let current_record = if self.state.view_details {
-                    self.state.records.visible_records.get(self.state.position)
+                let current_record = if state.view_details {
+                    state.records.visible_records.get(state.position)
                 } else {
                     None
                 };
 
                 let main_area_height = if let Some(current_record) = current_record {
-                    min(size.height / 2, current_record.data.len() as u16 + 2)
+                    min(
+                        size.height / 2,
+                        current_record.data.len() as u16
+                            + 3
+                            + Self::record_wrap_lines_count(current_record, state) as u16,
+                    )
                 } else {
                     0
                 };
@@ -77,11 +99,10 @@ impl TuiChrome {
                         .as_ref(),
                     )
                     .split(rect.area());
-                // rect.render_widget(header, chunks[0]);
                 rect.render_widget(mainarea, chunks[0]);
                 if current_record.is_some() {
                     rect.render_widget(
-                        Self::render_record_details(&self.state, current_record.unwrap()),
+                        Self::render_record_details(state, current_record.unwrap()),
                         chunks[1],
                     );
                 }
@@ -105,7 +126,7 @@ impl TuiChrome {
         let columns = &current_rules.columns;
         let start = state.scroll_offset_top;
         let end = min(
-            start + state.total_visible_lines,
+            start + state.visible_height,
             state.records.visible_records.len(),
         );
 
@@ -144,12 +165,7 @@ impl TuiChrome {
             //     record.original.len() as i32,
             //     state.scroll_offset_left as i32 + size.width as i32,
             // ) as usize;
-            let is_highlighted = state.position == record.index;
-            let cell = Cell::from(Self::render_record_original(
-                &state,
-                &record,
-                is_highlighted,
-            ));
+            let cell = Cell::from(Self::render_record_original(&state, &record));
             cells.push(cell);
 
             let style = Self::get_row_style(state, &record);
@@ -178,74 +194,115 @@ impl TuiChrome {
         table
     }
 
-    fn render_record_original<'a>(
-        state: &'a TuiState,
-        record: &record::Record,
-        highlight: bool,
-    ) -> Line<'a> {
-        let original = &record.original;
-        // Original has ANSI color codes, we want to create a list of spans with the right colors
-        // We will use the same colors as the table, but with a different background
-
-        // First split by ANSI codes
+    // Process text and return a list of style changes
+    fn process_text_styles(text: &str, search: &str, initial_style: Style) -> Vec<StyleChange> {
+        let mut style_changes = Vec::new();
+        let mut current_style = initial_style;
         let mut in_ansi_escape = false;
         let mut ansi_code = String::new();
-        let mut text = String::new();
-        let mut spans = vec![];
-        let mut voffset = state.scroll_offset_left;
+        let mut plain_text = String::new();
+        let mut current_pos = 0;
 
-        let mut current_style = Self::get_row_style(state, &record);
-        if highlight {
-            current_style = reverse_style(current_style);
-        }
-
-        for c in original.chars() {
+        // First pass: collect ANSI codes and build plain text
+        for c in text.chars() {
             if in_ansi_escape {
                 if c == 'm' {
                     in_ansi_escape = false;
                     current_style = ansi_to_style(current_style, &ansi_code);
+                    style_changes.push(StyleChange {
+                        position: current_pos,
+                        style: current_style,
+                    });
                     ansi_code.clear();
                 } else {
                     ansi_code.push(c);
                 }
             } else if c == 0o33 as char {
-                // Insert the current text (if any) with the current style
-                if text.len() > 0 {
-                    let style = if highlight {
-                        reverse_style(current_style)
-                    } else {
-                        current_style
-                    };
-                    spans.push(Span::styled(text.clone(), style));
-                    text.clear();
-                }
-
                 in_ansi_escape = true;
                 ansi_code.push(c);
             } else {
-                if voffset > 0 {
-                    voffset -= 1;
-                    continue;
-                }
-                if c == '\t' {
-                    let spaces_for_next_tab = 8 - text.len() % 8;
-                    for _ in 0..spaces_for_next_tab {
-                        text.push(' ');
-                    }
-                } else {
-                    text.push(c);
-                }
+                plain_text.push(c);
+                current_pos += 1;
             }
         }
 
-        if text.len() > 0 {
-            let style = if highlight {
-                reverse_style(current_style)
+        // Second pass: find search matches and add them to style changes
+        if !search.is_empty() {
+            let text_lower = plain_text.to_lowercase();
+            let search_lower = search.to_lowercase();
+            let mut start = 0;
+
+            while let Some(pos) = text_lower[start..].find(&search_lower) {
+                let match_start = start + pos;
+                let match_end = match_start + search.len();
+
+                // Find the style at match_start
+                let style_at_match = style_changes
+                    .iter()
+                    .rev()
+                    .find(|change| change.position <= match_start)
+                    .map(|change| change.style)
+                    .unwrap_or(initial_style);
+
+                // Add start of match
+                style_changes.push(StyleChange {
+                    position: match_start,
+                    style: reverse_style(style_at_match),
+                });
+
+                // Add end of match
+                style_changes.push(StyleChange {
+                    position: match_end,
+                    style: style_at_match,
+                });
+
+                start = match_end;
+            }
+        }
+
+        // Sort style changes by position
+        style_changes.sort_by_key(|change| change.position);
+        style_changes
+    }
+
+    fn render_record_original<'a>(state: &'a TuiState, record: &record::Record) -> Line<'a> {
+        let original = &record.original;
+        let voffset = state.scroll_offset_left;
+        let initial_style = Self::get_row_style(state, &record);
+
+        // Skip characters at the beginning based on voffset, this converts from utf8 chars to skip to bytes to skip
+        let mut skip_chars = voffset;
+        let mut start_pos = 0;
+        for (i, c) in original.char_indices() {
+            if skip_chars > 0 {
+                skip_chars -= 1;
+                start_pos = i + c.len_utf8();
             } else {
-                current_style
-            };
-            spans.push(Span::styled(text.clone(), style));
-            text.clear();
+                break;
+            }
+        }
+
+        // Process text and get style changes, we get an array of style changes, with the position of the change, the style, and if it is a match
+        let style_changes = Self::process_text_styles(original, &state.search, initial_style);
+
+        // Build spans based on style changes
+        let mut spans = Vec::new();
+        let mut current_pos = start_pos;
+        let mut current_style = initial_style;
+
+        for change in style_changes {
+            if change.position > current_pos {
+                let text = original[current_pos..change.position].to_string();
+                spans.push(Span::styled(text, current_style));
+            }
+            current_style = change.style;
+            current_pos = max(current_pos, change.position);
+        }
+
+        // Add remaining text
+        if current_pos < original.len() {
+            let text = original[current_pos..].to_string();
+            spans.push(Span::styled(text, current_style));
         }
 
         Line::from(spans)
@@ -290,29 +347,89 @@ impl TuiChrome {
 
         for filter in &filters.filters {
             if record.matches(&filter.expression) {
-                return Style::from(filter.highlight);
+                if filter.highlight.is_some() {
+                    return Style::from(filter.highlight.unwrap());
+                }
             }
         }
 
         return Style::from(settings.colors.normal);
     }
 
+    // Helper function to wrap text at word boundaries
+    fn wrap_text(text: &str, width: usize) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+        let mut current_width = 0;
+
+        for word in text.split_whitespace() {
+            let word_width = word.chars().count();
+
+            // If adding this word would exceed the width, start a new line
+            if current_width + word_width + (if current_width > 0 { 1 } else { 0 }) > width {
+                if !current_line.is_empty() {
+                    lines.push(current_line.trim().to_string());
+                }
+                current_line = word.to_string();
+                current_width = word_width;
+            } else {
+                if current_width > 0 {
+                    current_line.push(' ');
+                    current_width += 1;
+                }
+                current_line.push_str(word);
+                current_width += word_width;
+            }
+        }
+
+        // Add the last line if it's not empty
+        if !current_line.is_empty() {
+            lines.push(current_line.trim().to_string());
+        }
+
+        lines
+    }
+
+    fn record_wrap_lines_count(record: &record::Record, state: &TuiState) -> usize {
+        let title_width = state.visible_width - 2; // Account for borders
+        let title_text = clean_ansi_text(&record.original);
+        let wrapped_title = Self::wrap_text(&title_text, title_width);
+        wrapped_title.len()
+    }
+
     pub fn render_record_details<'a>(
-        state: &TuiState,
+        state: &'a TuiState,
         record: &'a record::Record,
     ) -> Paragraph<'a> {
         let settings = &state.settings;
         let mut lines = vec![];
 
-        // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
+        // Get the available width for the title (accounting for borders)
+        let title_width = state.visible_width - 2; // Account for borders
+        let title_text = clean_ansi_text(&record.original);
+        let wrapped_title = Self::wrap_text(&title_text, title_width);
 
+        // Add all wrapped lines at the beginning
+        for line in &wrapped_title {
+            lines.push(Line::from(vec![Span::styled(
+                line.clone(),
+                Style::from(settings.colors.details.title),
+            )]));
+        }
+
+        // Add a blank line between title and key-value pairs
+        if !wrapped_title.is_empty() {
+            lines.push(Line::from(""));
+        }
+
+        // text have all the key: value pairs, one by line, in alphabetical order, with key in grey
         let mut keys: Vec<&String> = record.data.keys().collect();
         keys.sort();
 
         for key in keys {
             lines.push(Line::from(vec![
                 Span::styled(
-                    format!("{}: ", key),
+                    format!("{} = ", key),
                     Style::from(settings.colors.details.key),
                 ),
                 Span::styled(
@@ -323,16 +440,11 @@ impl TuiChrome {
         }
 
         let text = Text::from(lines);
-        let title_span = Span::styled(
-            clean_ansi_text(&record.original),
-            Style::from(settings.colors.details.title),
-        );
 
         Paragraph::new(text)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(title_span)
                     .border_style(Style::from(settings.colors.details.border)),
             )
             .style(Style::from(settings.colors.details.border))
@@ -495,280 +607,7 @@ impl TuiChrome {
             .title(right_line.right_aligned())
     }
 
-    /**
-     * It waits a lot first time, for any event.
-     *
-     * If its a key event returns inmediatly, to render changes.
-     * If its a new record, keeps 100ms waiting for more records.
-     *
-     * So if there are a lot of new records, will get them all, and at max 100ms will render.
-     */
-    pub fn wait_for_events(&mut self) -> io::Result<()> {
-        let mut timeout = time::Duration::from_millis(60000);
-        loop {
-            let event = self.rx.recv_timeout(timeout);
-
-            if event.is_err() {
-                return Ok(());
-            }
-            let event = event.unwrap();
-
-            match event {
-                TuiEvent::Key(event) => match event {
-                    Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        self.handle_key_event(key_event);
-                        return Ok(());
-                    }
-                    _ => {
-                        // Do nothing
-                    }
-                },
-                TuiEvent::NewRecord(record) => {
-                    self.state.records.add(record);
-                    if self.state.position == max(0, self.state.records.len() as i32 - 2) as usize {
-                        self.state.move_selection(1);
-                    }
-                    timeout = time::Duration::from_millis(100);
-                    // self.wait_for_event_timeout(time::Duration::from_millis(100))?;
-                }
-            }
-            if timeout.as_millis() <= 0 {
-                return Ok(());
-            }
-        }
-    }
-
-    pub fn handle_key_event(&mut self, key_event: KeyEvent) {
-        match self.state.mode {
-            Mode::Normal => {
-                self.handle_normal_mode(key_event);
-            }
-            Mode::Search => {
-                self.handle_search_mode(key_event);
-            }
-            Mode::Filter => {
-                self.handle_filter_mode(key_event);
-            }
-            Mode::Command => {
-                self.handle_command_mode(key_event);
-            }
-            Mode::Warning => {
-                // Any key will dismiss the warning
-                self.state.mode = self.state.next_mode;
-                self.state.next_mode = Mode::Normal;
-                self.handle_key_event(key_event); // pass through
-            }
-        }
-    }
-
-    pub fn handle_normal_mode(&mut self, key_event: KeyEvent) {
-        let keyname: &str = match key_event.code {
-            // numbers add to number
-            KeyCode::Char(x) => &String::from(x).to_lowercase(),
-            KeyCode::F(x) => &String::from(x as char),
-
-            x => &x.to_string().to_lowercase(),
-        };
-        let keyname = if key_event.modifiers.contains(event::KeyModifiers::SHIFT) {
-            &format!("shift-{}", keyname)
-        } else {
-            keyname
-        };
-        let keyname = if key_event.modifiers.contains(event::KeyModifiers::CONTROL) {
-            &format!("control-{}", keyname)
-        } else {
-            keyname
-        };
-        // F1 - F12 are \u{1}... \u{c}
-        let keyname = match key_event.code {
-            KeyCode::F(1) => "F1",
-            KeyCode::F(2) => "F2",
-            KeyCode::F(3) => "F3",
-            KeyCode::F(4) => "F4",
-            KeyCode::F(5) => "F5",
-            KeyCode::F(6) => "F6",
-            KeyCode::F(7) => "F7",
-            KeyCode::F(8) => "F8",
-            KeyCode::F(9) => "F9",
-            KeyCode::F(10) => "F10",
-            KeyCode::F(11) => "F11",
-            KeyCode::F(12) => "F12",
-            _ => keyname,
-        };
-
-        if self.state.settings.keybindings.contains_key(keyname) {
-            let command = self.state.settings.keybindings[keyname].clone();
-
-            if command == "refresh_screen" {
-                self.refresh_screen();
-                return;
-            }
-
-            self.state.command = command;
-            self.state.handle_command();
-        } else {
-            self.state
-                .set_warning(format!("Unknown keybinding: {:?}", keyname));
-        }
-    }
-
-    pub fn handle_search_mode(&mut self, key_event: KeyEvent) {
-        let state = &mut self.state;
-
-        match key_event.code {
-            KeyCode::Esc => {
-                self.state.mode = Mode::Normal;
-            }
-            KeyCode::Char('\n') => {
-                state.mode = Mode::Normal;
-                state.search_fwd();
-            }
-            KeyCode::Backspace => {
-                state.search.pop();
-            }
-            KeyCode::Enter => {
-                state.mode = Mode::Normal;
-                state.search_fwd();
-            }
-            KeyCode::F(3) => {
-                state.search_next();
-            }
-            _ => {
-                Self::handle_textinput(&mut state.search, &mut state.text_edit_position, key_event);
-                state.search_ast = ast::parse(&state.search).ok();
-                state.search_fwd();
-            }
-        }
-    }
-
-    pub fn handle_textinput(text: &mut String, position: &mut usize, keyevent: KeyEvent) {
-        match keyevent.code {
-            KeyCode::Char('u') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                text.clear();
-                *position = 0;
-            }
-            // this is what gets received on control backspace
-            KeyCode::Char('h') if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                text.clear();
-                *position = 0;
-            }
-            KeyCode::Backspace if keyevent.modifiers.contains(event::KeyModifiers::CONTROL) => {
-                text.clear();
-                *position = 0;
-            }
-            KeyCode::Left => {
-                *position = if *position > 0 { *position - 1 } else { 0 };
-            }
-            KeyCode::Right => {
-                *position = min(text.len(), *position + 1);
-            }
-            KeyCode::Home => {
-                *position = 0;
-            }
-            KeyCode::End => {
-                *position = text.len();
-            }
-            KeyCode::Delete => {
-                if *position < text.len() {
-                    text.remove(*position);
-                }
-            }
-
-            KeyCode::Backspace => {
-                if *position > text.len() {
-                    *position = text.len();
-                }
-                // remove at position, and go back
-                if *position > 0 {
-                    text.remove(*position - 1);
-                    *position -= 1;
-                }
-            }
-            KeyCode::Char(c) => {
-                if *position > text.len() {
-                    *position = text.len();
-                }
-                // insert at position, and advance
-                text.insert(*position, c);
-                *position += 1;
-            }
-            _ => {}
-        };
-    }
-
-    pub fn handle_command_mode(&mut self, key_event: KeyEvent) {
-        let state = &mut self.state;
-        match key_event.code {
-            KeyCode::Tab => {
-                self.show_completions();
-            }
-            KeyCode::Esc => {
-                state.mode = Mode::Normal;
-            }
-            KeyCode::Char('\n') => {
-                state.mode = Mode::Normal;
-                state.handle_command();
-            }
-            KeyCode::Enter => {
-                state.mode = Mode::Normal;
-                state.handle_command();
-            }
-            _ => {
-                Self::handle_textinput(
-                    &mut state.command,
-                    &mut state.text_edit_position,
-                    key_event,
-                );
-            }
-        }
-    }
-
-    pub fn show_completions(&mut self) {
-        let state = &mut self.state;
-        let (common_prefix, completions) = state.get_completions();
-
-        if common_prefix != state.command {
-            state.command = common_prefix;
-            state.text_edit_position = state.command.len();
-            return;
-        }
-        if completions.len() == 1 {
-            state.command = completions[0].clone();
-            state.text_edit_position = state.command.len();
-        } else if completions.len() > 1 {
-            let completions = completions.join(" █ ");
-            state.next_mode = Mode::Command;
-            state.set_warning(format!("{}", completions));
-        } else {
-            state.next_mode = Mode::Command;
-            state.set_warning("No completions found".to_string());
-        }
-    }
-
-    pub fn handle_filter_mode(&mut self, key_event: KeyEvent) {
-        let state = &mut self.state;
-        match key_event.code {
-            KeyCode::Esc => {
-                state.mode = Mode::Normal;
-                state.filter = String::new();
-                state.handle_filter()
-            }
-            KeyCode::Char('\n') => {
-                state.mode = Mode::Normal;
-                state.handle_filter()
-            }
-            KeyCode::Enter => {
-                state.mode = Mode::Normal;
-                state.handle_filter()
-            }
-            _ => {
-                Self::handle_textinput(&mut state.filter, &mut state.text_edit_position, key_event);
-                state.handle_filter();
-            }
-        }
-    }
-
-    fn refresh_screen(&mut self) {
+    fn refresh_screen(&mut self, _state: &TuiState) {
         // force refresh of all screen contents, as some damaged info came into it
         // just draw all black, and then render again
         self.terminal
@@ -782,17 +621,6 @@ impl TuiChrome {
                 );
             })
             .unwrap();
-    }
-
-    pub fn run(&mut self) {
-        loop {
-            self.render().unwrap();
-            self.wait_for_events().unwrap();
-
-            if !self.state.running {
-                break;
-            }
-        }
     }
 }
 

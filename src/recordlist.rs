@@ -11,6 +11,8 @@ use std::{
     sync::mpsc,
 };
 
+use crate::parser;
+use crate::settings::RulesSettings;
 use crate::{ast::AST, events::TuiEvent, parser::Parser, record::Record};
 
 #[derive(Debug, Default)]
@@ -312,6 +314,16 @@ impl RecordList {
         }
     }
 
+    pub fn reparse(&mut self) {
+        self.all_records.par_iter_mut().for_each(|record| {
+            record.parse(&self.parsers);
+        });
+        self.visible_records.par_iter_mut().for_each(|record| {
+            record.parse(&self.parsers);
+        });
+        self.renumber();
+    }
+
     pub fn len(&self) -> usize {
         return self.visible_records.len();
     }
@@ -349,4 +361,15 @@ impl Drop for RecordList {
             let _result = kill(Pid::from_raw(-(pid as i32)), Signal::SIGTERM);
         }
     }
+}
+
+pub fn load_parsers(
+    rule: &RulesSettings,
+    parsers: &mut Vec<parser::Parser>,
+) -> Result<(), parser::ParserError> {
+    for extractor in rule.extractors.iter() {
+        parsers.push(parser::Parser::new(extractor)?);
+    }
+
+    Ok(())
 }

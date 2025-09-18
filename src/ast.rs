@@ -28,7 +28,7 @@ impl Default for AST {
 pub fn parse(input: &str) -> Result<AST, String> {
     let mut tokens = match tokenize(input) {
         Ok(tokens) => tokens,
-        Err(e) => return Err(e),
+        Err(_e) => return Ok(AST::String(input.to_string())),
     };
     // We convert simple variables to strings. If want the variable as it must exist, use !!var
     match parse_expression(&mut tokens) {
@@ -375,6 +375,7 @@ pub enum Value {
  *
  * "this" -> true
  * this -> true
+ * ! "this" -> false
  * !!this -> false
  * test -> true
  * !!test -> true
@@ -455,6 +456,9 @@ pub fn execute_rec(ast: &AST, record: &Record) -> Value {
             }
         }
         AST::Not(ast) => {
+            if let AST::String(s) = &**ast {
+                return Value::Boolean(!record.original.to_lowercase().contains(&s.to_lowercase()));
+            }
             let ast = execute_to_bool(ast, record);
             match ast {
                 Value::Boolean(b) => Value::Boolean(!b),
@@ -624,6 +628,11 @@ mod tests {
                 Box::new(AST::Variable("var1".to_string())),
                 Box::new(AST::String("var2".to_string())),
             )),
+        );
+
+        assert_eq!(
+            parse("!\"test\""),
+            Ok(AST::Not(Box::new(AST::String("test".to_string())))),
         );
     }
 
@@ -819,7 +828,16 @@ mod tests {
             Value::Boolean(true)
         );
         assert_eq!(
+            execute(&parse("\"find").unwrap(), &record),
+            Value::Boolean(true)
+        );
+        assert_eq!(
             execute(&parse("not_find").unwrap(), &record),
+            Value::Boolean(false)
+        );
+        // negate string
+        assert_eq!(
+            execute(&parse("! \"find\"").unwrap(), &record),
             Value::Boolean(false)
         );
     }
