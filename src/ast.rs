@@ -81,6 +81,18 @@ enum Token {
     Or,
 }
 
+fn is_variable_continuation_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_' || c == '.' || c == ':' || c == '-' || c == '*'
+}
+
+fn should_parse_as_variable(next_char: char) -> bool {
+    next_char == '-'
+        || next_char == '_'
+        || next_char == '.'
+        || next_char == ':'
+        || next_char.is_alphabetic()
+}
+
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
@@ -96,18 +108,31 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                         break;
                     }
                 }
-                tokens.push(Token::Number(num.parse().unwrap()));
+
+                // Check if this is followed by non-digit characters that would make it a variable
+                if let Some(&next_char) = chars.peek() {
+                    if should_parse_as_variable(next_char) {
+                        // Parse as variable instead
+                        while let Some(&c) = chars.peek() {
+                            if is_variable_continuation_char(c) {
+                                num.push(c);
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        tokens.push(Token::Variable(num));
+                    } else {
+                        tokens.push(Token::Number(num.parse().unwrap()));
+                    }
+                } else {
+                    tokens.push(Token::Number(num.parse().unwrap()));
+                }
             }
             'a'..='z' | 'A'..='Z' => {
                 let mut var = c.to_string();
                 while let Some(&c) = chars.peek() {
-                    if c.is_alphanumeric()
-                        || c == '_'
-                        || c == '.'
-                        || c == ':'
-                        || c == '-'
-                        || c == '*'
-                    {
+                    if is_variable_continuation_char(c) {
                         var.push(c);
                         chars.next();
                     } else {
@@ -196,10 +221,10 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
  *          | <less> <expr>
  *          | <less_than> <expr>
  *          | <equal> <expr>
- *          | <and> <expr>    
+ *          | <and> <expr>
  *          | <or> <expr>
  *          | <regexp> <expr>
- *  
+ *
  * unary_op: <not> <term>
  *         | <regexp> <term>
  */
@@ -710,7 +735,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_parse_execute() {
-        let mut record = Record::new("2024-01-01 00:00:00 text to find".to_string());
+        let mut record = Record::new("2024-01-01 00:00:00 text to find 123abc".to_string());
         record.set_data("hostname", "localhost".to_string());
         record.set_data("program", "test".to_string());
         record.set_data("rest", "message".to_string());
@@ -762,6 +787,14 @@ mod tests {
         assert_eq!(
             execute(&parse("2024-01").unwrap(), &record),
             Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(&parse("123abc").unwrap(), &record),
+            Value::Boolean(true)
+        );
+        assert_eq!(
+            execute(&parse("123cba").unwrap(), &record),
+            Value::Boolean(false)
         );
         // regex unary
         assert_eq!(
