@@ -78,7 +78,8 @@ command mode (: by default).
 | control-right  | hmove 10                                                        |
 | home           | vgoto 0                                                         |
 | end            | vgoto 2000000000                                                |
-| G              | goto_line                                                       |
+| g              | move_top                                                        |
+| shift-g        | move_bottom                                                     |
 | space          | toggle_mark yellow                                              |
 | 1              | toggle_mark red                                                 |
 | 2              | toggle_mark green                                               |
