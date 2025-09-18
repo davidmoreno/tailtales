@@ -137,7 +137,12 @@ impl Parser {
             let value = caps["value"].to_string();
 
             if value.starts_with('"') && value.ends_with('"') {
-                let value = value[1..value.len() - 1].to_string();
+                let end = value.len() - 1;
+                let value = if end > 1 {
+                    value[1..end].to_string()
+                } else {
+                    "".to_string()
+                };
                 data.insert(key, value);
                 continue;
             }
@@ -246,5 +251,237 @@ fn is_special_for_re(c: char) -> bool {
     match c {
         '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '^' | '$' | '|' | '\\' => true,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_is_special_for_re() {
+        assert!(is_special_for_re('.'));
+        assert!(is_special_for_re('*'));
+        assert!(is_special_for_re('+'));
+        assert!(is_special_for_re('?'));
+        assert!(is_special_for_re('('));
+        assert!(is_special_for_re(')'));
+        assert!(is_special_for_re('['));
+        assert!(is_special_for_re(']'));
+        assert!(is_special_for_re('{'));
+        assert!(is_special_for_re('}'));
+        assert!(is_special_for_re('^'));
+        assert!(is_special_for_re('$'));
+        assert!(is_special_for_re('|'));
+        assert!(is_special_for_re('\\'));
+        assert!(!is_special_for_re('a'));
+        assert!(!is_special_for_re('1'));
+        assert!(!is_special_for_re(' '));
+    }
+
+    #[test]
+    fn test_parser_new_valid_cases() {
+        // Test logfmt
+        let parser = Parser::new("logfmt").unwrap();
+        matches!(parser, Parser::LogFmt(_));
+
+        // Test regex
+        let parser = Parser::new("regex .*").unwrap();
+        matches!(parser, Parser::Regex(_));
+
+        // Test pattern
+        let parser = Parser::new("pattern <name> test").unwrap();
+        matches!(parser, Parser::Regex(_));
+
+        // Test autodatetime
+        let parser = Parser::new("autodatetime").unwrap();
+        matches!(parser, Parser::AutoDatetime);
+
+        // Test csv
+        let parser = Parser::new("csv").unwrap();
+        matches!(parser, Parser::Csv(_));
+    }
+
+    #[test]
+    fn test_parser_new_invalid_cases() {
+        // Test invalid parser type
+        let result = Parser::new("invalid");
+        assert!(result.is_err());
+        matches!(result.unwrap_err(), ParserError::InvalidParser(_));
+
+        // Test regex without pattern
+        let result = Parser::new("regex");
+        assert!(result.is_err());
+
+        // Test pattern without pattern
+        let result = Parser::new("pattern");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_from_pattern() {
+        // Test simple pattern with named group
+        let parser = Parser::new_from_pattern("Hello <name> world");
+        if let Parser::Regex(re) = parser {
+            let test_line = "Hello John world";
+            let caps = re.captures(test_line).unwrap();
+            assert_eq!(&caps["name"], "John");
+        } else {
+            panic!("Expected Regex parser");
+        }
+
+        // Test pattern with unnamed group
+        let parser = Parser::new_from_pattern("Hello <_> world");
+        if let Parser::Regex(re) = parser {
+            let test_line = "Hello anyone world";
+            assert!(re.is_match(test_line));
+        }
+
+        // Test pattern with special regex characters
+        let parser = Parser::new_from_pattern("Test [brackets] and (parens)");
+        if let Parser::Regex(re) = parser {
+            let test_line = "Test [brackets] and (parens)";
+            assert!(re.is_match(test_line));
+        }
+    }
+
+    #[test]
+    fn test_parse_logfmt() {
+        let parser = Parser::new_logfmt();
+        let data = HashMap::new();
+
+        // Test simple key-value pairs
+        let result = parser.parse_line(data.clone(), "key1=value1 key2=value2");
+        assert_eq!(result.get("key1"), Some(&"value1".to_string()));
+        assert_eq!(result.get("key2"), Some(&"value2".to_string()));
+
+        // Test quoted values
+        let result = parser.parse_line(data.clone(), "key1=\"quoted value\" key2=unquoted");
+        assert_eq!(result.get("key1"), Some(&"quoted value".to_string()));
+        assert_eq!(result.get("key2"), Some(&"unquoted".to_string()));
+
+        // Test empty quoted value
+        let result = parser.parse_line(data, "key1=\"\"");
+        assert_eq!(result.get("key1"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_parse_regex() {
+        let parser = Parser::new_from_regex(r"(?P<method>\w+) (?P<path>/\S+)");
+        let data = HashMap::new();
+
+        let result = parser.parse_line(data, "GET /api/users");
+        assert_eq!(result.get("method"), Some(&"GET".to_string()));
+        assert_eq!(result.get("path"), Some(&"/api/users".to_string()));
+
+        // Test line that doesn't match
+        let result = parser.parse_line(HashMap::new(), "invalid line");
+        assert!(result.is_empty());
+
+        // Test with underscore prefixed group (should be ignored)
+        let parser = Parser::new_from_regex(r"(?P<_ignore>\w+) (?P<keep>\w+)");
+        let result = parser.parse_line(HashMap::new(), "ignore keep");
+        assert!(!result.contains_key("_ignore"));
+        assert_eq!(result.get("keep"), Some(&"keep".to_string()));
+    }
+
+    #[test]
+    fn test_parse_autodate() {
+        let parser = Parser::new_autodate();
+        let mut data = HashMap::new();
+
+        // Test adding timestamp when not present
+        let result = parser.parse_line(data.clone(), "test line");
+        assert!(result.contains_key("timestamp"));
+
+        // Test preserving existing timestamp
+        data.insert("timestamp".to_string(), "existing".to_string());
+        let result = parser.parse_line(data, "test line");
+        assert_eq!(result.get("timestamp"), Some(&"existing".to_string()));
+    }
+
+    #[test]
+    fn test_parse_csv() {
+        let parser = Parser::new_csv();
+        let data = HashMap::new();
+
+        // First line should be treated as headers
+        let result = parser.parse_line(data.clone(), "name,age,city");
+        assert!(result.is_empty()); // Headers don't produce data
+
+        // Second line should use headers as keys
+        let result = parser.parse_line(data.clone(), "John,25,NYC");
+        assert_eq!(result.get("name"), Some(&"John".to_string()));
+        assert_eq!(result.get("age"), Some(&"25".to_string()));
+        assert_eq!(result.get("city"), Some(&"NYC".to_string()));
+
+        // Test with semicolon separator
+        let parser2 = Parser::new_csv();
+        let _result = parser2.parse_line(HashMap::new(), "name;age;city");
+        let result = parser2.parse_line(HashMap::new(), "Jane;30;LA");
+        assert_eq!(result.get("name"), Some(&"Jane".to_string()));
+        assert_eq!(result.get("age"), Some(&"30".to_string()));
+        assert_eq!(result.get("city"), Some(&"LA".to_string()));
+    }
+
+    #[test]
+    fn test_csv_read_data() {
+        let parser = Parser::new_csv();
+        if let Parser::Csv(csv_parser) = &parser {
+            // Test comma separated values
+            let result = parser.csv_read_data(csv_parser, "a,b,c");
+            assert_eq!(result, vec!["a", "b", "c"]);
+
+            // Test quoted values
+            let result = parser.csv_read_data(csv_parser, "\"quoted,value\",normal");
+            assert_eq!(result, vec!["quoted,value", "normal"]);
+
+            // Test escaped characters
+            let result = parser.csv_read_data(csv_parser, "value1,value\\,with\\,commas,value3");
+            assert_eq!(result, vec!["value1", "value,with,commas", "value3"]);
+
+            // Test empty fields
+            let result = parser.csv_read_data(csv_parser, "a,,c");
+            assert_eq!(result, vec!["a", "", "c"]);
+        }
+    }
+
+    #[test]
+    fn test_csv_with_quoted_fields() {
+        let parser = Parser::new_csv();
+        let data = HashMap::new();
+
+        // Set up headers
+        let _result = parser.parse_line(data.clone(), "name,description");
+
+        // Test quoted field with comma
+        let result = parser.parse_line(data, "John,\"Software Engineer, Senior\"");
+        assert_eq!(result.get("name"), Some(&"John".to_string()));
+        assert_eq!(
+            result.get("description"),
+            Some(&"Software Engineer, Senior".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_line_routing() {
+        // Test that parse_line correctly routes to the right parser
+        let regex_parser = Parser::new_from_regex(r"(?P<word>\w+)");
+        let result = regex_parser.parse_line(HashMap::new(), "hello");
+        assert!(result.contains_key("word"));
+
+        let autodate_parser = Parser::new_autodate();
+        let result = autodate_parser.parse_line(HashMap::new(), "test");
+        assert!(result.contains_key("timestamp"));
+
+        let logfmt_parser = Parser::new_logfmt();
+        let result = logfmt_parser.parse_line(HashMap::new(), "key=value");
+        assert!(result.contains_key("key"));
+
+        let csv_parser = Parser::new_csv();
+        let _result = csv_parser.parse_line(HashMap::new(), "header1,header2");
+        let result = csv_parser.parse_line(HashMap::new(), "value1,value2");
+        assert!(result.contains_key("header1"));
     }
 }
