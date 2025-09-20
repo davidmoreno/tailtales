@@ -493,24 +493,15 @@ impl LuaEngine {
                 })?,
         )?;
 
-        // Async input function - uses a special marker for yielding
-        globals.set(
-            "ask",
-            self.lua
-                .create_function(|lua, prompt: String| -> LuaResult<Value> {
-                    debug!("ask('{}') called from Lua", prompt);
+        // Define the coroutine-compatible ask() function at VM level
+        let ask_function_code = r#"
+            function ask(prompt)
+                local response = coroutine.yield(prompt)
+                return response
+            end
+        "#;
 
-                    // Store the ask request in the registry for the engine to handle
-                    let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                    commands.set("ask_prompt", prompt.clone())?;
-
-                    // Return a special marker that we can detect in the coroutine execution
-                    // The actual yielding will be handled by the coroutine wrapper
-                    Ok(Value::String(
-                        lua.create_string(&format!("__ASK_YIELD__{}", prompt))?,
-                    ))
-                })?,
-        )?;
+        self.lua.load(ask_function_code).exec()?;
 
         debug!("Lua API functions registered");
         Ok(())
@@ -927,25 +918,10 @@ impl LuaEngine {
                 .set_named_registry_value("tailtales_commands", commands_table)
                 .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
 
-            // Wrap the script in a coroutine that can handle ask() calls
-            let wrapped_script = format!(
-                r#"
-                -- Replace ask() function to yield properly from coroutine
-                function ask(prompt)
-                    local response = coroutine.yield(prompt)
-                    return response
-                end
-                
-                -- The user script
-                {}
-                "#,
-                compiled.source
-            );
-
-            // Create and start a coroutine
+            // Create and start a coroutine with the compiled script
             let coroutine_func = self
                 .lua
-                .load(&wrapped_script)
+                .load(&compiled.source)
                 .into_function()
                 .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
 
@@ -980,25 +956,10 @@ impl LuaEngine {
             .set_named_registry_value("tailtales_commands", commands_table)
             .map_err(|e| self.create_enhanced_error(e, None))?;
 
-        // Wrap the script in a coroutine that can handle ask() calls
-        let wrapped_script = format!(
-            r#"
-            -- Replace ask() function to yield properly from coroutine
-            function ask(prompt)
-                local response = coroutine.yield(prompt)
-                return response
-            end
-            
-            -- The user script
-            {}
-            "#,
-            script
-        );
-
-        // Create and start a coroutine
+        // Create and start a coroutine with the script string
         let coroutine_func = self
             .lua
-            .load(&wrapped_script)
+            .load(script)
             .into_function()
             .map_err(|e| self.create_enhanced_error(e, None))?;
 

@@ -455,7 +455,7 @@ All existing keybindings have been converted to equivalent Lua scripts in the de
 The Lua scripting system is now fully implemented and operational:
 
 - **Pure Lua System**: No legacy fallback, all commands and keybindings use Lua
-- **Asynchronous Input**: `ask()` function enables interactive scripts with user prompts
+- **Asynchronous Input**: `ask()` function enables interactive scripts with user prompts (optimized at VM level)
 - **Enhanced Navigation**: "g" key provides goto-line functionality with input validation
 - **Production Ready**: All settings converted, proper error handling, comprehensive testing
 
@@ -475,6 +475,10 @@ end
 ```
 
 This demonstrates the `ask()` function's capability for interactive user input during script execution.
+
+#### Performance Optimizations
+
+The `ask()` function is now defined once at the VM initialization level rather than being redefined for each script execution, providing significant performance improvements for scripts that use async functionality.
 
 ## Future Enhancements
 
