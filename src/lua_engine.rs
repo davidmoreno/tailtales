@@ -135,6 +135,8 @@ pub struct LuaEngine {
     #[allow(dead_code)]
     script_directories: Vec<PathBuf>,
     suspended_coroutine: Option<SuspendedCoroutine>,
+    /// Flag to enable immediate execution during script runs
+    immediate_mode: bool,
 }
 
 impl LuaEngine {
@@ -152,6 +154,7 @@ impl LuaEngine {
                 PathBuf::from(".tailtales/scripts"),
             ],
             suspended_coroutine: None,
+            immediate_mode: false,
         };
 
         engine.initialize()?;
@@ -1074,6 +1077,140 @@ impl LuaEngine {
     /// Get the prompt from the suspended script
     pub fn get_suspended_prompt(&self) -> Option<&str> {
         self.suspended_coroutine.as_ref().map(|s| s.prompt.as_str())
+    }
+
+    /// Set immediate execution mode - when enabled, Lua functions execute state changes immediately
+    pub fn set_immediate_mode(&mut self, enabled: bool) {
+        self.immediate_mode = enabled;
+    }
+
+    /// Register immediate execution functions that can modify TuiState directly
+    /// This method allows passing a mutable reference to TuiState for immediate modifications
+    pub fn register_immediate_functions(
+        &mut self,
+        state_ptr: *mut TuiState,
+    ) -> Result<(), LuaEngineError> {
+        let globals = self.lua.globals();
+
+        // Register immediate vgoto function
+        globals
+            .set(
+                "vgoto_immediate",
+                self.lua
+                    .create_function(move |lua, n: i32| -> LuaResult<()> {
+                        // Safety: This is only called during controlled script execution
+                        // where we ensure the pointer is valid for the duration of the script
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.set_position(n as usize);
+
+                            // Update Lua context immediately so subsequent calls see the new state
+                            let app_table: Table = lua.globals().get("app")?;
+                            app_table.set("position", state.position)?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create vgoto_immediate: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set vgoto_immediate: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Register immediate warning function
+        globals
+            .set(
+                "warning_immediate",
+                self.lua
+                    .create_function(move |_lua, msg: String| -> LuaResult<()> {
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.set_warning(msg);
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create warning_immediate: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set warning_immediate: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Register immediate vmove function
+        globals
+            .set(
+                "vmove_immediate",
+                self.lua
+                    .create_function(move |lua, n: i32| -> LuaResult<()> {
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.move_selection(n);
+
+                            // Update Lua context immediately
+                            let app_table: Table = lua.globals().get("app")?;
+                            app_table.set("position", state.position)?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create vmove_immediate: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set vmove_immediate: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        Ok(())
+    }
+
+    /// Clear immediate execution functions
+    pub fn clear_immediate_functions(&mut self) -> Result<(), LuaEngineError> {
+        let globals = self.lua.globals();
+        globals
+            .set("vgoto_immediate", mlua::Nil)
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to clear vgoto_immediate: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+        globals
+            .set("warning_immediate", mlua::Nil)
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to clear warning_immediate: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+        globals
+            .set("vmove_immediate", mlua::Nil)
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to clear vmove_immediate: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+        Ok(())
     }
 }
 

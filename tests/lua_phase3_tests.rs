@@ -691,4 +691,47 @@ mod tests {
 
         println!("✓ Simple lua execution test completed!");
     }
+
+    #[test]
+    fn test_deferred_execution_problem() {
+        // This test demonstrates the problem with deferred command execution
+        // A script that moves and then uses the new position should work within the same script
+        let mut state = TuiState::new().expect("Failed to create TuiState");
+
+        // Add some test records
+        for i in 1..=10 {
+            let record = tailtales::record::Record::new(format!("Test line {}", i));
+            state.records.add(record);
+        }
+
+        // Initially at position 0
+        assert_eq!(state.position, 0);
+
+        let script = r#"
+            -- Move to line 5
+            vgoto(4)
+            
+            -- Try to get the current line number in the same script
+            -- With deferred execution, app.position will still show old value (0)
+            -- With immediate execution, app.position would show new value (4)  
+            warning("Position during script: " .. app.position)
+        "#;
+
+        // Test with immediate execution - this should work correctly
+        let result = state.execute_script_with_immediate_execution(script);
+        assert!(result.is_ok(), "Script should execute without errors");
+
+        // With deferred execution, the position would still be 0 when warning() runs
+        // With immediate execution, the position would be 4 when warning() runs
+        println!("Final position: {}", state.position);
+        println!("Warning message: {}", state.warning);
+
+        // The warning should show position 4 if execution is immediate
+        // But with current deferred system, it shows 0 - this test WILL FAIL!
+        assert!(
+            state.warning.contains("4"),
+            "Should show updated position, got: {}",
+            state.warning
+        );
+    }
 }

@@ -354,14 +354,8 @@ impl TuiState {
                 Ok(())
             }
             Ok(None) => {
-                // Script completed immediately, process any collected commands
-                match self
-                    .lua_engine
-                    .collect_executed_commands(Some(script_name.to_string()))
-                {
-                    Ok(commands) => self.process_lua_commands(commands),
-                    Err(e) => Err(format!("Failed to collect commands: {}", e)),
-                }
+                // Script completed immediately, process any collected commands immediately
+                self.process_collected_commands(Some(script_name.to_string()))
             }
             Err(e) => Err(format!(
                 "Failed to execute async script '{}': {}",
@@ -388,11 +382,8 @@ impl TuiState {
                 Ok(())
             }
             Ok(None) => {
-                // Script completed immediately, process any collected commands
-                match self.lua_engine.collect_executed_commands(None) {
-                    Ok(commands) => self.process_lua_commands(commands),
-                    Err(e) => Err(format!("Failed to collect commands: {}", e)),
-                }
+                // Script completed immediately, process any collected commands immediately
+                self.process_collected_commands(None)
             }
             Err(e) => Err(format!("Failed to execute async script: {}", e)),
         }
@@ -417,20 +408,8 @@ impl TuiState {
                     self.script_input.clear();
                     self.mode = Mode::Normal;
 
-                    // Process any commands that were executed
-                    match self.lua_engine.collect_executed_commands(None) {
-                        Ok(commands) => {
-                            log::debug!(
-                                "Collected {} commands after script completion",
-                                commands.len()
-                            );
-                            for (cmd, value) in &commands {
-                                log::debug!("Command: {} = {:?}", cmd, value);
-                            }
-                            self.process_lua_commands(commands)?
-                        }
-                        Err(e) => return Err(format!("Failed to collect commands: {}", e)),
-                    }
+                    // Process any commands that were executed immediately
+                    self.process_collected_commands(None)?;
                 }
                 Ok(())
             }
@@ -460,6 +439,75 @@ impl TuiState {
     #[allow(dead_code)]
     pub fn has_suspended_script(&self) -> bool {
         self.script_waiting && self.lua_engine.has_suspended_script()
+    }
+
+    /// Process collected Lua commands immediately for better performance
+    fn process_collected_commands(&mut self, script_name: Option<String>) -> Result<(), String> {
+        match self.lua_engine.collect_executed_commands(script_name) {
+            Ok(commands) => {
+                log::debug!(
+                    "Collected {} commands for immediate processing",
+                    commands.len()
+                );
+                for (cmd, value) in &commands {
+                    log::debug!("Executing command: {} = {:?}", cmd, value);
+                }
+                self.process_lua_commands(commands)
+            }
+            Err(e) => Err(format!("Failed to collect commands: {}", e)),
+        }
+    }
+
+    /// Execute a script with immediate state modifications enabled
+    /// This solves the deferred execution problem by allowing Lua functions to modify state immediately
+    pub fn execute_script_with_immediate_execution(&mut self, script: &str) -> Result<(), String> {
+        // Update context before execution
+        if let Err(e) = self.lua_engine.update_context(self) {
+            return Err(format!("Failed to update Lua context: {}", e));
+        }
+
+        // Get a pointer to self for immediate execution
+        let state_ptr = self as *mut TuiState;
+
+        // Register immediate execution functions
+        self.lua_engine
+            .register_immediate_functions(state_ptr)
+            .map_err(|e| format!("Failed to register immediate functions: {}", e))?;
+
+        // Enable immediate mode
+        self.lua_engine.set_immediate_mode(true);
+
+        // Create a script that uses immediate functions instead of deferred ones
+        let immediate_script = script
+            .replace("vgoto(", "vgoto_immediate(")
+            .replace("vmove(", "vmove_immediate(")
+            .replace("warning(", "warning_immediate(");
+
+        // Execute the script
+        let result = match self
+            .lua_engine
+            .execute_script_string_async(&immediate_script)
+        {
+            Ok(Some(prompt)) => {
+                // Script is asking for user input
+                self.script_prompt = prompt;
+                self.script_waiting = true;
+                self.mode = Mode::ScriptInput;
+                self.script_input.clear();
+                Ok(())
+            }
+            Ok(None) => {
+                // Script completed immediately - no need to process commands since they executed immediately
+                Ok(())
+            }
+            Err(e) => Err(format!("Failed to execute immediate script: {}", e)),
+        };
+
+        // Clean up immediate functions
+        let _ = self.lua_engine.clear_immediate_functions();
+        self.lua_engine.set_immediate_mode(false);
+
+        result
     }
 
     pub fn set_warning(&mut self, warning: String) {
