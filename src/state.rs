@@ -2,6 +2,7 @@ use std::time;
 
 use crate::{
     ast,
+    lua_engine::LuaEngine,
     record::Record,
     recordlist::{self, load_parsers},
     settings::{RulesSettings, Settings},
@@ -38,15 +39,25 @@ pub struct TuiState {
     pub view_details: bool,
     pub text_edit_position: usize,
     pub pending_refresh: bool, // If true, the screen will be refreshed when the screen receives render request
+    pub lua_engine: LuaEngine,
 }
 
 impl TuiState {
     pub fn new() -> Result<TuiState, Box<dyn std::error::Error>> {
         let settings = Settings::new()?;
+        let lua_engine =
+            LuaEngine::new().map_err(|e| format!("Failed to initialize Lua engine: {}", e))?;
+        let current_rule = RulesSettings::default();
+        let mut records = recordlist::RecordList::new();
+
+        if let Err(err) = load_parsers(&current_rule, &mut records.parsers) {
+            return Err(format!("Could not load parsers: {:?}", err).into());
+        }
+
         Ok(TuiState {
             settings,
-            current_rule: RulesSettings::default(),
-            records: recordlist::RecordList::new(),
+            current_rule,
+            records,
             visible_height: 25,
             visible_width: 80,
             position: 0,
@@ -65,6 +76,7 @@ impl TuiState {
             view_details: false,
             text_edit_position: 0,
             pending_refresh: false,
+            lua_engine,
         })
     }
 
@@ -575,6 +587,28 @@ impl TuiState {
                 self.set_warning(format!("Error reloading settings: {}", err));
             }
         }
+    }
+
+    /// Test method to demonstrate basic Lua execution
+    pub fn test_lua_execution(&mut self) -> Result<(), String> {
+        // Update Lua context with current state
+        self.lua_engine
+            .update_context(self)
+            .map_err(|e| format!("Failed to update Lua context: {}", e))?;
+
+        // Test basic Lua execution
+        self.lua_engine
+            .test_basic_execution()
+            .map_err(|e| format!("Failed to execute Lua test: {}", e))?;
+
+        // Test executing a simple Lua command
+        let result = self
+            .lua_engine
+            .execute_script_string("return 'Hello from Lua!'")
+            .map_err(|e| format!("Failed to execute Lua script: {}", e))?;
+
+        println!("Lua script result: {:?}", result);
+        Ok(())
     }
 }
 
