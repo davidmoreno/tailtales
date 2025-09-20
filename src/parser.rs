@@ -2,7 +2,7 @@ use chrono::prelude::*;
 use std::{collections::HashMap, sync::RwLock};
 
 #[derive(Debug)]
-pub(crate) struct CsvParser {
+pub struct CsvParser {
     pub headers: Vec<String>,
     separator: char,
 }

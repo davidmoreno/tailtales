@@ -256,7 +256,7 @@ fn test_enhanced_context_setup() {
         ("app.warning", "Test warning message"),
     ];
 
-    for (lua_expr, expected) in app_tests {
+    for (lua_expr, _expected) in app_tests {
         let result = state
             .lua_engine
             .execute_script_string(&format!("return tostring({})", lua_expr));
@@ -279,7 +279,7 @@ fn test_enhanced_context_setup() {
         ("current.user_id", "12345"),
     ];
 
-    for (lua_expr, expected) in current_tests {
+    for (lua_expr, _expected) in current_tests {
         let script = format!("return tostring({})", lua_expr);
         let result = state.lua_engine.execute_script_string(&script);
         assert!(result.is_ok(), "Should execute: {}", lua_expr);

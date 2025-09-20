@@ -4,6 +4,7 @@ use crossterm::event::{self, KeyCode, KeyEvent};
 
 use crate::{
     ast,
+    settings::Settings,
     state::{Mode, TuiState},
 };
 
@@ -73,10 +74,33 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState) {
     };
 
     if state.settings.keybindings.contains_key(keyname) {
-        let command = state.settings.keybindings[keyname].clone();
+        let script_name = Settings::get_keybinding_script_name(keyname);
 
-        state.command = command;
-        state.handle_command();
+        // Execute compiled Lua script (try async first for ask() support)
+        if state
+            .lua_engine
+            .get_compiled_scripts()
+            .contains(&script_name.as_str())
+        {
+            match state.execute_lua_script_async(&script_name) {
+                Ok(_) => {
+                    // Script executed successfully (either completed or waiting for input)
+                    return;
+                }
+                Err(lua_err) => {
+                    state.set_warning(format!(
+                        "Lua script execution failed for key '{}': {}",
+                        keyname, lua_err
+                    ));
+                    return;
+                }
+            }
+        } else {
+            state.set_warning(format!(
+                "No compiled Lua script found for key: {:?}",
+                keyname
+            ));
+        }
     } else {
         state.set_warning(format!("Unknown keybinding: {:?}", keyname));
     }

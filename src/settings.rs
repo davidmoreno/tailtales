@@ -2,7 +2,7 @@ use ratatui::style::{Color, Style};
 use serde::{de::Deserializer, Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
-use crate::ast;
+use crate::{ast, lua_engine::LuaEngine};
 
 // singleton load settings
 
@@ -358,6 +358,60 @@ impl Settings {
         }
 
         self.rules = other_rules
+    }
+
+    /// Compile all keybinding scripts in the Lua engine
+    /// This is called during settings loading to pre-compile all Lua scripts
+    pub fn compile_keybinding_scripts(&self, lua_engine: &mut LuaEngine) -> Result<(), String> {
+        let mut failed_scripts = Vec::new();
+
+        for (key_name, script) in &self.keybindings {
+            // Create a unique script name for the keybinding
+            let script_name = format!(
+                "keybinding_{}",
+                key_name.replace("-", "_").replace(" ", "_")
+            );
+
+            match lua_engine.compile_script(&script_name, script) {
+                Ok(_) => {
+                    log::debug!(
+                        "Compiled keybinding script for key '{}': {}",
+                        key_name,
+                        script
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to compile keybinding script for key '{}': {}",
+                        key_name,
+                        e
+                    );
+                    failed_scripts.push(format!("Key '{}': {}", key_name, e));
+                }
+            }
+        }
+
+        if !failed_scripts.is_empty() {
+            return Err(format!(
+                "Failed to compile {} keybinding scripts:\n{}",
+                failed_scripts.len(),
+                failed_scripts.join("\n")
+            ));
+        }
+
+        log::info!(
+            "Successfully compiled {} keybinding scripts",
+            self.keybindings.len()
+        );
+        Ok(())
+    }
+
+    /// Get the script name for a specific keybinding
+    pub fn get_keybinding_script_name(key_name: &str) -> String {
+        format!(
+            "keybinding_{}",
+            key_name.replace("-", "_").replace(" ", "_")
+        )
     }
 }
 

@@ -3,7 +3,6 @@ use std::time;
 use crate::{
     ast,
     lua_engine::LuaEngine,
-    record::Record,
     recordlist::{self, load_parsers},
     settings::{RulesSettings, Settings},
 };
@@ -49,8 +48,14 @@ pub struct TuiState {
 impl TuiState {
     pub fn new() -> Result<TuiState, Box<dyn std::error::Error>> {
         let settings = Settings::new()?;
-        let lua_engine =
+        let mut lua_engine =
             LuaEngine::new().map_err(|e| format!("Failed to initialize Lua engine: {}", e))?;
+
+        // Compile keybinding scripts during initialization
+        settings
+            .compile_keybinding_scripts(&mut lua_engine)
+            .map_err(|e| format!("Failed to compile keybinding scripts: {}", e))?;
+
         let current_rule = RulesSettings::default();
         let mut records = recordlist::RecordList::new();
 
@@ -155,138 +160,16 @@ impl TuiState {
     pub fn handle_command(&mut self) {
         let lines: Vec<String> = self.command.lines().map(String::from).collect();
         for line in lines {
-            // Try Lua execution first, fall back to old command system
-            if let Err(err) = self.handle_lua_command(&line) {
-                match self.handle_one_command_line(&line) {
-                    Ok(_) => (),
-                    Err(fallback_err) => {
-                        self.set_warning(format!(
-                            "Error executing command: {} | Original: {} | Fallback: {}",
-                            line, err, fallback_err
-                        ));
-                        return;
-                    }
-                }
+            // Execute as Lua script only (try async first for ask() support)
+            if let Err(err) = self.handle_lua_command_async(&line) {
+                self.set_warning(format!("Error executing Lua command '{}': {}", line, err));
+                return;
             }
         }
-    }
-
-    pub fn handle_one_command_line(&mut self, line: &str) -> Result<(), String> {
-        let record = match self.records.get(self.position) {
-            Some(record) => record,
-            None => &Record::new("".to_string()),
-        };
-        let parsed_command = placeholder_render(line, &record);
-        let mut args = sh_style_split(&parsed_command).into_iter();
-        // Remove the first argument, which is the command itself
-
-        let command = match args.next() {
-            Some(command) => command,
-            None => {
-                self.set_warning("No command provided".into());
-                return Err("No command provided".into());
-            }
-        };
-
-        match command.as_str() {
-            "" => {}
-            "quit" => {
-                self.running = false;
-            }
-            "clear" => {
-                self.records.clear();
-                self.position = 0;
-                self.scroll_offset_top = 0;
-                self.scroll_offset_left = 0;
-            }
-            "command" => {
-                self.command = String::new();
-                self.mode = Mode::Command;
-            }
-            "search_next" => {
-                self.search_next();
-            }
-            "search_prev" => {
-                self.search_prev();
-            }
-            "vmove" => {
-                let args: Vec<String> = args.map(String::from).collect();
-                let def_arg1 = "1".to_string();
-                let position = args.get(0).unwrap_or(&def_arg1);
-
-                self.move_selection(position.parse::<i32>().unwrap());
-            }
-            "vgoto" => {
-                let args: Vec<String> = args.map(String::from).collect();
-                let def_arg1 = "0".to_string();
-                let position = args.get(0).unwrap_or(&def_arg1);
-
-                self.set_position(position.parse::<usize>().unwrap());
-            }
-            "move_top" => {
-                self.set_position(0);
-                self.set_vposition(0);
-            }
-            "move_bottom" => {
-                self.set_position(usize::max_value());
-            }
-            "clear_records" => {
-                self.records.clear();
-                self.set_position(0);
-                self.set_vposition(0);
-            }
-            "warning" => {
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let message = args_vec.join(" ");
-                self.set_warning(message);
-            }
-            "toggle_mark" => {
-                let default_color = "yellow".to_string();
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let color = args_vec.get(0).unwrap_or(&default_color);
-                self.toggle_mark(color);
-            }
-            "move_to_next_mark" => {
-                self.move_to_next_mark();
-            }
-            "move_to_prev_mark" => {
-                self.move_to_prev_mark();
-            }
-            "settings" => {
-                self.open_settings();
-            }
-            "reload_settings" => {
-                self.reload_settings();
-            }
-            "mode" => {
-                let args: Vec<String> = args.map(String::from).collect();
-                self.set_mode(args.get(0).unwrap_or(&"normal".to_string()));
-            }
-            "toggle_details" => {
-                self.view_details = !self.view_details;
-            }
-            "hmove" => {
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let def_arg1 = "1".to_string();
-                let position = args_vec.get(0).unwrap_or(&def_arg1);
-                self.set_vposition(
-                    self.scroll_offset_left as i32 + position.parse::<i32>().unwrap(),
-                );
-            }
-            "exec" => {
-                return self.exec(args.into_iter().collect());
-            }
-            "refresh_screen" => {
-                self.refresh_screen();
-            }
-            _ => {
-                self.set_warning(format!("Unknown command: {}", command));
-            }
-        }
-        Ok(())
     }
 
     /// Handle Lua script execution for commands and keybindings
+    #[allow(dead_code)]
     pub fn handle_lua_command(&mut self, script: &str) -> Result<(), String> {
         // Update Lua context with current state
         if let Err(e) = self.lua_engine.update_context(self) {
@@ -304,6 +187,7 @@ impl TuiState {
     }
 
     /// Execute a compiled Lua script by name
+    #[allow(dead_code)]
     pub fn execute_lua_script(&mut self, script_name: &str) -> Result<(), String> {
         // Update Lua context with current state
         if let Err(e) = self.lua_engine.update_context(self) {
@@ -326,6 +210,7 @@ impl TuiState {
     }
 
     /// Compile and cache a Lua script for later execution
+    #[allow(dead_code)]
     pub fn compile_lua_script(&mut self, name: &str, script: &str) -> Result<(), String> {
         match self.lua_engine.compile_script(name, script) {
             Ok(_) => Ok(()),
@@ -534,7 +419,16 @@ impl TuiState {
 
                     // Process any commands that were executed
                     match self.lua_engine.collect_executed_commands(None) {
-                        Ok(commands) => self.process_lua_commands(commands)?,
+                        Ok(commands) => {
+                            log::debug!(
+                                "Collected {} commands after script completion",
+                                commands.len()
+                            );
+                            for (cmd, value) in &commands {
+                                log::debug!("Command: {} = {:?}", cmd, value);
+                            }
+                            self.process_lua_commands(commands)?
+                        }
                         Err(e) => return Err(format!("Failed to collect commands: {}", e)),
                     }
                 }
@@ -563,6 +457,7 @@ impl TuiState {
     }
 
     /// Check if a script is currently waiting for input
+    #[allow(dead_code)]
     pub fn has_suspended_script(&self) -> bool {
         self.script_waiting && self.lua_engine.has_suspended_script()
     }
@@ -799,26 +694,36 @@ impl TuiState {
 
     pub fn get_completions(&self) -> (String, Vec<String>) {
         let current = self.command.trim();
+
+        // Lua function names for completion
         let mut completions: Vec<&str> = vec![
-            "command",
-            "quit",
-            "clear",
-            "search_next",
-            "search_prev",
-            "vmove",
-            "hmove",
-            "vgoto",
-            "clear_records",
-            "warning",
-            "toggle_mark",
-            "move_to_next_mark",
-            "move_to_prev_mark",
-            "settings",
-            "mode",
-            "toggle_details",
-            "exec",
-            "reload_settings",
-            "refresh_screen",
+            "quit()",
+            "warning(",
+            "vmove(",
+            "vgoto(",
+            "move_top()",
+            "move_bottom()",
+            "hmove(",
+            "search_next()",
+            "search_prev()",
+            "toggle_mark(",
+            "move_to_next_mark()",
+            "move_to_prev_mark()",
+            "mode(",
+            "toggle_details()",
+            "exec(",
+            "refresh_screen()",
+            "clear()",
+            "clear_records()",
+            "settings()",
+            "reload_settings()",
+            "ask(",
+            "url_encode(",
+            "url_decode(",
+            "escape_shell(",
+            "debug_log(",
+            "current.",
+            "app.",
         ];
 
         completions.retain(|&c| c.starts_with(current));
@@ -864,6 +769,15 @@ impl TuiState {
         let result = self.settings.read_from_yaml(filename.to_str().unwrap());
         match result {
             Ok(_) => {
+                // Recompile keybinding scripts after settings reload
+                if let Err(e) = self
+                    .settings
+                    .compile_keybinding_scripts(&mut self.lua_engine)
+                {
+                    self.set_warning(format!("Failed to recompile keybinding scripts: {}", e));
+                    return;
+                }
+
                 self.current_rule = self
                     .settings
                     .rules
@@ -889,6 +803,7 @@ impl TuiState {
 
     /// Test method to demonstrate basic Lua execution
     /// Test method for Lua execution functionality
+    #[allow(dead_code)]
     pub fn test_lua_execution(&mut self) -> Result<(), String> {
         // Update Lua context with current state
         self.lua_engine
@@ -909,91 +824,4 @@ impl TuiState {
         println!("Lua script result: {:?}", result);
         Ok(())
     }
-}
-
-lazy_static::lazy_static! {
-    static ref PLACEHOLDER_RE: regex::Regex = regex::Regex::new(r"\{\{(.*?)\}\}").unwrap();
-}
-
-fn placeholder_render(orig: &str, record: &Record) -> String {
-    let context = &record.data;
-    let mut result = orig.to_string();
-
-    // regex get all the $key, and replace with value or "none"
-    let captures = PLACEHOLDER_RE.captures_iter(orig);
-    for cap in captures {
-        let key = &cap[1];
-        let value = context
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| get_default_value(key, record));
-        result = result.replace(&cap[0], &value);
-    }
-
-    result
-}
-
-fn get_default_value(key: &str, record: &Record) -> String {
-    match key {
-        "line" => record.original.clone(),
-        "lineqs" => safe_qs_string(&record.original),
-        _ => "none".to_string(),
-    }
-}
-
-fn safe_qs_string(line: &str) -> String {
-    let hostname = match hostname::get() {
-        Ok(name) => name.to_string_lossy().into_owned(),
-        Err(_) => String::from("unknown"),
-    };
-    let line = line.replace(&hostname, "");
-    // remove ips to xxx.xxx.xxx.xx
-    let line = regex::Regex::new(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
-        .unwrap()
-        .replace_all(&line, "xxx.xxx.xxx.xxx");
-
-    // remove date
-    let line = regex::Regex::new(r"\d{4}-\d{2}-\d{2}")
-        .unwrap()
-        .replace_all(&line, "");
-    // remove time
-    let line = regex::Regex::new(r"\d{2}:\d{2}:\d{2}")
-        .unwrap()
-        .replace_all(&line, "");
-
-    // remove username
-    let username = whoami::username();
-    let line = line.replace(&username, "username");
-
-    // open xdg-open
-    let urlencodedline = urlencoding::encode(&line);
-
-    urlencodedline.to_string()
-}
-
-fn sh_style_split(line: &str) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
-    let mut current_arg = String::new();
-    let mut in_quotes = false;
-    let mut in_single_quotes = false;
-
-    for c in line.chars() {
-        if c == '"' {
-            in_quotes = !in_quotes;
-        } else if c == '\'' {
-            in_single_quotes = !in_single_quotes;
-        } else if c.is_whitespace() && !in_quotes && !in_single_quotes {
-            if !current_arg.is_empty() {
-                let trimmed_arg = current_arg.trim();
-                args.push(trimmed_arg.to_string());
-                current_arg.clear();
-            }
-        } else {
-            current_arg.push(c);
-        }
-    }
-    if !current_arg.is_empty() {
-        args.push(current_arg.trim().to_string());
-    }
-    args
 }

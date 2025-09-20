@@ -13,7 +13,7 @@
 
 use crate::state::{Mode, TuiState};
 use log::{debug, error, warn};
-use mlua::{Function, Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
+use mlua::{Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -25,12 +25,14 @@ pub struct CompiledScript {
     /// The original source code
     pub source: String,
     /// Compiled bytecode for fast execution
+    #[allow(dead_code)]
     pub bytecode: Vec<u8>,
     /// File path if loaded from external file
     pub file_path: Option<PathBuf>,
     /// Last modification time for hot-reload
     pub last_modified: Option<u64>,
     /// Compilation timestamp
+    #[allow(dead_code)]
     pub compiled_at: u64,
 }
 
@@ -48,6 +50,7 @@ impl CompiledScript {
         }
     }
 
+    #[allow(dead_code)]
     pub fn from_file(
         file_path: PathBuf,
         source: String,
@@ -129,6 +132,7 @@ pub struct SuspendedCoroutine {
 pub struct LuaEngine {
     lua: Lua,
     compiled_scripts: HashMap<String, CompiledScript>,
+    #[allow(dead_code)]
     script_directories: Vec<PathBuf>,
     suspended_coroutine: Option<SuspendedCoroutine>,
 }
@@ -489,7 +493,7 @@ impl LuaEngine {
                 })?,
         )?;
 
-        // Async input function - uses proper coroutine yielding
+        // Async input function - uses a special marker for yielding
         globals.set(
             "ask",
             self.lua
@@ -500,19 +504,11 @@ impl LuaEngine {
                     let commands: Table = lua.named_registry_value("tailtales_commands")?;
                     commands.set("ask_prompt", prompt.clone())?;
 
-                    // Use proper coroutine.yield() from within the function
-                    // This requires creating a wrapper that calls yield
-                    let yield_code = format!(
-                        r#"
-                        local function ask_yield()
-                            return coroutine.yield("{}")
-                        end
-                        return ask_yield()
-                        "#,
-                        prompt.replace('"', r#"\""#)
-                    );
-
-                    lua.load(&yield_code).eval()
+                    // Return a special marker that we can detect in the coroutine execution
+                    // The actual yielding will be handled by the coroutine wrapper
+                    Ok(Value::String(
+                        lua.create_string(&format!("__ASK_YIELD__{}", prompt))?,
+                    ))
                 })?,
         )?;
 
@@ -571,6 +567,7 @@ impl LuaEngine {
     }
 
     /// Get current record data on demand - this is called when scripts access current.*
+    #[allow(dead_code)]
     pub fn get_current_record_data(&self, state: &TuiState) -> LuaResult<Table> {
         let current_table = self.lua.create_table()?;
 
@@ -634,6 +631,7 @@ impl LuaEngine {
     }
 
     /// Load and compile a Lua script from an external file
+    #[allow(dead_code)]
     pub fn compile_script_from_file<P: AsRef<Path>>(
         &mut self,
         name: &str,
@@ -676,6 +674,7 @@ impl LuaEngine {
     }
 
     /// Execute a compiled Lua script by name and return any collected commands
+    #[allow(dead_code)]
     pub fn execute_script(&self, name: &str) -> Result<HashMap<String, Value>, LuaEngineError> {
         if let Some(compiled) = self.compiled_scripts.get(name) {
             // Check if we need to reload from file
@@ -715,6 +714,7 @@ impl LuaEngine {
     }
 
     /// Execute a Lua script string directly and return any collected commands
+    #[allow(dead_code)]
     pub fn execute_script_string(
         &self,
         script: &str,
@@ -803,17 +803,20 @@ impl LuaEngine {
     }
 
     /// Remove a compiled script from cache
+    #[allow(dead_code)]
     pub fn remove_script(&mut self, name: &str) -> bool {
         self.compiled_scripts.remove(name).is_some()
     }
 
     /// Clear all compiled scripts
+    #[allow(dead_code)]
     pub fn clear_scripts(&mut self) {
         self.compiled_scripts.clear();
         debug!("Cleared all compiled scripts");
     }
 
     /// Add a directory to search for external Lua files
+    #[allow(dead_code)]
     pub fn add_script_directory<P: AsRef<Path>>(&mut self, dir: P) {
         let path = dir.as_ref().to_path_buf();
         if !self.script_directories.contains(&path) {
@@ -823,6 +826,7 @@ impl LuaEngine {
     }
 
     /// Load all .lua files from script directories
+    #[allow(dead_code)]
     pub fn load_scripts_from_directories(&mut self) -> Result<Vec<String>, LuaEngineError> {
         let mut loaded_scripts = Vec::new();
 
@@ -867,6 +871,7 @@ impl LuaEngine {
     }
 
     /// Test method for Lua execution (used in Phase 1 tests)
+    #[allow(dead_code)]
     pub fn test_lua_execution(&self) -> LuaResult<()> {
         // Update context with test state (for backwards compatibility)
         let globals = self.lua.globals();
@@ -880,6 +885,7 @@ impl LuaEngine {
     }
 
     /// Get bytecode statistics for monitoring
+    #[allow(dead_code)]
     pub fn get_stats(&self) -> HashMap<String, usize> {
         let mut stats = HashMap::new();
         stats.insert("total_scripts".to_string(), self.compiled_scripts.len());
@@ -921,10 +927,25 @@ impl LuaEngine {
                 .set_named_registry_value("tailtales_commands", commands_table)
                 .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
 
+            // Wrap the script in a coroutine that can handle ask() calls
+            let wrapped_script = format!(
+                r#"
+                -- Replace ask() function to yield properly from coroutine
+                function ask(prompt)
+                    local response = coroutine.yield(prompt)
+                    return response
+                end
+                
+                -- The user script
+                {}
+                "#,
+                compiled.source
+            );
+
             // Create and start a coroutine
             let coroutine_func = self
                 .lua
-                .load(&compiled.bytecode)
+                .load(&wrapped_script)
                 .into_function()
                 .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
 
@@ -959,10 +980,25 @@ impl LuaEngine {
             .set_named_registry_value("tailtales_commands", commands_table)
             .map_err(|e| self.create_enhanced_error(e, None))?;
 
+        // Wrap the script in a coroutine that can handle ask() calls
+        let wrapped_script = format!(
+            r#"
+            -- Replace ask() function to yield properly from coroutine
+            function ask(prompt)
+                local response = coroutine.yield(prompt)
+                return response
+            end
+            
+            -- The user script
+            {}
+            "#,
+            script
+        );
+
         // Create and start a coroutine
         let coroutine_func = self
             .lua
-            .load(script)
+            .load(&wrapped_script)
             .into_function()
             .map_err(|e| self.create_enhanced_error(e, None))?;
 
@@ -993,32 +1029,21 @@ impl LuaEngine {
                         stack_trace: None,
                     })?;
 
-                    // Check if this was an ask() call by looking at the commands registry
-                    let commands_table: Table = self
-                        .lua
-                        .named_registry_value("tailtales_commands")
-                        .map_err(|e| {
-                            self.create_enhanced_error(e, Some(script_name.to_string()))
-                        })?;
+                    // This is an ask() prompt
+                    debug!(
+                        "Script '{}' suspended with ask prompt: {}",
+                        script_name, prompt_str
+                    );
 
-                    if let Ok(ask_prompt) = commands_table.get::<String>("ask_prompt") {
-                        if ask_prompt == prompt_str.to_string() {
-                            debug!(
-                                "Script '{}' suspended with ask prompt: {}",
-                                script_name, prompt_str
-                            );
+                    // Store the suspended coroutine
+                    self.suspended_coroutine = Some(SuspendedCoroutine {
+                        thread,
+                        prompt: prompt_str.to_string(),
+                        script_name: Some(script_name.to_string()),
+                    });
 
-                            // Store the suspended coroutine
-                            self.suspended_coroutine = Some(SuspendedCoroutine {
-                                thread,
-                                prompt: prompt_str.to_string(),
-                                script_name: Some(script_name.to_string()),
-                            });
-
-                            // Return the prompt to signal the UI should ask for input
-                            return Ok(Some(prompt_str.to_string()));
-                        }
-                    }
+                    // Return the prompt to signal the UI should ask for input
+                    return Ok(Some(prompt_str.to_string()));
                 }
 
                 // Script completed normally
@@ -1080,6 +1105,7 @@ impl LuaEngine {
     }
 
     /// Check if there's a script waiting for input
+    #[allow(dead_code)]
     pub fn has_suspended_script(&self) -> bool {
         self.suspended_coroutine.is_some()
     }
@@ -1096,6 +1122,7 @@ pub struct LuaStateWrapper<'a> {
 }
 
 impl<'a> LuaStateWrapper<'a> {
+    #[allow(dead_code)]
     pub fn new(state: &'a mut TuiState) -> Self {
         Self { state }
     }
