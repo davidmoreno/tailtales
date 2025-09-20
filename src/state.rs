@@ -2,7 +2,6 @@ use std::time;
 
 use crate::{
     ast,
-    lua_engine::LuaEngine,
     recordlist::{self, load_parsers},
     settings::{RulesSettings, Settings},
 };
@@ -39,7 +38,6 @@ pub struct TuiState {
     pub view_details: bool,
     pub text_edit_position: usize,
     pub pending_refresh: bool, // If true, the screen will be refreshed when the screen receives render request
-    pub lua_engine: LuaEngine,
     pub script_prompt: String,
     pub script_input: String,
     pub script_waiting: bool,
@@ -48,13 +46,6 @@ pub struct TuiState {
 impl TuiState {
     pub fn new() -> Result<TuiState, Box<dyn std::error::Error>> {
         let settings = Settings::new()?;
-        let mut lua_engine =
-            LuaEngine::new().map_err(|e| format!("Failed to initialize Lua engine: {}", e))?;
-
-        // Compile keybinding scripts during initialization
-        settings
-            .compile_keybinding_scripts(&mut lua_engine)
-            .map_err(|e| format!("Failed to compile keybinding scripts: {}", e))?;
 
         let current_rule = RulesSettings::default();
         let mut records = recordlist::RecordList::new();
@@ -85,7 +76,6 @@ impl TuiState {
             view_details: false, // Default view_details value
             text_edit_position: 0,
             pending_refresh: false,
-            lua_engine,
             script_prompt: String::new(),
             script_input: String::new(),
             script_waiting: false,
@@ -158,356 +148,10 @@ impl TuiState {
         }
     }
     pub fn handle_command(&mut self) {
-        let lines: Vec<String> = self.command.lines().map(String::from).collect();
-        for line in lines {
-            // Execute as Lua script only (try async first for ask() support)
-            if let Err(err) = self.handle_lua_command_async(&line) {
-                self.set_warning(format!("Error executing Lua command '{}': {}", line, err));
-                return;
-            }
-        }
-    }
-
-    /// Handle Lua script execution for commands and keybindings
-    #[allow(dead_code)]
-    pub fn handle_lua_command(&mut self, script: &str) -> Result<(), String> {
-        // Update Lua context with current state
-        if let Err(e) = self.lua_engine.update_context(self) {
-            return Err(format!("Failed to update Lua context: {}", e));
-        }
-
-        // Execute the Lua script and collect commands
-        let commands = match self.lua_engine.execute_script_string(script) {
-            Ok(commands) => commands,
-            Err(e) => return Err(format!("Lua execution error: {}", e)),
-        };
-
-        // Process collected commands
-        self.process_lua_commands(commands)
-    }
-
-    /// Execute a compiled Lua script by name
-    #[allow(dead_code)]
-    pub fn execute_lua_script(&mut self, script_name: &str) -> Result<(), String> {
-        // Update Lua context with current state
-        if let Err(e) = self.lua_engine.update_context(self) {
-            return Err(format!("Failed to update Lua context: {}", e));
-        }
-
-        // Execute the named script and collect commands
-        let commands = match self.lua_engine.execute_script(script_name) {
-            Ok(commands) => commands,
-            Err(e) => {
-                return Err(format!(
-                    "Lua script '{}' execution error: {}",
-                    script_name, e
-                ))
-            }
-        };
-
-        // Process collected commands
-        self.process_lua_commands(commands)
-    }
-
-    /// Compile and cache a Lua script for later execution
-    #[allow(dead_code)]
-    pub fn compile_lua_script(&mut self, name: &str, script: &str) -> Result<(), String> {
-        match self.lua_engine.compile_script(name, script) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Failed to compile Lua script '{}': {}", name, e)),
-        }
-    }
-
-    /// Process commands collected from Lua script execution
-    fn process_lua_commands(
-        &mut self,
-        commands: std::collections::HashMap<String, mlua::Value>,
-    ) -> Result<(), String> {
-        use mlua::Value;
-
-        for (command, value) in commands {
-            match command.as_str() {
-                "quit" => {
-                    self.running = false;
-                }
-                "warning" => {
-                    if let Value::String(msg) = value {
-                        let msg_str = match msg.to_str() {
-                            Ok(s) => s.to_string(),
-                            Err(_) => "".to_string(),
-                        };
-                        self.set_warning(msg_str);
-                    }
-                }
-                "vmove" => {
-                    if let Value::Integer(n) = value {
-                        self.move_selection(n as i32);
-                    }
-                }
-                "vgoto" => {
-                    if let Value::Integer(n) = value {
-                        self.set_position(n as usize);
-                    }
-                }
-                "move_top" => {
-                    self.set_position(0);
-                    self.set_vposition(0);
-                }
-                "move_bottom" => {
-                    self.set_position(usize::MAX);
-                }
-                "hmove" => {
-                    if let Value::Integer(n) = value {
-                        self.set_vposition(self.scroll_offset_left as i32 + n as i32);
-                    }
-                }
-                "search_next" => {
-                    self.search_next();
-                }
-                "search_prev" => {
-                    self.search_prev();
-                }
-                "toggle_mark" => {
-                    if let Value::String(color) = value {
-                        let color_str = match color.to_str() {
-                            Ok(s) => s.to_string(),
-                            Err(_) => "yellow".to_string(),
-                        };
-                        self.toggle_mark(&color_str);
-                    }
-                }
-                "move_to_next_mark" => {
-                    self.move_to_next_mark();
-                }
-                "move_to_prev_mark" => {
-                    self.move_to_prev_mark();
-                }
-                "mode" => {
-                    if let Value::String(mode_str) = value {
-                        let mode = match mode_str.to_str() {
-                            Ok(s) => s.to_string(),
-                            Err(_) => "normal".to_string(),
-                        };
-                        self.set_mode(&mode);
-                    }
-                }
-                "toggle_details" => {
-                    self.view_details = !self.view_details;
-                }
-                "refresh_screen" => {
-                    self.refresh_screen();
-                }
-                "clear" => {
-                    self.records.clear();
-                    self.position = 0;
-                    self.scroll_offset_top = 0;
-                    self.scroll_offset_left = 0;
-                }
-                "clear_records" => {
-                    self.records.clear();
-                    self.set_position(0);
-                    self.set_vposition(0);
-                }
-                "settings" => {
-                    self.open_settings();
-                }
-                "reload_settings" => {
-                    self.reload_settings();
-                }
-                "exec" => {
-                    if let Value::String(cmd) = value {
-                        let cmd_str = match cmd.to_str() {
-                            Ok(s) => s.to_string(),
-                            Err(_) => "".to_string(),
-                        };
-                        let args: Vec<String> =
-                            cmd_str.split_whitespace().map(String::from).collect();
-                        if let Err(e) = self.exec(args) {
-                            self.set_warning(format!("Exec error: {}", e));
-                        }
-                    }
-                }
-                _ => {
-                    // Ignore unknown commands for forward compatibility
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Execute a Lua script asynchronously, handling coroutines and user input
-    pub fn execute_lua_script_async(&mut self, script_name: &str) -> Result<(), String> {
-        // Update Lua context with current state
-        if let Err(e) = self.lua_engine.update_context(self) {
-            return Err(format!("Failed to update Lua context: {}", e));
-        }
-
-        // Execute the script asynchronously
-        match self.lua_engine.execute_script_async(script_name) {
-            Ok(Some(prompt)) => {
-                // Script is asking for user input
-                self.script_prompt = prompt;
-                self.script_waiting = true;
-                self.mode = Mode::ScriptInput;
-                self.script_input.clear();
-                Ok(())
-            }
-            Ok(None) => {
-                // Script completed immediately, process any collected commands immediately
-                self.process_collected_commands(Some(script_name.to_string()))
-            }
-            Err(e) => Err(format!(
-                "Failed to execute async script '{}': {}",
-                script_name, e
-            )),
-        }
-    }
-
-    /// Execute a Lua script string asynchronously
-    pub fn handle_lua_command_async(&mut self, script: &str) -> Result<(), String> {
-        // Update Lua context with current state
-        if let Err(e) = self.lua_engine.update_context(self) {
-            return Err(format!("Failed to update Lua context: {}", e));
-        }
-
-        // Execute the script asynchronously
-        match self.lua_engine.execute_script_string_async(script) {
-            Ok(Some(prompt)) => {
-                // Script is asking for user input
-                self.script_prompt = prompt;
-                self.script_waiting = true;
-                self.mode = Mode::ScriptInput;
-                self.script_input.clear();
-                Ok(())
-            }
-            Ok(None) => {
-                // Script completed immediately, process any collected commands immediately
-                self.process_collected_commands(None)
-            }
-            Err(e) => Err(format!("Failed to execute async script: {}", e)),
-        }
-    }
-
-    /// Resume a suspended script with user input
-    pub fn resume_suspended_script(&mut self, input: String) -> Result<(), String> {
-        if !self.script_waiting {
-            return Err("No script is waiting for input".to_string());
-        }
-
-        match self.lua_engine.resume_with_input(input) {
-            Ok(_) => {
-                // Check if the script is asking for more input
-                if let Some(new_prompt) = self.lua_engine.get_suspended_prompt() {
-                    self.script_prompt = new_prompt.to_string();
-                    self.script_input.clear();
-                } else {
-                    // Script completed, return to normal mode
-                    self.script_waiting = false;
-                    self.script_prompt.clear();
-                    self.script_input.clear();
-                    self.mode = Mode::Normal;
-
-                    // Process any commands that were executed immediately
-                    self.process_collected_commands(None)?;
-                }
-                Ok(())
-            }
-            Err(e) => {
-                // Script failed, return to normal mode
-                self.script_waiting = false;
-                self.script_prompt.clear();
-                self.script_input.clear();
-                self.mode = Mode::Normal;
-                Err(format!("Script execution failed: {}", e))
-            }
-        }
-    }
-
-    /// Cancel the currently suspended script
-    pub fn cancel_suspended_script(&mut self) {
-        if self.script_waiting {
-            self.lua_engine.cancel_suspended_script();
-            self.script_waiting = false;
-            self.script_prompt.clear();
-            self.script_input.clear();
-            self.mode = Mode::Normal;
-        }
-    }
-
-    /// Check if a script is currently waiting for input
-    #[allow(dead_code)]
-    pub fn has_suspended_script(&self) -> bool {
-        self.script_waiting && self.lua_engine.has_suspended_script()
-    }
-
-    /// Process collected Lua commands immediately for better performance
-    fn process_collected_commands(&mut self, script_name: Option<String>) -> Result<(), String> {
-        match self.lua_engine.collect_executed_commands(script_name) {
-            Ok(commands) => {
-                log::debug!(
-                    "Collected {} commands for immediate processing",
-                    commands.len()
-                );
-                for (cmd, value) in &commands {
-                    log::debug!("Executing command: {} = {:?}", cmd, value);
-                }
-                self.process_lua_commands(commands)
-            }
-            Err(e) => Err(format!("Failed to collect commands: {}", e)),
-        }
-    }
-
-    /// Execute a script with immediate state modifications enabled
-    /// This solves the deferred execution problem by allowing Lua functions to modify state immediately
-    pub fn execute_script_with_immediate_execution(&mut self, script: &str) -> Result<(), String> {
-        // Update context before execution
-        if let Err(e) = self.lua_engine.update_context(self) {
-            return Err(format!("Failed to update Lua context: {}", e));
-        }
-
-        // Get a pointer to self for immediate execution
-        let state_ptr = self as *mut TuiState;
-
-        // Register immediate execution functions
-        self.lua_engine
-            .register_immediate_functions(state_ptr)
-            .map_err(|e| format!("Failed to register immediate functions: {}", e))?;
-
-        // Enable immediate mode
-        self.lua_engine.set_immediate_mode(true);
-
-        // Create a script that uses immediate functions instead of deferred ones
-        let immediate_script = script
-            .replace("vgoto(", "vgoto_immediate(")
-            .replace("vmove(", "vmove_immediate(")
-            .replace("warning(", "warning_immediate(");
-
-        // Execute the script
-        let result = match self
-            .lua_engine
-            .execute_script_string_async(&immediate_script)
-        {
-            Ok(Some(prompt)) => {
-                // Script is asking for user input
-                self.script_prompt = prompt;
-                self.script_waiting = true;
-                self.mode = Mode::ScriptInput;
-                self.script_input.clear();
-                Ok(())
-            }
-            Ok(None) => {
-                // Script completed immediately - no need to process commands since they executed immediately
-                Ok(())
-            }
-            Err(e) => Err(format!("Failed to execute immediate script: {}", e)),
-        };
-
-        // Clean up immediate functions
-        let _ = self.lua_engine.clear_immediate_functions();
-        self.lua_engine.set_immediate_mode(false);
-
-        result
+        // Note: This method now needs to be called from Application with LuaEngine
+        self.set_warning(
+            "Command execution requires LuaEngine access from Application".to_string(),
+        );
     }
 
     pub fn set_warning(&mut self, warning: String) {
@@ -817,14 +461,7 @@ impl TuiState {
         let result = self.settings.read_from_yaml(filename.to_str().unwrap());
         match result {
             Ok(_) => {
-                // Recompile keybinding scripts after settings reload
-                if let Err(e) = self
-                    .settings
-                    .compile_keybinding_scripts(&mut self.lua_engine)
-                {
-                    self.set_warning(format!("Failed to recompile keybinding scripts: {}", e));
-                    return;
-                }
+                // Note: Keybinding scripts compilation now needs to be done from Application
 
                 self.current_rule = self
                     .settings
@@ -847,29 +484,5 @@ impl TuiState {
                 self.set_warning(format!("Error reloading settings: {}", err));
             }
         }
-    }
-
-    /// Test method to demonstrate basic Lua execution
-    /// Test method for Lua execution functionality
-    #[allow(dead_code)]
-    pub fn test_lua_execution(&mut self) -> Result<(), String> {
-        // Update Lua context with current state
-        self.lua_engine
-            .update_context(self)
-            .map_err(|e| format!("Failed to update Lua context: {}", e))?;
-
-        // Test basic Lua execution
-        self.lua_engine
-            .test_lua_execution()
-            .map_err(|e| format!("Failed to execute Lua test: {}", e))?;
-
-        // Test executing a simple Lua command
-        let result = self
-            .lua_engine
-            .execute_script_string("warning('Hello from Lua!')")
-            .map_err(|e| format!("Failed to execute Lua script: {}", e))?;
-
-        println!("Lua script result: {:?}", result);
-        Ok(())
     }
 }

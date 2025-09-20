@@ -4,18 +4,20 @@ use crossterm::event::{self, KeyCode, KeyEvent};
 
 use crate::{
     ast,
+    lua_engine::LuaEngine,
     settings::Settings,
     state::{Mode, TuiState},
 };
+use mlua::Value;
 
 /**
  * This module is responsible for managing the keyboard input and output
  */
 
-pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     match state.mode {
         Mode::Normal => {
-            handle_normal_mode(key_event, state);
+            handle_normal_mode(key_event, state, lua_engine);
         }
         Mode::Search => {
             handle_search_mode(key_event, state);
@@ -27,18 +29,18 @@ pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState) {
             handle_command_mode(key_event, state);
         }
         Mode::ScriptInput => {
-            handle_script_input_mode(key_event, state);
+            handle_script_input_mode(key_event, state, lua_engine);
         }
         Mode::Warning => {
             // Any key will dismiss the warning
             state.mode = state.next_mode;
             state.next_mode = Mode::Normal;
-            handle_key_event(key_event, state); // pass through
+            handle_key_event(key_event, state, lua_engine); // pass through
         }
     }
 }
 
-pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     let keyname: &str = match key_event.code {
         // numbers add to number
         KeyCode::Char(x) => &String::from(x).to_lowercase(),
@@ -77,22 +79,38 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState) {
         let script_name = Settings::get_keybinding_script_name(keyname);
 
         // Execute compiled Lua script (try async first for ask() support)
-        if state
-            .lua_engine
+        if lua_engine
             .get_compiled_scripts()
             .contains(&script_name.as_str())
         {
-            match state.execute_lua_script_async(&script_name) {
-                Ok(_) => {
-                    // Script executed successfully (either completed or waiting for input)
-                    return;
+            // Update Lua context with current state
+            if let Err(e) = lua_engine.update_context(state) {
+                state.set_warning(format!("Failed to update Lua context: {}", e));
+                return;
+            }
+
+            // Execute the script
+            match lua_engine.execute_script_async(&script_name) {
+                Ok(Some(prompt)) => {
+                    // Script asking for input - handle in state
+                    state.script_prompt = prompt;
+                    state.script_waiting = true;
+                    state.mode = Mode::ScriptInput;
+                    state.script_input.clear();
                 }
-                Err(lua_err) => {
+                Ok(None) => {
+                    // Script completed - process commands
+                    if let Err(e) =
+                        process_lua_commands_in_state(state, lua_engine, Some(script_name))
+                    {
+                        state.set_warning(format!("Error processing Lua commands: {}", e));
+                    }
+                }
+                Err(e) => {
                     state.set_warning(format!(
                         "Lua script execution failed for key '{}': {}",
-                        keyname, lua_err
+                        keyname, e
                     ));
-                    return;
                 }
             }
         } else {
@@ -103,6 +121,127 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState) {
         }
     } else {
         state.set_warning(format!("Unknown keybinding: {:?}", keyname));
+    }
+}
+
+/// Process commands collected from Lua script execution
+pub fn process_lua_commands_in_state(
+    state: &mut TuiState,
+    lua_engine: &mut LuaEngine,
+    script_name: Option<String>,
+) -> Result<(), String> {
+    match lua_engine.collect_executed_commands(script_name) {
+        Ok(commands) => {
+            for (command, value) in commands {
+                match command.as_str() {
+                    "quit" => {
+                        state.running = false;
+                    }
+                    "warning" => {
+                        if let Value::String(msg) = value {
+                            let msg_str = match msg.to_str() {
+                                Ok(s) => s.to_string(),
+                                Err(_) => "".to_string(),
+                            };
+                            state.set_warning(msg_str);
+                        }
+                    }
+                    "vmove" => {
+                        if let Value::Integer(n) = value {
+                            state.move_selection(n as i32);
+                        }
+                    }
+                    "vgoto" => {
+                        if let Value::Integer(n) = value {
+                            state.set_position(n as usize);
+                        }
+                    }
+                    "move_top" => {
+                        state.set_position(0);
+                        state.set_vposition(0);
+                    }
+                    "move_bottom" => {
+                        state.set_position(usize::MAX);
+                    }
+                    "hmove" => {
+                        if let Value::Integer(n) = value {
+                            state.set_vposition(state.scroll_offset_left as i32 + n as i32);
+                        }
+                    }
+                    "search_next" => {
+                        state.search_next();
+                    }
+                    "search_prev" => {
+                        state.search_prev();
+                    }
+                    "toggle_mark" => {
+                        if let Value::String(color) = value {
+                            let color_str = match color.to_str() {
+                                Ok(s) => s.to_string(),
+                                Err(_) => "yellow".to_string(),
+                            };
+                            state.toggle_mark(&color_str);
+                        }
+                    }
+                    "move_to_next_mark" => {
+                        state.move_to_next_mark();
+                    }
+                    "move_to_prev_mark" => {
+                        state.move_to_prev_mark();
+                    }
+                    "mode" => {
+                        if let Value::String(mode_str) = value {
+                            let mode = match mode_str.to_str() {
+                                Ok(s) => s.to_string(),
+                                Err(_) => "normal".to_string(),
+                            };
+                            state.set_mode(&mode);
+                        }
+                    }
+                    "toggle_details" => {
+                        state.view_details = !state.view_details;
+                    }
+                    "refresh_screen" => {
+                        state.refresh_screen();
+                    }
+                    "clear" => {
+                        state.records.clear();
+                        state.position = 0;
+                        state.scroll_offset_top = 0;
+                        state.scroll_offset_left = 0;
+                    }
+                    "clear_records" => {
+                        state.records.clear();
+                        state.set_position(0);
+                        state.set_vposition(0);
+                    }
+                    "settings" => {
+                        state.open_settings();
+                    }
+                    "reload_settings" => {
+                        state.reload_settings();
+                    }
+                    "exec" => {
+                        if let Value::String(cmd) = value {
+                            let cmd_str = match cmd.to_str() {
+                                Ok(s) => s.to_string(),
+                                Err(_) => "".to_string(),
+                            };
+                            let args: Vec<String> =
+                                cmd_str.split_whitespace().map(String::from).collect();
+                            if let Err(e) = state.exec(args) {
+                                state.set_warning(format!("Exec error: {}", e));
+                            }
+                        }
+                    }
+                    _ => {
+                        // Ignore unknown commands for forward compatibility
+                    }
+                }
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("Failed to collect commands: {}", e)),
     }
 }
 
@@ -253,17 +392,55 @@ pub fn handle_filter_mode(key_event: KeyEvent, state: &mut TuiState) {
     }
 }
 
-pub fn handle_script_input_mode(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_script_input_mode(
+    key_event: KeyEvent,
+    state: &mut TuiState,
+    lua_engine: &mut LuaEngine,
+) {
     match key_event.code {
         KeyCode::Esc => {
             // Cancel the suspended script
-            state.cancel_suspended_script();
+            lua_engine.cancel_suspended_script();
+            state.script_waiting = false;
+            state.script_prompt.clear();
+            state.script_input.clear();
+            state.mode = Mode::Normal;
         }
         KeyCode::Char('\n') | KeyCode::Enter => {
             // Submit the input to the suspended script
             let input = state.script_input.clone();
-            if let Err(e) = state.resume_suspended_script(input) {
-                state.set_warning(format!("Script error: {}", e));
+            if !state.script_waiting {
+                state.set_warning("No script is waiting for input".to_string());
+                return;
+            }
+
+            match lua_engine.resume_with_input(input) {
+                Ok(_) => {
+                    // Check if the script is asking for more input
+                    if let Some(new_prompt) = lua_engine.get_suspended_prompt() {
+                        state.script_prompt = new_prompt.to_string();
+                        state.script_input.clear();
+                    } else {
+                        // Script completed, return to normal mode
+                        state.script_waiting = false;
+                        state.script_prompt.clear();
+                        state.script_input.clear();
+                        state.mode = Mode::Normal;
+
+                        // Process any commands that were executed immediately
+                        if let Err(e) = process_lua_commands_in_state(state, lua_engine, None) {
+                            state.set_warning(format!("Error processing Lua commands: {}", e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Script failed, return to normal mode
+                    state.script_waiting = false;
+                    state.script_prompt.clear();
+                    state.script_input.clear();
+                    state.mode = Mode::Normal;
+                    state.set_warning(format!("Script execution failed: {}", e));
+                }
             }
         }
         _ => {

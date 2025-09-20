@@ -3,12 +3,13 @@ use std::sync::mpsc;
 use std::{cmp::max, io, time};
 
 use crate::keyboard_management::handle_key_event;
-use crate::{events::TuiEvent, state::TuiState, tuichrome::TuiChrome};
+use crate::{events::TuiEvent, lua_engine::LuaEngine, state::TuiState, tuichrome::TuiChrome};
 use crossterm::event::{Event, KeyEventKind};
 
 pub struct Application {
     pub state: TuiState,
     pub ui: TuiChrome,
+    pub lua_engine: LuaEngine,
     watcher: RecommendedWatcher,
     settings_rx: mpsc::Receiver<NotifyEvent>,
 }
@@ -18,11 +19,22 @@ impl Application {
         let ui = TuiChrome::new()?;
         let state = TuiState::new()?;
 
+        // Initialize the Lua engine
+        let mut lua_engine =
+            LuaEngine::new().map_err(|e| format!("Failed to initialize Lua engine: {}", e))?;
+
+        // Compile keybinding scripts during initialization
+        state
+            .settings
+            .compile_keybinding_scripts(&mut lua_engine)
+            .map_err(|e| format!("Failed to compile keybinding scripts: {}", e))?;
+
         let (watcher, rx) = Application::create_watcher()?;
 
         Ok(Application {
             state,
             ui,
+            lua_engine,
             watcher,
             settings_rx: rx,
         })
@@ -136,7 +148,7 @@ impl Application {
             match event {
                 TuiEvent::Key(event) => match event {
                     Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                        handle_key_event(key_event, &mut self.state);
+                        handle_key_event(key_event, &mut self.state, &mut self.lua_engine);
                         timeout = time::Duration::from_millis(10);
                     }
                     _ => {
