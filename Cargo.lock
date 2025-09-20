@@ -1041,6 +1041,7 @@ dependencies = [
  "flate2",
  "hostname",
  "lazy_static",
+ "log",
  "mlua",
  "nix",
  "notify",

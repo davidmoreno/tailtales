@@ -148,11 +148,17 @@ impl TuiState {
     pub fn handle_command(&mut self) {
         let lines: Vec<String> = self.command.lines().map(String::from).collect();
         for line in lines {
-            match self.handle_one_command_line(&line) {
-                Ok(_) => (),
-                Err(err) => {
-                    self.set_warning(format!("Error executing command: {} | {}", line, err));
-                    return;
+            // Try Lua execution first, fall back to old command system
+            if let Err(err) = self.handle_lua_command(&line) {
+                match self.handle_one_command_line(&line) {
+                    Ok(_) => (),
+                    Err(fallback_err) => {
+                        self.set_warning(format!(
+                            "Error executing command: {} | Original: {} | Fallback: {}",
+                            line, err, fallback_err
+                        ));
+                        return;
+                    }
                 }
             }
         }
@@ -272,6 +278,172 @@ impl TuiState {
         }
         Ok(())
     }
+
+    /// Handle Lua script execution for commands and keybindings
+    pub fn handle_lua_command(&mut self, script: &str) -> Result<(), String> {
+        // Update Lua context with current state
+        if let Err(e) = self.lua_engine.update_context(self) {
+            return Err(format!("Failed to update Lua context: {}", e));
+        }
+
+        // Execute the Lua script and collect commands
+        let commands = match self.lua_engine.execute_script_string(script) {
+            Ok(commands) => commands,
+            Err(e) => return Err(format!("Lua execution error: {}", e)),
+        };
+
+        // Process collected commands
+        self.process_lua_commands(commands)
+    }
+
+    /// Execute a compiled Lua script by name
+    pub fn execute_lua_script(&mut self, script_name: &str) -> Result<(), String> {
+        // Update Lua context with current state
+        if let Err(e) = self.lua_engine.update_context(self) {
+            return Err(format!("Failed to update Lua context: {}", e));
+        }
+
+        // Execute the named script and collect commands
+        let commands = match self.lua_engine.execute_script(script_name) {
+            Ok(commands) => commands,
+            Err(e) => {
+                return Err(format!(
+                    "Lua script '{}' execution error: {}",
+                    script_name, e
+                ))
+            }
+        };
+
+        // Process collected commands
+        self.process_lua_commands(commands)
+    }
+
+    /// Compile and cache a Lua script for later execution
+    pub fn compile_lua_script(&mut self, name: &str, script: &str) -> Result<(), String> {
+        match self.lua_engine.compile_script(name, script) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to compile Lua script '{}': {}", name, e)),
+        }
+    }
+
+    /// Process commands collected from Lua script execution
+    fn process_lua_commands(
+        &mut self,
+        commands: std::collections::HashMap<String, mlua::Value>,
+    ) -> Result<(), String> {
+        use mlua::Value;
+
+        for (command, value) in commands {
+            match command.as_str() {
+                "quit" => {
+                    self.running = false;
+                }
+                "warning" => {
+                    if let Value::String(msg) = value {
+                        let msg_str = match msg.to_str() {
+                            Ok(s) => s.to_string(),
+                            Err(_) => "".to_string(),
+                        };
+                        self.set_warning(msg_str);
+                    }
+                }
+                "vmove" => {
+                    if let Value::Integer(n) = value {
+                        self.move_selection(n as i32);
+                    }
+                }
+                "vgoto" => {
+                    if let Value::Integer(n) = value {
+                        self.set_position(n as usize);
+                    }
+                }
+                "move_top" => {
+                    self.set_position(0);
+                    self.set_vposition(0);
+                }
+                "move_bottom" => {
+                    self.set_position(usize::MAX);
+                }
+                "hmove" => {
+                    if let Value::Integer(n) = value {
+                        self.set_vposition(self.scroll_offset_left as i32 + n as i32);
+                    }
+                }
+                "search_next" => {
+                    self.search_next();
+                }
+                "search_prev" => {
+                    self.search_prev();
+                }
+                "toggle_mark" => {
+                    if let Value::String(color) = value {
+                        let color_str = match color.to_str() {
+                            Ok(s) => s.to_string(),
+                            Err(_) => "yellow".to_string(),
+                        };
+                        self.toggle_mark(&color_str);
+                    }
+                }
+                "move_to_next_mark" => {
+                    self.move_to_next_mark();
+                }
+                "move_to_prev_mark" => {
+                    self.move_to_prev_mark();
+                }
+                "mode" => {
+                    if let Value::String(mode_str) = value {
+                        let mode = match mode_str.to_str() {
+                            Ok(s) => s.to_string(),
+                            Err(_) => "normal".to_string(),
+                        };
+                        self.set_mode(&mode);
+                    }
+                }
+                "toggle_details" => {
+                    self.view_details = !self.view_details;
+                }
+                "refresh_screen" => {
+                    self.refresh_screen();
+                }
+                "clear" => {
+                    self.records.clear();
+                    self.position = 0;
+                    self.scroll_offset_top = 0;
+                    self.scroll_offset_left = 0;
+                }
+                "clear_records" => {
+                    self.records.clear();
+                    self.set_position(0);
+                    self.set_vposition(0);
+                }
+                "settings" => {
+                    self.open_settings();
+                }
+                "reload_settings" => {
+                    self.reload_settings();
+                }
+                "exec" => {
+                    if let Value::String(cmd) = value {
+                        let cmd_str = match cmd.to_str() {
+                            Ok(s) => s.to_string(),
+                            Err(_) => "".to_string(),
+                        };
+                        let args: Vec<String> =
+                            cmd_str.split_whitespace().map(String::from).collect();
+                        if let Err(e) = self.exec(args) {
+                            self.set_warning(format!("Exec error: {}", e));
+                        }
+                    }
+                }
+                _ => {
+                    // Ignore unknown commands for forward compatibility
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;
         self.mode = Mode::Warning;
@@ -590,6 +762,7 @@ impl TuiState {
     }
 
     /// Test method to demonstrate basic Lua execution
+    /// Test method for Lua execution functionality
     pub fn test_lua_execution(&mut self) -> Result<(), String> {
         // Update Lua context with current state
         self.lua_engine
@@ -598,13 +771,13 @@ impl TuiState {
 
         // Test basic Lua execution
         self.lua_engine
-            .test_basic_execution()
+            .test_lua_execution()
             .map_err(|e| format!("Failed to execute Lua test: {}", e))?;
 
         // Test executing a simple Lua command
         let result = self
             .lua_engine
-            .execute_script_string("return 'Hello from Lua!'")
+            .execute_script_string("warning('Hello from Lua!')")
             .map_err(|e| format!("Failed to execute Lua script: {}", e))?;
 
         println!("Lua script result: {:?}", result);
