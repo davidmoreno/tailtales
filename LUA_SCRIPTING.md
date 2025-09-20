@@ -4,6 +4,7 @@
 
 **Phase 1: COMPLETED ✅**  
 **Phase 2: COMPLETED ✅**  
+**Phase 3: COMPLETED ✅**  
 
 ### Legacy System (Being Replaced)
 
@@ -33,6 +34,9 @@ The system now supports **both** legacy commands (as fallback) and modern Lua sc
 - ✅ External `.lua` file support
 - ✅ Hot-reload capability (structure in place)
 - ✅ Script management and performance optimization
+- ✅ Async coroutine support with yield/resume mechanism
+- ✅ Interactive `ask()` function for user input during script execution
+- ✅ Lazy-loaded record data access for performance optimization
 
 ## LUA Scripting Migration
 
@@ -168,17 +172,17 @@ end
 - **Script Management**: Add, remove, list, and clear compiled scripts
 - **Statistics Collection**: Monitor bytecode size and script performance
 
-### Phase 3: Async Support
-7. **Add coroutine support**
-   - Track running coroutines and their state
-   - Implement yield/resume mechanism
-   - Handle script suspension and resumption
+### ✅ Phase 3: Async Support (COMPLETED)
+7. **✅ Add coroutine support**
+   - ✅ Track running coroutines and their state with `SuspendedCoroutine` struct
+   - ✅ Implement yield/resume mechanism in `LuaEngine`
+   - ✅ Handle script suspension and resumption with proper state management
 
-8. **Implement `ask()` function**
-   - Yield script execution
-   - Switch to input mode
-   - Resume script with user input
-   - Handle cancellation/errors
+8. **✅ Implement `ask()` function**
+   - ✅ Yield script execution using coroutine.yield()
+   - ✅ Switch to `ScriptInput` mode for user interaction
+   - ✅ Resume script with user input via `resume_with_input()`
+   - ✅ Handle cancellation/errors with proper cleanup
 
 ### Phase 4: Integration
 9. **Modify settings loading** (`src/settings.rs`)
@@ -246,37 +250,37 @@ end
   - ✅ Verify detailed error messages with script names and context
   - ✅ Test recovery from compilation failures and runtime errors
 
-### Phase 3: Execution Context Tests
-- **LUA007**: Current record data access
-  - Test `current.line`, `current.timestamp` and other record fields
-  - Verify data type consistency (strings, numbers, booleans)
-  - Test handling of missing or null fields
+### ✅ Phase 3: Execution Context Tests (COMPLETED)
+- **✅ LUA007**: Current record data access
+  - ✅ Test `current.line`, `current.timestamp` and other record fields via lazy-loaded metatable
+  - ✅ Verify data type consistency (strings, numbers, booleans)
+  - ✅ Test handling of missing or null fields with graceful fallbacks
 
-- **LUA008**: Application state access
-  - Test `app.position`, `app.mode` and other state variables
-  - Verify state updates are reflected in Lua context
-  - Test read-only vs read-write access controls
+- **✅ LUA008**: Application state access
+  - ✅ Test `app.position`, `app.mode` and other state variables
+  - ✅ Verify state updates are reflected in Lua context including `script_waiting` and `script_prompt`
+  - ✅ Test read-only vs read-write access controls
 
-- **LUA009**: Command function registration
-  - Test all existing commands are available as Lua functions
-  - Verify function signatures and parameter validation
-  - Test error propagation from Rust to Lua
+- **✅ LUA009**: Command function registration
+  - ✅ Test all existing commands are available as Lua functions
+  - ✅ Verify function signatures and parameter validation
+  - ✅ Test error propagation from Rust to Lua
 
-### Phase 4: Async Support Tests
-- **LUA010**: Coroutine creation and management
-  - Test creation of Lua coroutines for script execution
-  - Verify coroutine lifecycle management
-  - Test multiple concurrent coroutines
+### ✅ Phase 4: Async Support Tests (COMPLETED)
+- **✅ LUA010**: Coroutine creation and management
+  - ✅ Test creation of Lua coroutines for script execution
+  - ✅ Verify coroutine lifecycle management with `SuspendedCoroutine` tracking
+  - ✅ Test multiple concurrent coroutines prevention
 
-- **LUA011**: Yield/resume mechanism
-  - Test `coroutine.yield()` functionality
-  - Verify script state preservation during suspension
-  - Test resumption with different parameters
+- **✅ LUA011**: Yield/resume mechanism
+  - ✅ Test `ask()` function yields and waits for input
+  - ✅ Verify script state preservation during suspension
+  - ✅ Test resumption with user input and continuation
 
-- **LUA012**: Script suspension and user input
-  - Test scripts can pause for user input
-  - Verify UI state during script suspension
-  - Test cancellation of suspended scripts
+- **✅ LUA012**: Script suspension and user input
+  - ✅ Test scripts can pause for user input with `ScriptInput` mode
+  - ✅ Verify UI state during script suspension with proper mode transitions
+  - ✅ Test cancellation of suspended scripts and cleanup
 
 ### Phase 5: Enhanced API Tests
 - **LUA013**: Core command functions
@@ -368,14 +372,22 @@ This dual-mode approach allows for gradual migration while maintaining full func
 - **External Files**: Support for `.lua` files with metadata tracking and hot-reload infrastructure
 - **Error Handling**: Enhanced reporting with stack traces, line numbers, and detailed context
 - **API Integration**: All legacy commands available as Lua functions with proper type conversion
-- **State Exposure**: Complete application state (`app`) and record data (`current`) access
+- **State Exposure**: Complete application state (`app`) and lazy-loaded record data (`current`) access
 - **Command Processing**: Deferred command execution system with registry pattern
 - **Backward Compatibility**: Fallback mechanism supporting both Lua and legacy commands
-- **Testing**: Comprehensive test coverage for all Phase 1 and Phase 2 requirements
+- **Async Operations**: Full coroutine support with yield/resume for interactive scripts
+- **User Interaction**: `ask()` function with UI integration and proper mode management
+- **Performance**: Lazy-loaded record access for optimal performance on simple operations
+- **Testing**: Comprehensive test coverage for all Phase 1, 2, and 3 requirements
 
-### 🚧 Next Phases (Phase 3+)
+### ✅ Phase 3 Complete Features
 - **Async Support**: Coroutine-based yielding and resumption for long-running operations
-- **Interactive Prompts**: `ask()` function for user input during script execution
+- **Interactive Prompts**: `ask()` function for user input during script execution with full UI integration
+- **Performance Optimization**: Lazy-loaded record data access via metatable for efficient simple operations
+- **State Management**: Complete suspension/resumption cycle with proper mode transitions
+- **Error Handling**: Robust error recovery and cleanup for suspended scripts
+
+### 🚧 Next Phases (Phase 4+)
 - **Settings Integration**: YAML parsing with Lua script compilation during startup
 - **Keybinding Migration**: Full conversion of default keybindings to Lua equivalents
 

@@ -15,6 +15,7 @@ pub enum Mode {
     Filter,
     Command,
     Warning,
+    ScriptInput,
 }
 
 pub struct TuiState {
@@ -40,6 +41,9 @@ pub struct TuiState {
     pub text_edit_position: usize,
     pub pending_refresh: bool, // If true, the screen will be refreshed when the screen receives render request
     pub lua_engine: LuaEngine,
+    pub script_prompt: String,
+    pub script_input: String,
+    pub script_waiting: bool,
 }
 
 impl TuiState {
@@ -73,10 +77,13 @@ impl TuiState {
             filter_ok: true,
             command: String::new(),
             warning: String::new(),
-            view_details: false,
+            view_details: false, // Default view_details value
             text_edit_position: 0,
             pending_refresh: false,
             lua_engine,
+            script_prompt: String::new(),
+            script_input: String::new(),
+            script_waiting: false,
         })
     }
 
@@ -444,6 +451,122 @@ impl TuiState {
         Ok(())
     }
 
+    /// Execute a Lua script asynchronously, handling coroutines and user input
+    pub fn execute_lua_script_async(&mut self, script_name: &str) -> Result<(), String> {
+        // Update Lua context with current state
+        if let Err(e) = self.lua_engine.update_context(self) {
+            return Err(format!("Failed to update Lua context: {}", e));
+        }
+
+        // Execute the script asynchronously
+        match self.lua_engine.execute_script_async(script_name) {
+            Ok(Some(prompt)) => {
+                // Script is asking for user input
+                self.script_prompt = prompt;
+                self.script_waiting = true;
+                self.mode = Mode::ScriptInput;
+                self.script_input.clear();
+                Ok(())
+            }
+            Ok(None) => {
+                // Script completed immediately, process any collected commands
+                match self
+                    .lua_engine
+                    .collect_executed_commands(Some(script_name.to_string()))
+                {
+                    Ok(commands) => self.process_lua_commands(commands),
+                    Err(e) => Err(format!("Failed to collect commands: {}", e)),
+                }
+            }
+            Err(e) => Err(format!(
+                "Failed to execute async script '{}': {}",
+                script_name, e
+            )),
+        }
+    }
+
+    /// Execute a Lua script string asynchronously
+    pub fn handle_lua_command_async(&mut self, script: &str) -> Result<(), String> {
+        // Update Lua context with current state
+        if let Err(e) = self.lua_engine.update_context(self) {
+            return Err(format!("Failed to update Lua context: {}", e));
+        }
+
+        // Execute the script asynchronously
+        match self.lua_engine.execute_script_string_async(script) {
+            Ok(Some(prompt)) => {
+                // Script is asking for user input
+                self.script_prompt = prompt;
+                self.script_waiting = true;
+                self.mode = Mode::ScriptInput;
+                self.script_input.clear();
+                Ok(())
+            }
+            Ok(None) => {
+                // Script completed immediately, process any collected commands
+                match self.lua_engine.collect_executed_commands(None) {
+                    Ok(commands) => self.process_lua_commands(commands),
+                    Err(e) => Err(format!("Failed to collect commands: {}", e)),
+                }
+            }
+            Err(e) => Err(format!("Failed to execute async script: {}", e)),
+        }
+    }
+
+    /// Resume a suspended script with user input
+    pub fn resume_suspended_script(&mut self, input: String) -> Result<(), String> {
+        if !self.script_waiting {
+            return Err("No script is waiting for input".to_string());
+        }
+
+        match self.lua_engine.resume_with_input(input) {
+            Ok(_) => {
+                // Check if the script is asking for more input
+                if let Some(new_prompt) = self.lua_engine.get_suspended_prompt() {
+                    self.script_prompt = new_prompt.to_string();
+                    self.script_input.clear();
+                } else {
+                    // Script completed, return to normal mode
+                    self.script_waiting = false;
+                    self.script_prompt.clear();
+                    self.script_input.clear();
+                    self.mode = Mode::Normal;
+
+                    // Process any commands that were executed
+                    match self.lua_engine.collect_executed_commands(None) {
+                        Ok(commands) => self.process_lua_commands(commands)?,
+                        Err(e) => return Err(format!("Failed to collect commands: {}", e)),
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => {
+                // Script failed, return to normal mode
+                self.script_waiting = false;
+                self.script_prompt.clear();
+                self.script_input.clear();
+                self.mode = Mode::Normal;
+                Err(format!("Script execution failed: {}", e))
+            }
+        }
+    }
+
+    /// Cancel the currently suspended script
+    pub fn cancel_suspended_script(&mut self) {
+        if self.script_waiting {
+            self.lua_engine.cancel_suspended_script();
+            self.script_waiting = false;
+            self.script_prompt.clear();
+            self.script_input.clear();
+            self.mode = Mode::Normal;
+        }
+    }
+
+    /// Check if a script is currently waiting for input
+    pub fn has_suspended_script(&self) -> bool {
+        self.script_waiting && self.lua_engine.has_suspended_script()
+    }
+
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;
         self.mode = Mode::Warning;
@@ -462,6 +585,9 @@ impl TuiState {
             }
             "command" => {
                 self.mode = Mode::Command;
+            }
+            "script_input" => {
+                self.mode = Mode::ScriptInput;
             }
             _ => {
                 self.set_warning(format!("Unknown mode: {}", mode));

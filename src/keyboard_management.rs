@@ -25,6 +25,9 @@ pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState) {
         Mode::Command => {
             handle_command_mode(key_event, state);
         }
+        Mode::ScriptInput => {
+            handle_script_input_mode(key_event, state);
+        }
         Mode::Warning => {
             // Any key will dismiss the warning
             state.mode = state.next_mode;
@@ -222,6 +225,30 @@ pub fn handle_filter_mode(key_event: KeyEvent, state: &mut TuiState) {
         _ => {
             handle_textinput(&mut state.filter, &mut state.text_edit_position, key_event);
             state.handle_filter();
+        }
+    }
+}
+
+pub fn handle_script_input_mode(key_event: KeyEvent, state: &mut TuiState) {
+    match key_event.code {
+        KeyCode::Esc => {
+            // Cancel the suspended script
+            state.cancel_suspended_script();
+        }
+        KeyCode::Char('\n') | KeyCode::Enter => {
+            // Submit the input to the suspended script
+            let input = state.script_input.clone();
+            if let Err(e) = state.resume_suspended_script(input) {
+                state.set_warning(format!("Script error: {}", e));
+            }
+        }
+        _ => {
+            // Handle text input for the script prompt
+            handle_textinput(
+                &mut state.script_input,
+                &mut state.text_edit_position,
+                key_event,
+            );
         }
     }
 }

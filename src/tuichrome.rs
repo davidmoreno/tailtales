@@ -467,6 +467,7 @@ impl TuiChrome {
             Mode::Filter => Self::render_footer_filter(state),
             Mode::Command => Self::render_footer_command(state),
             Mode::Warning => Self::render_footer_warning(state),
+            Mode::ScriptInput => Self::render_footer_script_input(state),
         }
     }
 
@@ -500,6 +501,15 @@ impl TuiChrome {
                 .fg(Color::Black)
                 .bg(Color::LightYellow)
                 .bold(),
+        )
+    }
+
+    pub fn render_footer_script_input(state: &TuiState) -> Block {
+        Self::render_textinput_block(
+            &state.script_prompt,
+            &state.script_input,
+            state.text_edit_position,
+            state.settings.colors.footer.command, // Use command colors for now
         )
     }
 

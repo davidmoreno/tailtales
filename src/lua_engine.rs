@@ -13,7 +13,7 @@
 
 use crate::state::{Mode, TuiState};
 use log::{debug, error, warn};
-use mlua::{Lua, Result as LuaResult, Table, UserData, UserDataMethods, Value};
+use mlua::{Function, Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -117,11 +117,20 @@ impl std::fmt::Display for LuaEngineError {
 
 impl std::error::Error for LuaEngineError {}
 
+/// Represents a suspended coroutine waiting for user input
+#[derive(Debug)]
+pub struct SuspendedCoroutine {
+    pub thread: Thread,
+    pub prompt: String,
+    pub script_name: Option<String>,
+}
+
 /// The main Lua engine that manages script execution
 pub struct LuaEngine {
     lua: Lua,
     compiled_scripts: HashMap<String, CompiledScript>,
     script_directories: Vec<PathBuf>,
+    suspended_coroutine: Option<SuspendedCoroutine>,
 }
 
 impl LuaEngine {
@@ -138,6 +147,7 @@ impl LuaEngine {
                 PathBuf::from("lua"),
                 PathBuf::from(".tailtales/scripts"),
             ],
+            suspended_coroutine: None,
         };
 
         engine.initialize()?;
@@ -167,10 +177,50 @@ impl LuaEngine {
         globals.set("app", app_table)?;
 
         // Create the 'current' table for current record data
+        // Create lazy-loaded current table using metatable for performance
         let current_table = self.lua.create_table()?;
-        current_table.set("line", "")?;
-        current_table.set("line_number", 0)?;
-        current_table.set("index", 0)?;
+        let current_meta = self.lua.create_table()?;
+
+        // Set up __index metamethod for lazy loading
+        current_meta.set(
+            "__index",
+            self.lua
+                .create_function(|lua, (_, key): (Value, String)| -> LuaResult<Value> {
+                    // Get the current state from the Lua registry
+                    let state_registry = lua.named_registry_value::<Table>("tailtales_state")?;
+                    let position = state_registry.get::<usize>("position")?;
+                    let record_count = state_registry.get::<usize>("record_count")?;
+
+                    // Check if we have a valid record at current position
+                    if position < record_count {
+                        // Access the actual record data from registry
+                        match key.as_str() {
+                            "line" => state_registry.get("current_line"),
+                            "line_number" => Ok(Value::Integer((position + 1) as i64)),
+                            "index" => state_registry.get("current_index"),
+                            "lineqs" => state_registry.get("current_lineqs"),
+                            _ => {
+                                // Try to get parsed field data
+                                let fields_table: Table = state_registry
+                                    .get("current_fields")
+                                    .unwrap_or_else(|_| lua.create_table().unwrap());
+                                fields_table.get(key.as_str()).or_else(|_| Ok(Value::Nil))
+                            }
+                        }
+                    } else {
+                        // No record available
+                        match key.as_str() {
+                            "line" => Ok(Value::String(lua.create_string("")?)),
+                            "line_number" => Ok(Value::Integer(0)),
+                            "index" => Ok(Value::Integer(0)),
+                            "lineqs" => Ok(Value::String(lua.create_string("")?)),
+                            _ => Ok(Value::Nil),
+                        }
+                    }
+                })?,
+        )?;
+
+        current_table.set_metatable(Some(current_meta))?;
         globals.set("current", current_table)?;
 
         debug!("Lua global tables initialized");
@@ -439,11 +489,39 @@ impl LuaEngine {
                 })?,
         )?;
 
+        // Async input function - uses proper coroutine yielding
+        globals.set(
+            "ask",
+            self.lua
+                .create_function(|lua, prompt: String| -> LuaResult<Value> {
+                    debug!("ask('{}') called from Lua", prompt);
+
+                    // Store the ask request in the registry for the engine to handle
+                    let commands: Table = lua.named_registry_value("tailtales_commands")?;
+                    commands.set("ask_prompt", prompt.clone())?;
+
+                    // Use proper coroutine.yield() from within the function
+                    // This requires creating a wrapper that calls yield
+                    let yield_code = format!(
+                        r#"
+                        local function ask_yield()
+                            return coroutine.yield("{}")
+                        end
+                        return ask_yield()
+                        "#,
+                        prompt.replace('"', r#"\""#)
+                    );
+
+                    lua.load(&yield_code).eval()
+                })?,
+        )?;
+
         debug!("Lua API functions registered");
         Ok(())
     }
 
     /// Update the Lua context with current application state
+    /// Records data is now lazy-loaded via registry for performance
     pub fn update_context(&self, state: &TuiState) -> LuaResult<()> {
         let globals = self.lua.globals();
 
@@ -461,9 +539,41 @@ impl LuaEngine {
         app_table.set("filter", state.filter.clone())?;
         app_table.set("command", state.command.clone())?;
         app_table.set("warning", state.warning.clone())?;
+        app_table.set("script_prompt", state.script_prompt.clone())?;
+        app_table.set("script_waiting", state.script_waiting)?;
 
-        // Update current record data with complete field access
-        let current_table: Table = globals.get("current")?;
+        // Update registry with current record data for lazy access
+        let state_registry = self.lua.create_table()?;
+        state_registry.set("position", state.position)?;
+        state_registry.set("record_count", state.records.len())?;
+
+        // Only populate current record data if there's a valid record
+        if let Some(record) = state.records.get(state.position) {
+            state_registry.set("current_line", record.original.clone())?;
+            state_registry.set("current_index", record.index)?;
+            state_registry.set(
+                "current_lineqs",
+                urlencoding::encode(&record.original).to_string(),
+            )?;
+
+            // Store parsed fields in a separate table
+            let fields_table = self.lua.create_table()?;
+            for (key, value) in &record.data {
+                fields_table.set(key.as_str(), value.clone())?;
+            }
+            state_registry.set("current_fields", fields_table)?;
+        }
+
+        self.lua
+            .set_named_registry_value("tailtales_state", state_registry)?;
+
+        Ok(())
+    }
+
+    /// Get current record data on demand - this is called when scripts access current.*
+    pub fn get_current_record_data(&self, state: &TuiState) -> LuaResult<Table> {
+        let current_table = self.lua.create_table()?;
+
         if let Some(record) = state.records.get(state.position) {
             current_table.set("line", record.original.clone())?;
             current_table.set("line_number", state.position + 1)?;
@@ -477,14 +587,14 @@ impl LuaEngine {
             // Add convenience fields
             current_table.set("lineqs", urlencoding::encode(&record.original).to_string())?;
         } else {
-            // Clear current table when no record
+            // Set empty values when no record
             current_table.set("line", "")?;
             current_table.set("line_number", 0)?;
             current_table.set("index", 0)?;
             current_table.set("lineqs", "")?;
         }
 
-        Ok(())
+        Ok(current_table)
     }
 
     /// Convert Mode enum to string for Lua
@@ -495,6 +605,7 @@ impl LuaEngine {
             Mode::Filter => "filter",
             Mode::Command => "command",
             Mode::Warning => "warning",
+            Mode::ScriptInput => "script_input",
         }
     }
 
@@ -629,7 +740,7 @@ impl LuaEngine {
     }
 
     /// Collect executed commands from the Lua registry
-    fn collect_executed_commands(
+    pub fn collect_executed_commands(
         &self,
         script_name: Option<String>,
     ) -> Result<HashMap<String, Value>, LuaEngineError> {
@@ -789,6 +900,194 @@ impl LuaEngine {
 
         stats
     }
+
+    /// Execute a script asynchronously, handling coroutines and yielding
+    pub fn execute_script_async(&mut self, name: &str) -> Result<Option<String>, LuaEngineError> {
+        if let Some(compiled) = self.compiled_scripts.get(name) {
+            // Check if we need to reload from file
+            if compiled.needs_reload() {
+                warn!(
+                    "Script '{}' needs reload but hot-reload not implemented yet",
+                    name
+                );
+            }
+
+            // Clear command registry before execution
+            let commands_table = self
+                .lua
+                .create_table()
+                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
+            self.lua
+                .set_named_registry_value("tailtales_commands", commands_table)
+                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
+
+            // Create and start a coroutine
+            let coroutine_func = self
+                .lua
+                .load(&compiled.bytecode)
+                .into_function()
+                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
+
+            let thread = self
+                .lua
+                .create_thread(coroutine_func)
+                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
+
+            // Resume the coroutine
+            self.resume_coroutine(thread, name, Value::Nil)
+        } else {
+            Err(LuaEngineError {
+                message: format!("Script '{}' not found", name),
+                script_name: Some(name.to_string()),
+                line_number: None,
+                stack_trace: None,
+            })
+        }
+    }
+
+    /// Execute a script string asynchronously
+    pub fn execute_script_string_async(
+        &mut self,
+        script: &str,
+    ) -> Result<Option<String>, LuaEngineError> {
+        // Clear command registry before execution
+        let commands_table = self
+            .lua
+            .create_table()
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+        self.lua
+            .set_named_registry_value("tailtales_commands", commands_table)
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        // Create and start a coroutine
+        let coroutine_func = self
+            .lua
+            .load(script)
+            .into_function()
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        let thread = self
+            .lua
+            .create_thread(coroutine_func)
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        // Resume the coroutine
+        self.resume_coroutine(thread, "inline", Value::Nil)
+    }
+
+    /// Resume a suspended coroutine with input
+    fn resume_coroutine(
+        &mut self,
+        thread: Thread,
+        script_name: &str,
+        input: Value,
+    ) -> Result<Option<String>, LuaEngineError> {
+        match thread.resume::<Value>(input) {
+            Ok(value) => {
+                // Check if this is a yield from ask()
+                if let Value::String(yielded_value) = &value {
+                    let prompt_str = yielded_value.to_str().map_err(|e| LuaEngineError {
+                        message: format!("Invalid yielded string: {}", e),
+                        script_name: Some(script_name.to_string()),
+                        line_number: None,
+                        stack_trace: None,
+                    })?;
+
+                    // Check if this was an ask() call by looking at the commands registry
+                    let commands_table: Table = self
+                        .lua
+                        .named_registry_value("tailtales_commands")
+                        .map_err(|e| {
+                            self.create_enhanced_error(e, Some(script_name.to_string()))
+                        })?;
+
+                    if let Ok(ask_prompt) = commands_table.get::<String>("ask_prompt") {
+                        if ask_prompt == prompt_str.to_string() {
+                            debug!(
+                                "Script '{}' suspended with ask prompt: {}",
+                                script_name, prompt_str
+                            );
+
+                            // Store the suspended coroutine
+                            self.suspended_coroutine = Some(SuspendedCoroutine {
+                                thread,
+                                prompt: prompt_str.to_string(),
+                                script_name: Some(script_name.to_string()),
+                            });
+
+                            // Return the prompt to signal the UI should ask for input
+                            return Ok(Some(prompt_str.to_string()));
+                        }
+                    }
+                }
+
+                // Script completed normally
+                debug!("Script '{}' completed", script_name);
+                Ok(None)
+            }
+            Err(e) => {
+                // Real error occurred
+                error!("Coroutine execution failed for '{}': {}", script_name, e);
+                Err(self.create_enhanced_error(e, Some(script_name.to_string())))
+            }
+        }
+    }
+
+    /// Resume the currently suspended coroutine with user input
+    pub fn resume_with_input(&mut self, input: String) -> Result<(), LuaEngineError> {
+        if let Some(suspended) = self.suspended_coroutine.take() {
+            let script_name = suspended
+                .script_name
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string());
+
+            // Resume with the user's input
+            match self.resume_coroutine(
+                suspended.thread,
+                &script_name,
+                Value::String(self.lua.create_string(&input).unwrap()),
+            ) {
+                Ok(Some(new_prompt)) => {
+                    // Script yielded again with another ask() call
+                    debug!(
+                        "Script '{}' asked for more input: {}",
+                        script_name, new_prompt
+                    );
+                    Ok(())
+                }
+                Ok(None) => {
+                    // Script completed
+                    debug!("Script '{}' completed after input", script_name);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            Err(LuaEngineError {
+                message: "No suspended coroutine to resume".to_string(),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })
+        }
+    }
+
+    /// Cancel the currently suspended coroutine
+    pub fn cancel_suspended_script(&mut self) {
+        if let Some(suspended) = self.suspended_coroutine.take() {
+            debug!("Cancelled suspended script: {:?}", suspended.script_name);
+        }
+    }
+
+    /// Check if there's a script waiting for input
+    pub fn has_suspended_script(&self) -> bool {
+        self.suspended_coroutine.is_some()
+    }
+
+    /// Get the prompt from the suspended script
+    pub fn get_suspended_prompt(&self) -> Option<&str> {
+        self.suspended_coroutine.as_ref().map(|s| s.prompt.as_str())
+    }
 }
 
 /// Helper struct to wrap TuiState for safe Lua access
@@ -823,6 +1122,7 @@ impl<'a> UserData for LuaStateWrapper<'a> {
                 Mode::Filter => "filter",
                 Mode::Command => "command",
                 Mode::Warning => "warning",
+                Mode::ScriptInput => "script_input",
             })
         });
 
