@@ -375,7 +375,7 @@ pub fn handle_script_input_mode(
 
 pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     match key_event.code {
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::F(12) => {
             // Exit REPL mode back to Normal
             state.mode = Mode::Normal;
             state.repl_input.clear();
