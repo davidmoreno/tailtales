@@ -32,6 +32,9 @@ pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState, lua_engine: &
         Mode::ScriptInput => {
             handle_script_input_mode(key_event, state, lua_engine);
         }
+        Mode::LuaRepl => {
+            handle_lua_repl_mode(key_event, state, lua_engine);
+        }
         Mode::Warning => {
             // Any key will dismiss the warning
             state.mode = state.next_mode;
@@ -366,6 +369,136 @@ pub fn handle_script_input_mode(
                 &mut state.text_edit_position,
                 key_event,
             );
+        }
+    }
+}
+
+pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
+    match key_event.code {
+        KeyCode::Esc => {
+            // Exit REPL mode back to Normal
+            state.mode = Mode::Normal;
+            state.repl_input.clear();
+            state.text_edit_position = 0;
+            // Reset multiline state
+            state.repl_multiline_buffer.clear();
+            state.repl_is_multiline = false;
+        }
+        KeyCode::Char('c') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+            // Cancel current multiline input (Ctrl+C)
+            if state.repl_is_multiline {
+                state.repl_output_history.push("^C".to_string());
+                state.repl_multiline_buffer.clear();
+                state.repl_is_multiline = false;
+                state.repl_input.clear();
+                state.text_edit_position = 0;
+            }
+        }
+        KeyCode::Char('\n') | KeyCode::Enter => {
+            let input = state.repl_input.trim().to_string();
+
+            if input.is_empty() && !state.repl_is_multiline {
+                // Empty input, do nothing
+                return;
+            }
+
+            // Add current line to multiline buffer or start one
+            if state.repl_is_multiline {
+                // Add continuation line to buffer
+                let prompt = if state.repl_multiline_buffer.is_empty() {
+                    "> "
+                } else {
+                    ">> "
+                };
+                state
+                    .repl_output_history
+                    .push(format!("{}{}", prompt, input));
+                state.repl_multiline_buffer.push(input.clone());
+            } else {
+                // This might be the start of a multiline construct
+                state.repl_output_history.push(format!("> {}", input));
+                state.repl_multiline_buffer.push(input.clone());
+                state.repl_is_multiline = true;
+            }
+
+            // Check if input is complete
+            if state.is_lua_input_complete() {
+                // Execute the complete multiline code
+                let full_code = state.repl_multiline_buffer.join("\n");
+
+                match lua_engine.execute_script_string(&full_code) {
+                    Ok(result) => {
+                        if !result.is_empty() {
+                            // Split multi-line output into separate history entries
+                            for line in result.lines() {
+                                if !line.is_empty() {
+                                    state.repl_output_history.push(line.to_string());
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        state.repl_output_history.push(format!("Error: {}", e));
+                    }
+                }
+
+                // Reset multiline state
+                state.repl_multiline_buffer.clear();
+                state.repl_is_multiline = false;
+
+                // Keep output history reasonable size
+                if state.repl_output_history.len() > 1000 {
+                    state.repl_output_history.drain(0..500);
+                }
+
+                // Auto-scroll to bottom to show new output and input line
+                let visible_lines = state.visible_height.saturating_sub(2);
+                let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+                if total_lines > visible_lines {
+                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                }
+            }
+
+            // Clear current input line for next input
+            state.repl_input.clear();
+            state.text_edit_position = 0;
+        }
+        KeyCode::PageUp => {
+            // Scroll up in output history
+            state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(10);
+        }
+        KeyCode::PageDown => {
+            // Scroll down in output history
+            let visible_lines = state.visible_height.saturating_sub(2);
+            let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+            let max_scroll = total_lines.saturating_sub(visible_lines);
+            state.repl_scroll_offset = (state.repl_scroll_offset + 10).min(max_scroll);
+        }
+        KeyCode::Up => {
+            // Scroll up one line in output history
+            state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(1);
+        }
+        KeyCode::Down => {
+            // Scroll down one line in output history
+            let visible_lines = state.visible_height.saturating_sub(2);
+            let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+            let max_scroll = total_lines.saturating_sub(visible_lines);
+            state.repl_scroll_offset = (state.repl_scroll_offset + 1).min(max_scroll);
+        }
+        _ => {
+            // Handle text input for the REPL
+            handle_textinput(
+                &mut state.repl_input,
+                &mut state.text_edit_position,
+                key_event,
+            );
+
+            // Auto-scroll to keep input line visible while typing
+            let visible_lines = state.visible_height.saturating_sub(2);
+            let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+            if total_lines > visible_lines {
+                state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+            }
         }
     }
 }

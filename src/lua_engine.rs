@@ -223,6 +223,7 @@ impl LuaEngine {
     /// Initialize the Lua runtime with the TailTales API
     pub fn initialize(&mut self) -> LuaResult<()> {
         self.setup_globals()?;
+        self.setup_print_override()?;
         self.register_global_functions()
             .map_err(|e| mlua::Error::runtime(e.to_string()))?; // Register all functions once at startup
         debug!("Lua engine initialized successfully");
@@ -247,6 +248,145 @@ impl LuaEngine {
 
         debug!("Lua global tables initialized");
         Ok(())
+    }
+
+    /// Set up print function override (default no-op, can be overridden per execution)
+    fn setup_print_override(&self) -> LuaResult<()> {
+        // Default print function that does nothing (for non-REPL executions)
+        let print_fn = self
+            .lua
+            .create_function(|_lua, _args: mlua::Variadic<Value>| {
+                // Default behavior: do nothing
+                // This will be overridden in execute_script_string for REPL
+                Ok(())
+            })?;
+
+        self.lua.globals().set("print", print_fn)?;
+        debug!("Print function override setup");
+        Ok(())
+    }
+
+    /// Format a Lua value for display, including table contents
+    ///
+    /// # Arguments
+    /// * `value` - The Lua value to format
+    /// * `depth` - Current nesting depth (for recursion control)
+    /// * `max_depth` - Maximum allowed nesting depth
+    fn format_lua_value(&self, value: &Value, depth: usize, max_depth: usize) -> String {
+        if depth > max_depth {
+            return "...".to_string();
+        }
+
+        match value {
+            Value::Nil => "nil".to_string(),
+            Value::Boolean(b) => b.to_string(),
+            Value::Integer(i) => i.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => s.to_string_lossy(),
+            Value::Table(table) => self.format_table(table, depth, max_depth),
+            Value::Function(_) => "[function]".to_string(),
+            Value::Thread(_) => "[thread]".to_string(),
+            Value::UserData(_) => "[userdata]".to_string(),
+            _ => "[unknown]".to_string(),
+        }
+    }
+
+    /// Format a Lua table with its contents
+    fn format_table(&self, table: &mlua::Table, depth: usize, max_depth: usize) -> String {
+        if depth > max_depth {
+            return "{...}".to_string();
+        }
+
+        let mut items = Vec::new();
+        let mut count = 0;
+
+        // Try to iterate through the table
+        let pairs = table.pairs::<Value, Value>();
+        for pair in pairs {
+            if let Ok((key, value)) = pair {
+                count += 1;
+                if count <= 5 {
+                    // Limit display items
+                    let formatted_item = self.format_table_item(&key, &value, depth, max_depth);
+                    items.push(formatted_item);
+                }
+            }
+        }
+
+        self.format_table_display(&items, count)
+    }
+
+    /// Format a single table key-value pair
+    fn format_table_item(
+        &self,
+        key: &Value,
+        value: &Value,
+        depth: usize,
+        max_depth: usize,
+    ) -> String {
+        let value_str = self.format_table_value(value, depth, max_depth);
+
+        match key {
+            Value::Integer(i) if *i > 0 => {
+                // Array-like index - just show the value
+                value_str
+            }
+            Value::String(s) => {
+                // Hash key - show key = value
+                format!("{} = {}", s.to_string_lossy(), value_str)
+            }
+            _ => {
+                // Other key types - show [key] = value
+                let key_str = self.format_lua_value(key, depth + 1, max_depth);
+                format!("[{}] = {}", key_str, value_str)
+            }
+        }
+    }
+
+    /// Format a table value (with special handling for strings)
+    fn format_table_value(&self, value: &Value, depth: usize, max_depth: usize) -> String {
+        match value {
+            Value::String(s) => format!("\"{}\"", s.to_string_lossy()),
+            Value::Table(_) if depth >= max_depth => "{...}".to_string(),
+            _ => self.format_lua_value(value, depth + 1, max_depth),
+        }
+    }
+
+    /// Format the final table display string
+    fn format_table_display(&self, items: &[String], total_count: usize) -> String {
+        if items.is_empty() {
+            "{}".to_string()
+        } else if total_count > 5 {
+            format!("{{ {}, ... ({} items) }}", items.join(", "), total_count)
+        } else {
+            format!("{{ {} }}", items.join(", "))
+        }
+    }
+
+    /// Create a print function that captures output to the given vector
+    fn create_print_function(
+        &self,
+        output_capture: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+    ) -> Result<mlua::Function, LuaEngineError> {
+        let engine_ptr = self as *const LuaEngine;
+
+        self.lua
+            .create_function(move |_lua, args: mlua::Variadic<Value>| {
+                let mut output_line = Vec::new();
+
+                for arg in args {
+                    let formatted_arg = unsafe {
+                        // Safe because we know the engine is alive during this call
+                        let engine = &*engine_ptr;
+                        engine.format_lua_value(&arg, 0, 3) // Max depth of 3
+                    };
+                    output_line.push(formatted_arg);
+                }
+
+                output_capture.borrow_mut().push(output_line.join("\t"));
+                Ok(())
+            })
+            .map_err(|e| self.create_enhanced_error(e, None))
     }
 
     /// Helper function to safely get TuiState from Lua registry
@@ -421,6 +561,13 @@ impl LuaEngine {
             Ok(())
         })?;
 
+        self.register_function("lua_repl", |lua, ()| -> LuaResult<()> {
+            debug!("lua_repl() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.set_mode("lua_repl");
+            Ok(())
+        })?;
+
         // System and utility functions
         self.register_function("refresh_screen", |lua, ()| -> LuaResult<()> {
             debug!("refresh_screen() called from Lua (immediate)");
@@ -535,6 +682,7 @@ impl LuaEngine {
                 Mode::Command => "command",
                 Mode::Warning => "warning",
                 Mode::ScriptInput => "script_input",
+                Mode::LuaRepl => "lua_repl",
             }
             .to_string())
         })?;
@@ -595,6 +743,68 @@ impl LuaEngine {
         }
 
         result
+    }
+
+    /// Execute a Lua script from a string directly (for REPL)
+    pub fn execute_script_string(&mut self, source: &str) -> Result<String, LuaEngineError> {
+        debug!("Executing Lua script string: {}", source);
+
+        // Set up print output capture
+        let print_output = self.setup_print_capture()?;
+
+        // Execute the script and get the result
+        let result = self.execute_lua_code(source)?;
+
+        // Combine print output and return value
+        self.combine_output_and_result(print_output, result)
+    }
+
+    /// Set up print output capture and return the capture container
+    fn setup_print_capture(
+        &mut self,
+    ) -> Result<std::rc::Rc<std::cell::RefCell<Vec<String>>>, LuaEngineError> {
+        let print_output = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let print_fn = self.create_print_function(print_output.clone())?;
+
+        self.lua
+            .globals()
+            .set("print", print_fn)
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        Ok(print_output)
+    }
+
+    /// Execute Lua code and format the result
+    fn execute_lua_code(&self, source: &str) -> Result<String, LuaEngineError> {
+        match self.lua.load(source).eval::<Value>() {
+            Ok(value) => Ok(self.format_lua_value(&value, 0, 3)),
+            Err(e) => Err(self.create_enhanced_error(e, None)),
+        }
+    }
+
+    /// Combine print output and script result into final output
+    fn combine_output_and_result(
+        &self,
+        print_output: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        result: String,
+    ) -> Result<String, LuaEngineError> {
+        let print_lines = print_output.borrow();
+        let mut output = Vec::new();
+
+        // Add all print output
+        output.extend(print_lines.iter().cloned());
+
+        // Add return value if meaningful
+        if self.should_show_result(&result, &print_lines) {
+            output.push(result);
+        }
+
+        Ok(output.join("\n"))
+    }
+
+    /// Determine if we should show the script result
+    fn should_show_result(&self, result: &str, print_lines: &[String]) -> bool {
+        !result.is_empty() && result != "nil" && (print_lines.is_empty() || !result.is_empty())
     }
 
     /// Register utility functions that don't need state access
@@ -691,6 +901,7 @@ impl LuaEngine {
             Mode::Command => "command",
             Mode::Warning => "warning",
             Mode::ScriptInput => "script_input",
+            Mode::LuaRepl => "lua_repl",
         }
     }
 
@@ -1063,6 +1274,7 @@ impl<'a> UserData for LuaStateWrapper<'a> {
                 Mode::Command => "command",
                 Mode::Warning => "warning",
                 Mode::ScriptInput => "script_input",
+                Mode::LuaRepl => "lua_repl",
             })
         });
 

@@ -14,6 +14,7 @@ pub enum Mode {
     Command,
     Warning,
     ScriptInput,
+    LuaRepl,
 }
 
 pub struct TuiState {
@@ -41,6 +42,12 @@ pub struct TuiState {
     pub script_prompt: String,
     pub script_input: String,
     pub script_waiting: bool,
+    // Lua REPL state
+    pub repl_input: String,
+    pub repl_output_history: Vec<String>,
+    pub repl_scroll_offset: usize,
+    pub repl_multiline_buffer: Vec<String>,
+    pub repl_is_multiline: bool,
 }
 
 impl TuiState {
@@ -79,6 +86,12 @@ impl TuiState {
             script_prompt: String::new(),
             script_input: String::new(),
             script_waiting: false,
+            // Initialize REPL state
+            repl_input: String::new(),
+            repl_output_history: Vec::new(),
+            repl_scroll_offset: 0,
+            repl_multiline_buffer: Vec::new(),
+            repl_is_multiline: false,
         })
     }
 
@@ -170,10 +183,89 @@ impl TuiState {
             "script_input" => {
                 self.mode = Mode::ScriptInput;
             }
+            "lua_repl" => {
+                self.mode = Mode::LuaRepl;
+                // Add welcome message if REPL history is empty
+                if self.repl_output_history.is_empty() {
+                    self.repl_output_history.push(
+                        "Welcome to Lua REPL! Type Lua code and press Enter to execute."
+                            .to_string(),
+                    );
+                    self.repl_output_history.push(
+                        "Supports multiline input: functions, if/do blocks, etc.".to_string(),
+                    );
+                    self.repl_output_history.push("Use print() to output text. Available functions: get_position(), get_record(), warning(), quit(), etc.".to_string());
+                    self.repl_output_history
+                        .push("Press Esc to exit, Ctrl+C to cancel multiline input.".to_string());
+                    self.repl_output_history.push("".to_string());
+                }
+            }
             _ => {
                 self.set_warning(format!("Unknown mode: {}", mode));
             }
         }
+    }
+
+    /// Check if the current Lua input is complete or needs more lines
+    pub fn is_lua_input_complete(&self) -> bool {
+        let mut all_input = self.repl_multiline_buffer.join("\n");
+        if !all_input.is_empty() {
+            all_input.push('\n');
+        }
+        all_input.push_str(&self.repl_input);
+
+        // Simple heuristic: count various brackets and keywords
+        let mut paren_count = 0;
+        let mut bracket_count = 0;
+        let mut brace_count = 0;
+        let mut do_count = 0;
+        let mut end_count = 0;
+        let mut if_count = 0;
+        let mut function_count = 0;
+        let mut for_count = 0;
+        let mut while_count = 0;
+        let mut repeat_count = 0;
+        let mut until_count = 0;
+
+        // Simple tokenization - split by whitespace and check each token
+        let tokens: Vec<&str> = all_input.split_whitespace().collect();
+
+        for token in tokens {
+            // Count brackets/parentheses
+            for ch in token.chars() {
+                match ch {
+                    '(' => paren_count += 1,
+                    ')' => paren_count -= 1,
+                    '[' => bracket_count += 1,
+                    ']' => bracket_count -= 1,
+                    '{' => brace_count += 1,
+                    '}' => brace_count -= 1,
+                    _ => {}
+                }
+            }
+
+            // Count keywords (simple exact match)
+            match token {
+                "do" => do_count += 1,
+                "end" => end_count += 1,
+                "if" => if_count += 1,
+                "function" => function_count += 1,
+                "for" => for_count += 1,
+                "while" => while_count += 1,
+                "repeat" => repeat_count += 1,
+                "until" => until_count += 1,
+                _ => {}
+            }
+        }
+
+        // Check if all constructs are balanced
+        let blocks_balanced =
+            (do_count + if_count + function_count + for_count + while_count + repeat_count)
+                <= (end_count + until_count);
+        let brackets_balanced = paren_count == 0 && bracket_count == 0 && brace_count == 0;
+
+        // Input is complete if brackets are balanced and blocks are balanced
+        brackets_balanced && blocks_balanced
     }
 
     pub fn toggle_mark(&mut self, color: &str) {

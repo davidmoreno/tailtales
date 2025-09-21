@@ -69,6 +69,7 @@ keybindings:
   "F2": "exec('xdg-open https://www.perplexity.ai/search/new?q=' .. get_record().lineqs); warning('Opened Perplexity')"
   "F3": "exec('xdg-open https://www.duckduckgo.com/?q=' .. get_record().lineqs); warning('Opened DuckDuckGo')"
   "F4": "exec('xdg-open https://google.com/search?q=' .. get_record().lineqs); warning('Opened Google')"
+  "F12": "lua_repl()"
   "q": "quit()"
   "control-c": |
     local record = get_record()
