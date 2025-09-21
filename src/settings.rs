@@ -304,6 +304,7 @@ impl Settings {
         xdg.unwrap().find_config_file("settings.yaml")
     }
 
+    #[allow(dead_code)]
     pub fn save_default_settings(&self) -> Result<(), Box<dyn std::error::Error>> {
         let xdg = xdg::BaseDirectories::with_prefix("tailtales")?;
         let path = xdg.place_config_file("settings.yaml")?;
