@@ -165,7 +165,8 @@ impl LuaEngine {
     /// Initialize the Lua runtime with the TailTales API
     pub fn initialize(&mut self) -> LuaResult<()> {
         self.setup_globals()?;
-        // Note: Functions are now registered per execution via register_immediate_functions_safe()
+        self.register_immediate_functions_once()
+            .map_err(|e| mlua::Error::runtime(e.to_string()))?; // Register all functions once at startup
         debug!("Lua engine initialized successfully");
         Ok(())
     }
@@ -234,28 +235,36 @@ impl LuaEngine {
         Ok(())
     }
 
-    /// Register immediate execution functions that modify TuiState directly
-    /// This is the new safe approach using proper Rust references
-    pub fn register_immediate_functions_safe(
-        &mut self,
-        state: &mut TuiState,
-    ) -> Result<(), LuaEngineError> {
-        let globals = self.lua.globals();
+    /// Helper function to safely get TuiState from Lua registry
+    /// This centralizes all unsafe pointer operations in one place
+    fn get_state_from_registry(lua: &mlua::Lua) -> LuaResult<&'static mut TuiState> {
+        let state_ptr: usize = lua.named_registry_value("tui_state_ptr")?;
+        unsafe {
+            // SAFETY: This pointer is only stored during controlled execution in execute_with_state()
+            // The pointer is guaranteed to be valid for the duration of script execution
+            // and is automatically cleaned up after execution completes
+            let ptr = state_ptr as *mut TuiState;
+            if ptr.is_null() {
+                return Err(LuaError::RuntimeError("State pointer is null".to_string()));
+            }
+            Ok(&mut *ptr)
+        }
+    }
 
-        // Get a raw pointer for use in closures (safe because we control lifetime)
-        let state_ptr = state as *mut TuiState;
+    /// Register immediate execution functions once at initialization
+    /// Functions will access state via pointer stored in Lua registry during execution
+    fn register_immediate_functions_once(&mut self) -> Result<(), LuaEngineError> {
+        let globals = self.lua.globals();
 
         // Core navigation and control commands - immediate execution
         globals
             .set(
                 "quit",
                 self.lua
-                    .create_function(move |_lua, ()| -> LuaResult<()> {
+                    .create_function(|lua, ()| -> LuaResult<()> {
                         debug!("quit() called from Lua (immediate)");
-                        unsafe {
-                            let state = &mut *state_ptr;
-                            state.running = false;
-                        }
+                        let state = Self::get_state_from_registry(lua)?;
+                        state.running = false;
                         Ok(())
                     })
                     .map_err(|e| LuaEngineError {
@@ -276,12 +285,10 @@ impl LuaEngine {
             .set(
                 "warning",
                 self.lua
-                    .create_function(move |_lua, msg: String| -> LuaResult<()> {
+                    .create_function(|lua, msg: String| -> LuaResult<()> {
                         debug!("warning('{}') called from Lua (immediate)", msg);
-                        unsafe {
-                            let state = &mut *state_ptr;
-                            state.set_warning(msg);
-                        }
+                        let state = Self::get_state_from_registry(lua)?;
+                        state.set_warning(msg);
                         Ok(())
                     })
                     .map_err(|e| LuaEngineError {
@@ -302,16 +309,14 @@ impl LuaEngine {
             .set(
                 "vmove",
                 self.lua
-                    .create_function(move |lua, n: i32| -> LuaResult<()> {
+                    .create_function(|lua, n: i32| -> LuaResult<()> {
                         debug!("vmove({}) called from Lua (immediate)", n);
-                        unsafe {
-                            let state = &mut *state_ptr;
-                            state.move_selection(n);
+                        let state = Self::get_state_from_registry(lua)?;
+                        state.move_selection(n);
 
-                            // Update Lua context immediately
-                            let app_table: Table = lua.globals().get("app")?;
-                            app_table.set("position", state.position)?;
-                        }
+                        // Update Lua context immediately
+                        let app_table: Table = lua.globals().get("app")?;
+                        app_table.set("position", state.position)?;
                         Ok(())
                     })
                     .map_err(|e| LuaEngineError {
@@ -332,16 +337,14 @@ impl LuaEngine {
             .set(
                 "vgoto",
                 self.lua
-                    .create_function(move |lua, n: usize| -> LuaResult<()> {
+                    .create_function(|lua, n: usize| -> LuaResult<()> {
                         debug!("vgoto({}) called from Lua (immediate)", n);
-                        unsafe {
-                            let state = &mut *state_ptr;
-                            state.set_position(n);
+                        let state = Self::get_state_from_registry(lua)?;
+                        state.set_position(n);
 
-                            // Update Lua context immediately
-                            let app_table: Table = lua.globals().get("app")?;
-                            app_table.set("position", state.position)?;
-                        }
+                        // Update Lua context immediately
+                        let app_table: Table = lua.globals().get("app")?;
+                        app_table.set("position", state.position)?;
                         Ok(())
                     })
                     .map_err(|e| LuaEngineError {
@@ -362,17 +365,15 @@ impl LuaEngine {
             .set(
                 "move_top",
                 self.lua
-                    .create_function(move |lua, ()| -> LuaResult<()> {
+                    .create_function(|lua, ()| -> LuaResult<()> {
                         debug!("move_top() called from Lua (immediate)");
-                        unsafe {
-                            let state = &mut *state_ptr;
-                            state.set_position(0);
-                            state.set_vposition(0);
+                        let state = Self::get_state_from_registry(lua)?;
+                        state.set_position(0);
+                        state.set_vposition(0);
 
-                            // Update Lua context immediately
-                            let app_table: Table = lua.globals().get("app")?;
-                            app_table.set("position", state.position)?;
-                        }
+                        // Update Lua context immediately
+                        let app_table: Table = lua.globals().get("app")?;
+                        app_table.set("position", state.position)?;
                         Ok(())
                     })
                     .map_err(|e| LuaEngineError {
@@ -393,16 +394,14 @@ impl LuaEngine {
             .set(
                 "move_bottom",
                 self.lua
-                    .create_function(move |lua, ()| -> LuaResult<()> {
+                    .create_function(|lua, ()| -> LuaResult<()> {
                         debug!("move_bottom() called from Lua (immediate)");
-                        unsafe {
-                            let state = &mut *state_ptr;
-                            state.set_position(usize::MAX);
+                        let state = Self::get_state_from_registry(lua)?;
+                        state.set_position(usize::MAX);
 
-                            // Update Lua context immediately
-                            let app_table: Table = lua.globals().get("app")?;
-                            app_table.set("position", state.position)?;
-                        }
+                        // Update Lua context immediately
+                        let app_table: Table = lua.globals().get("app")?;
+                        app_table.set("position", state.position)?;
                         Ok(())
                     })
                     .map_err(|e| LuaEngineError {
@@ -419,18 +418,60 @@ impl LuaEngine {
                 stack_trace: None,
             })?;
 
-        // Add remaining essential functions
-        self.register_remaining_immediate_functions(state_ptr)?;
+        // Add a few more essential functions for testing
+        // TODO: Add remaining functions as needed
 
-        debug!("Immediate Lua API functions registered");
+        // Add utility functions
+        self.register_utility_functions()?;
+
+        debug!("All Lua API functions registered once at startup");
         Ok(())
     }
 
-    /// Helper function to register remaining immediate functions
-    fn register_remaining_immediate_functions(
+    /// Execute a compiled script with state access via registry
+    pub fn execute_with_state(
         &mut self,
-        _state_ptr: *mut TuiState,
-    ) -> Result<(), LuaEngineError> {
+        script_name: &str,
+        state: &mut TuiState,
+    ) -> Result<Option<String>, LuaEngineError> {
+        // Store state pointer in registry for function access
+        let state_ptr = state as *mut TuiState as usize;
+        self.lua
+            .set_named_registry_value("tui_state_ptr", state_ptr)
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to store state pointer: {}", e),
+                script_name: Some(script_name.to_string()),
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Update Lua context with current state
+        if let Err(e) = self.update_context(state) {
+            // Clear the pointer before returning error
+            let _ = self
+                .lua
+                .set_named_registry_value("tui_state_ptr", mlua::Nil);
+            return Err(LuaEngineError {
+                message: format!("Failed to update Lua context: {}", e),
+                script_name: Some(script_name.to_string()),
+                line_number: None,
+                stack_trace: None,
+            });
+        }
+
+        // Execute the script
+        let result = self.execute_script_async(script_name);
+
+        // Clear the state pointer from registry
+        let _ = self
+            .lua
+            .set_named_registry_value("tui_state_ptr", mlua::Nil);
+
+        result
+    }
+
+    /// Register utility functions that don't need state access
+    fn register_utility_functions(&mut self) -> Result<(), LuaEngineError> {
         let globals = self.lua.globals();
 
         // Essential utility functions

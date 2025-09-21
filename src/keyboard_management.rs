@@ -83,20 +83,8 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine:
             .get_compiled_scripts()
             .contains(&script_name.as_str())
         {
-            // Update Lua context with current state
-            if let Err(e) = lua_engine.update_context(state) {
-                state.set_warning(format!("Failed to update Lua context: {}", e));
-                return;
-            }
-
-            // Register immediate functions with current state
-            if let Err(e) = lua_engine.register_immediate_functions_safe(state) {
-                state.set_warning(format!("Failed to register immediate functions: {}", e));
-                return;
-            }
-
-            // Execute the script with immediate execution
-            match lua_engine.execute_script_async(&script_name) {
+            // Execute the script with efficient immediate execution
+            match lua_engine.execute_with_state(&script_name, state) {
                 Ok(Some(prompt)) => {
                     // Script asking for input - handle in state
                     state.script_prompt = prompt;
