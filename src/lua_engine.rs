@@ -902,34 +902,6 @@ impl LuaEngine {
         Ok(())
     }
 
-    /// Get current record data on demand - this is called when scripts access current.*
-    #[allow(dead_code)]
-    pub fn get_current_record_data(&self, state: &TuiState) -> LuaResult<Table> {
-        let current_table = self.lua.create_table()?;
-
-        if let Some(record) = state.records.get(state.position) {
-            current_table.set("line", record.original.clone())?;
-            current_table.set("line_number", state.position + 1)?;
-            current_table.set("index", record.index)?;
-
-            // Add all parsed fields from the record
-            for (key, value) in &record.data {
-                current_table.set(key.as_str(), value.clone())?;
-            }
-
-            // Add convenience fields
-            current_table.set("lineqs", urlencoding::encode(&record.original).to_string())?;
-        } else {
-            // Set empty values when no record
-            current_table.set("line", "")?;
-            current_table.set("line_number", 0)?;
-            current_table.set("index", 0)?;
-            current_table.set("lineqs", "")?;
-        }
-
-        Ok(current_table)
-    }
-
     /// Convert Mode enum to string for Lua
     fn mode_to_string(&self, mode: &Mode) -> &'static str {
         match mode {

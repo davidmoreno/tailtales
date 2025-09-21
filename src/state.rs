@@ -491,18 +491,13 @@ impl TuiState {
     pub fn exec(&mut self, args: Vec<String>) -> Result<(), String> {
         let mut allargs: Vec<String> = Vec::new();
         allargs.push("-c".to_string());
-        allargs.push(
-            args.iter()
-                .map(|arg| {
-                    if arg.contains(" ") {
-                        format!("\"{}\"", arg.replace("\"", "\\\""))
-                    } else {
-                        arg.to_string()
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join(" "),
-        );
+        // For sh -c, we just join all arguments as a single command string
+        // The shell will parse the command and arguments properly
+        let command_string = args.join(" ");
+
+        allargs.push(command_string.clone());
+
+        log::debug!("Executing command: sh -c '{}'", command_string);
 
         // Execute the command inside a shell
         let child = std::process::Command::new("sh")
@@ -516,28 +511,29 @@ impl TuiState {
                 let exit_code = child.wait();
                 match exit_code {
                     Ok(status) => {
-                        if status.code().unwrap_or(0) != 0 {
+                        let code = status.code().unwrap_or(-1);
+                        log::debug!("Command exited with code: {}", code);
+                        if code != 0 {
                             return Err(format!(
-                                "Command exited with code {}",
-                                status.code().unwrap_or(0)
+                                "Command '{}' exited with code {}",
+                                command_string, code
                             ));
                         }
                     }
                     Err(e) => {
-                        self.set_warning(format!("Failed to get exit code: {}", e));
-                        return Err(format!("Failed to get exit code: {}", e));
+                        let error_msg =
+                            format!("Failed to get exit code for '{}': {}", command_string, e);
+                        log::error!("{}", error_msg);
+                        self.set_warning(error_msg.clone());
+                        return Err(error_msg);
                     }
                 }
             }
             Err(e) => {
-                self.set_warning(format!(
-                    "Failed to execute command: {}. Error: {}",
-                    &allargs[1], e
-                ));
-                return Err(format!(
-                    "Failed to execute command: {}. Error: {}",
-                    &allargs[1], e
-                ));
+                let error_msg = format!("Failed to execute command '{}': {}", command_string, e);
+                log::error!("{}", error_msg);
+                self.set_warning(error_msg.clone());
+                return Err(error_msg);
             }
         };
         Ok(())
@@ -632,7 +628,9 @@ impl TuiState {
             "url_decode(",
             "escape_shell(",
             "debug_log(",
-            "current.",
+            "get_record(",
+            "get_position(",
+            "get_mode(",
             "app.",
         ];
 

@@ -327,6 +327,125 @@ fn test_external_command_functions() {
 }
 
 #[test]
+fn test_exec_function_debugging() {
+    println!("Testing exec function in detail");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Test successful command
+    let result = engine
+        .execute_script_string_with_state("return exec('echo hello')", &mut state)
+        .unwrap();
+    assert_eq!(result, "true", "exec('echo hello') should return true");
+
+    // Test command that should succeed (always available)
+    let result = engine
+        .execute_script_string_with_state("return exec('true')", &mut state)
+        .unwrap();
+    assert_eq!(result, "true", "exec('true') should return true");
+
+    // Test command that should fail
+    let result = engine
+        .execute_script_string_with_state("return exec('false')", &mut state)
+        .unwrap();
+    assert_eq!(result, "false", "exec('false') should return false");
+
+    // Test xdg-open version check (should work without opening anything)
+    let result = engine
+        .execute_script_string_with_state("return exec('xdg-open --version')", &mut state)
+        .unwrap();
+    assert_eq!(result, "true", "xdg-open --version should succeed");
+
+    // Test xdg-open with a URL (this will actually try to open a browser, but should return true)
+    // Note: In a real test environment, this might fail if no display is available
+    let result = engine.execute_script_string_with_state(
+        "return exec('xdg-open https://example.com')",
+        &mut state,
+    );
+    // Don't assert the result since it depends on the environment, just verify it doesn't crash
+    assert!(
+        result.is_ok(),
+        "xdg-open with URL should not crash even if it fails"
+    );
+
+    println!("✓ exec function debugging complete");
+}
+
+#[test]
+fn test_f2_keybinding_simulation() {
+    println!("Testing F2 keybinding with modern get_record() API");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Set position to a record with known content
+    state.position = 1;
+
+    // Test the exact F2 keybinding code from settings.yaml
+    let f2_script = r#"
+        exec('xdg-open https://www.perplexity.ai/search/new?q=' .. url_encode(get_record().original))
+        warning('Opened Perplexity')
+    "#;
+
+    engine.compile_script("test_f2", f2_script).unwrap();
+
+    // Execute the F2 script
+    match engine.execute_with_state("test_f2", &mut state) {
+        Ok(_) => {
+            println!("✓ F2 keybinding with get_record().original works");
+            assert!(state.warning.contains("Opened Perplexity"));
+        }
+        Err(e) => {
+            panic!("F2 keybinding should work: {}", e);
+        }
+    }
+
+    // Test F3 and F4 keybindings as well (DuckDuckGo and Google)
+    let f3_script = r#"
+        exec('xdg-open https://www.duckduckgo.com/?q=' .. url_encode(get_record().original))
+        warning('Opened DuckDuckGo')
+    "#;
+
+    engine.compile_script("test_f3", f3_script).unwrap();
+
+    match engine.execute_with_state("test_f3", &mut state) {
+        Ok(_) => {
+            println!("✓ F3 keybinding works");
+            assert!(state.warning.contains("DuckDuckGo"));
+        }
+        Err(e) => {
+            panic!("F3 keybinding should work: {}", e);
+        }
+    }
+
+    // Test accessing other record fields
+    let record_fields_script = r#"
+        local record = get_record()
+        local level = record.level or "unknown"
+        warning('Record level: ' .. level)
+    "#;
+
+    engine
+        .compile_script("test_record_fields", record_fields_script)
+        .unwrap();
+
+    match engine.execute_with_state("test_record_fields", &mut state) {
+        Ok(_) => {
+            println!("✓ Record field access works");
+            assert!(state.warning.contains("level"));
+        }
+        Err(e) => {
+            panic!("Record field access should work: {}", e);
+        }
+    }
+
+    println!("✓ Modern keybinding simulations successful");
+}
+
+#[test]
 fn test_utility_functions() {
     println!("Testing utility functions (url_encode, url_decode, escape_shell)");
 

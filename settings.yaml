@@ -66,9 +66,9 @@ keybindings:
   "control-del": "clear_records()"
   "control-l": "refresh_screen()"
   "F1": "exec('xdg-open https://github.com/davidmoreno/tailtales/#use'); warning('Opened documentation')"
-  "F2": "exec('xdg-open https://www.perplexity.ai/search/new?q=' .. get_record().lineqs); warning('Opened Perplexity')"
-  "F3": "exec('xdg-open https://www.duckduckgo.com/?q=' .. get_record().lineqs); warning('Opened DuckDuckGo')"
-  "F4": "exec('xdg-open https://google.com/search?q=' .. get_record().lineqs); warning('Opened Google')"
+  "F2": "exec('xdg-open https://www.perplexity.ai/search/new?q=' .. url_encode(get_record().original)); warning('Opened Perplexity')"
+  "F3": "exec('xdg-open https://www.duckduckgo.com/?q=' .. url_encode(get_record().original)); warning('Opened DuckDuckGo')"
+  "F4": "exec('xdg-open https://google.com/search?q=' .. url_encode(get_record().original)); warning('Opened Google')"
   "F12": "lua_repl()"
   "q": "quit()"
   "control-c": |
