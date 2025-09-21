@@ -768,18 +768,31 @@ impl LuaEngine {
         result
     }
 
-    /// Execute a Lua script from a string directly (for REPL)
-    pub fn execute_script_string(&mut self, source: &str) -> Result<String, LuaEngineError> {
-        debug!("Executing Lua script string: {}", source);
+    /// Execute a Lua script from a string with state access (for REPL)
+    pub fn execute_script_string_with_state(
+        &mut self,
+        source: &str,
+        state: &mut TuiState,
+    ) -> Result<String, LuaEngineError> {
+        debug!("Executing Lua script string with state: {}", source);
+
+        // Store state pointer in registry for function access
+        self.set_state_to_registry(Some(state))?;
 
         // Set up print output capture
         let print_output = self.setup_print_capture()?;
 
         // Execute the script and get the result
-        let result = self.execute_lua_code(source)?;
+        let result = self.execute_lua_code(source);
 
-        // Combine print output and return value
-        self.combine_output_and_result(print_output, result)
+        // Clear state pointer after execution
+        let _ = self.set_state_to_registry(None);
+
+        // Handle result and combine with print output
+        match result {
+            Ok(result_str) => self.combine_output_and_result(print_output, result_str),
+            Err(e) => Err(e),
+        }
     }
 
     /// Set up print output capture and return the capture container

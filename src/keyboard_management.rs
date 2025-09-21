@@ -426,7 +426,7 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
                 // Execute the complete multiline code
                 let full_code = state.repl_multiline_buffer.join("\n");
 
-                match lua_engine.execute_script_string(&full_code) {
+                match lua_engine.execute_script_string_with_state(&full_code, state) {
                     Ok(result) => {
                         if !result.is_empty() {
                             // Split multi-line output into separate history entries

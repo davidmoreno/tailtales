@@ -627,6 +627,247 @@ fn test_ask_function_and_goto_line() {
 }
 
 #[test]
+fn test_repl_state_access_functions() {
+    println!("Testing REPL state access functions (get_position, get_record, etc.)");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Set a specific position for testing
+    state.position = 3;
+    state.mode = Mode::Filter;
+
+    // Test get_position()
+    let result = engine
+        .execute_script_string_with_state("return get_position()", &mut state)
+        .unwrap();
+    assert_eq!(result, "3", "get_position() should return current position");
+
+    // Test get_mode()
+    let result = engine
+        .execute_script_string_with_state("return get_mode()", &mut state)
+        .unwrap();
+    assert_eq!(result, "filter", "get_mode() should return current mode");
+
+    // Test get_record_count()
+    let result = engine
+        .execute_script_string_with_state("return get_record_count()", &mut state)
+        .unwrap();
+    assert_eq!(
+        result, "10",
+        "get_record_count() should return number of records"
+    );
+
+    // Test get_record() returns a table
+    let result = engine
+        .execute_script_string_with_state("local r = get_record(); return typeof(r)", &mut state)
+        .unwrap();
+    assert_eq!(result, "table", "get_record() should return a table");
+
+    // Test accessing record fields
+    let result = engine
+        .execute_script_string_with_state("local r = get_record(); return r.line", &mut state)
+        .unwrap();
+    assert!(
+        result.contains("Test log line 3"),
+        "get_record().line should contain the log line"
+    );
+
+    // Test record index
+    let result = engine
+        .execute_script_string_with_state("local r = get_record(); return r.index", &mut state)
+        .unwrap();
+    assert_eq!(
+        result, "3",
+        "get_record().index should match current position"
+    );
+
+    // Test record level field (position 3: 3 % 3 == 0, so should be ERROR)
+    let result = engine
+        .execute_script_string_with_state("local r = get_record(); return r.level", &mut state)
+        .unwrap();
+    assert_eq!(
+        result, "ERROR",
+        "get_record().level should return the set level"
+    );
+
+    println!("✓ All REPL state access functions work correctly");
+}
+
+#[test]
+fn test_repl_interactive_functions() {
+    println!("Testing REPL interactive functions (dir, help, typeof)");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Test dir() function exists and works
+    let result = engine
+        .execute_script_string_with_state("dir(); return 'dir_completed'", &mut state)
+        .unwrap();
+    assert!(
+        result.contains("dir_completed"),
+        "dir() function should execute without error"
+    );
+
+    // Test help() function exists and works
+    let result = engine
+        .execute_script_string_with_state("help(); return 'help_completed'", &mut state)
+        .unwrap();
+    assert!(
+        result.contains("help_completed"),
+        "help() function should execute without error"
+    );
+
+    // Test typeof() function
+    let result = engine
+        .execute_script_string_with_state("return typeof({1, 2, 3})", &mut state)
+        .unwrap();
+    assert_eq!(result, "array[3]", "typeof() should detect arrays");
+
+    let result = engine
+        .execute_script_string_with_state("return typeof({name = 'test'})", &mut state)
+        .unwrap();
+    assert_eq!(result, "table", "typeof() should detect tables");
+
+    let result = engine
+        .execute_script_string_with_state("return typeof('hello')", &mut state)
+        .unwrap();
+    assert_eq!(result, "string", "typeof() should detect strings");
+
+    // Test callable() function
+    let result = engine
+        .execute_script_string_with_state("return callable(print)", &mut state)
+        .unwrap();
+    assert_eq!(result, "true", "callable() should detect functions");
+
+    let result = engine
+        .execute_script_string_with_state("return callable('hello')", &mut state)
+        .unwrap();
+    assert_eq!(
+        result, "false",
+        "callable() should return false for non-functions"
+    );
+
+    println!("✓ All REPL interactive functions work correctly");
+}
+
+#[test]
+fn test_repl_error_handling() {
+    println!("Testing REPL error handling for state-dependent functions");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Test that state functions work with state
+    let result = engine.execute_script_string_with_state("return get_position()", &mut state);
+    assert!(
+        result.is_ok(),
+        "get_position() should work with state access"
+    );
+
+    // Test that state access works with different states
+    let mut other_state = create_test_state_with_records();
+    other_state.position = 7;
+
+    let result = engine.execute_script_string_with_state("return get_position()", &mut other_state);
+    assert!(
+        result.is_ok(),
+        "get_position() should work with different state"
+    );
+    let position_result = result.unwrap();
+    assert_eq!(
+        position_result, "7",
+        "get_position() should return the correct position from different state"
+    );
+
+    // Test multiline scripts with state access
+    let multiline_script = r#"
+        local pos = get_position()
+        local count = get_record_count()
+        return pos .. "/" .. count
+    "#;
+    let result = engine
+        .execute_script_string_with_state(multiline_script, &mut state)
+        .unwrap();
+    assert_eq!(
+        result, "5/10",
+        "Multiline scripts should work with state access"
+    );
+
+    println!("✓ REPL error handling works correctly");
+}
+
+#[test]
+fn test_repl_print_and_table_formatting() {
+    println!("Testing REPL print output and table formatting");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Test print output
+    let result = engine
+        .execute_script_string_with_state("print('Hello, REPL!')", &mut state)
+        .unwrap();
+    assert_eq!(result, "Hello, REPL!", "print() should output to REPL");
+
+    // Test multiple print statements
+    let result = engine
+        .execute_script_string_with_state("print('Line 1'); print('Line 2')", &mut state)
+        .unwrap();
+    assert_eq!(
+        result, "Line 1\nLine 2",
+        "Multiple print statements should appear on separate lines"
+    );
+
+    // Test table formatting
+    let result = engine
+        .execute_script_string_with_state("return {name = 'test', value = 42}", &mut state)
+        .unwrap();
+    assert!(
+        result.contains("name = \"test\""),
+        "Tables should show string values with quotes"
+    );
+    assert!(
+        result.contains("value = 42"),
+        "Tables should show numeric values"
+    );
+
+    // Test array formatting
+    let result = engine
+        .execute_script_string_with_state("return {1, 2, 3}", &mut state)
+        .unwrap();
+    assert!(
+        result.contains("1, 2, 3"),
+        "Arrays should display values in order"
+    );
+
+    // Test nested table depth limiting (create a table deeper than max depth of 3)
+    let result = engine
+        .execute_script_string_with_state(
+            "return {a = {b = {c = {d = {e = {f = 'very_deep'}}}}}}",
+            &mut state,
+        )
+        .unwrap();
+    assert!(
+        result.contains("..."),
+        "Deep nested tables should be truncated"
+    );
+
+    // Test empty table
+    let result = engine
+        .execute_script_string_with_state("return {}", &mut state)
+        .unwrap();
+    assert_eq!(result, "{}", "Empty tables should display as {{}}"); // Escape braces
+
+    println!("✓ REPL print and table formatting work correctly");
+}
+
+#[test]
 fn test_function_registration() {
     println!("Testing that all expected Lua functions are properly registered");
 
@@ -658,7 +899,17 @@ fn test_function_registration() {
         "url_decode",
         "escape_shell",
         "debug_log",
-        "ask", // Add ask to the list of expected functions
+        "ask",
+        "get_position",
+        "get_mode",
+        "get_record_count",
+        "get_record",
+        "lua_repl",
+        // Functions from _init.lua
+        "dir",
+        "help",
+        "callable",
+        "typeof",
     ];
 
     for func_name in &expected_functions {
