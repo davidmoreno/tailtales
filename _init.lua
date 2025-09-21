@@ -142,7 +142,7 @@ function help(topic)
     elseif topic == "records" then
         print("Record Access Help:")
         print("  get_record()    - Get current record as table")
-        print("  record.line     - Raw log line")
+        print("  record.original - Raw log line")
         print("  record.timestamp- Parsed timestamp (if available)")
         print("  record.*        - Other parsed fields")
     else

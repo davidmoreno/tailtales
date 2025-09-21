@@ -121,8 +121,8 @@ keybindings:
   "=": "warning('Line: ' .. get_position())"
   "control-c": |
     local record = get_record()
-    local success = exec('wl-copy "' .. record.line .. '"') or
-                   exec('echo "' .. record.line .. '" | xclip -i -selection clipboard')
+    local success = exec('wl-copy "' .. record.original .. '"') or
+                   exec('echo "' .. record.original .. '" | xclip -i -selection clipboard')
     if success then
       warning("Line copied to clipboard")
     else
@@ -136,14 +136,14 @@ keybindings:
 local action = ask("What do you want to do with this log line? (copy/search/open)")
 if action == "copy" then
     local record = get_record()
-    exec('wl-copy "' .. record.line .. '"')
+    exec('wl-copy "' .. record.original .. '"')
     warning("Copied to clipboard")
 elseif action == "search" then
     local query = ask("Search query:")
     search(query)
 elseif action == "open" then
     local record = get_record()
-    exec('xdg-open "https://google.com/search?q=' .. url_encode(record.line) .. '"')
+    exec('xdg-open "https://google.com/search?q=' .. url_encode(record.original) .. '"')
 end
 ```
 

@@ -1441,7 +1441,7 @@ mod tests {
 
         // Test record getter function
         let record: Table = engine.lua.load("return get_record()").eval().unwrap();
-        let line: String = record.get("line").unwrap();
+        let line: String = record.get("original").unwrap();
         assert_eq!(line, "test log line");
 
         let level: String = record.get("level").unwrap();

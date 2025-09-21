@@ -384,7 +384,7 @@ fn test_complex_function_scenarios() {
     // Test complex script combining utility and state functions
     let complex_script = r#"
         local record = get_record()
-        local encoded_line = url_encode(record.line or "empty")
+        local encoded_line = url_encode(record.original or "empty")
         warning("Would open Perplexity with: " .. encoded_line)
     "#;
 
@@ -399,7 +399,7 @@ fn test_complex_function_scenarios() {
     // Test script combining external command with utility functions
     let clipboard_script = r#"
         local record = get_record()
-        local success = exec('echo "' .. escape_shell(record.line) .. '"')
+        local success = exec('echo "' .. escape_shell(record.original) .. '"')
         if success then
             warning("Line copied to clipboard")
         else
@@ -667,11 +667,11 @@ fn test_repl_state_access_functions() {
 
     // Test accessing record fields
     let result = engine
-        .execute_script_string_with_state("local r = get_record(); return r.line", &mut state)
+        .execute_script_string_with_state("local r = get_record(); return r.original", &mut state)
         .unwrap();
     assert!(
         result.contains("Test log line 3"),
-        "get_record().line should contain the log line"
+        "get_record().original should contain the log line"
     );
 
     // Test record index

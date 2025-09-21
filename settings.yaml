@@ -73,9 +73,9 @@ keybindings:
   "q": "quit()"
   "control-c": |
     local record = get_record()
-    local success = exec('wl-copy "' .. escape_shell(record.line) .. '"')
+    local success = exec('wl-copy "' .. escape_shell(record.original) .. '"')
     if not success then
-      exec('echo "' .. escape_shell(record.line) .. '" | xclip -i -selection clipboard')
+      exec('echo "' .. escape_shell(record.original) .. '" | xclip -i -selection clipboard')
     end
     warning("Line copied to clipboard")
   "j": "vmove(1)"
