@@ -163,7 +163,7 @@ impl LuaEngine {
     /// Initialize the Lua runtime with the TailTales API
     pub fn initialize(&mut self) -> LuaResult<()> {
         self.setup_globals()?;
-        self.register_immediate_functions_once()
+        self.register_global_functions()
             .map_err(|e| mlua::Error::runtime(e.to_string()))?; // Register all functions once at startup
         debug!("Lua engine initialized successfully");
         Ok(())
@@ -237,7 +237,7 @@ impl LuaEngine {
 
     /// Register immediate execution functions once at initialization
     /// Functions will access state via pointer stored in Lua registry during execution
-    fn register_immediate_functions_once(&mut self) -> Result<(), LuaEngineError> {
+    fn register_global_functions(&mut self) -> Result<(), LuaEngineError> {
         let globals = self.lua.globals();
 
         // Core navigation and control commands - immediate execution
