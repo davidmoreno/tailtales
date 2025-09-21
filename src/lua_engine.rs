@@ -121,6 +121,66 @@ impl std::fmt::Display for LuaEngineError {
 
 impl std::error::Error for LuaEngineError {}
 
+impl LuaEngineError {
+    /// Create a simple LuaEngineError with just a message
+    pub fn simple<S: AsRef<str>>(message: S) -> Self {
+        Self {
+            message: message.as_ref().to_string(),
+            script_name: None,
+            line_number: None,
+            stack_trace: None,
+        }
+    }
+
+    /// Create a LuaEngineError with a message and script name
+    pub fn with_script<S: AsRef<str>, T: AsRef<str>>(message: S, script_name: T) -> Self {
+        Self {
+            message: message.as_ref().to_string(),
+            script_name: Some(script_name.as_ref().to_string()),
+            line_number: None,
+            stack_trace: None,
+        }
+    }
+
+    /// Create a LuaEngineError from a format string and arguments
+    pub fn format<T: AsRef<str>>(template: T, error: impl std::fmt::Display) -> Self {
+        Self::simple(format!("{}: {}", template.as_ref(), error))
+    }
+
+    /// Create a LuaEngineError from a format string, arguments, and script name
+    pub fn format_with_script<T: AsRef<str>, S: AsRef<str>>(
+        template: T,
+        error: impl std::fmt::Display,
+        script_name: S,
+    ) -> Self {
+        Self::with_script(format!("{}: {}", template.as_ref(), error), script_name)
+    }
+}
+
+/// Extension trait to make error conversion more ergonomic
+trait LuaEngineErrorExt<T> {
+    fn lua_err<S: AsRef<str>>(self, message: S) -> Result<T, LuaEngineError>;
+    fn lua_err_with_script<S: AsRef<str>, N: AsRef<str>>(
+        self,
+        message: S,
+        script_name: N,
+    ) -> Result<T, LuaEngineError>;
+}
+
+impl<T, E: std::fmt::Display> LuaEngineErrorExt<T> for Result<T, E> {
+    fn lua_err<S: AsRef<str>>(self, message: S) -> Result<T, LuaEngineError> {
+        self.map_err(|e| LuaEngineError::format(message, e))
+    }
+
+    fn lua_err_with_script<S: AsRef<str>, N: AsRef<str>>(
+        self,
+        message: S,
+        script_name: N,
+    ) -> Result<T, LuaEngineError> {
+        self.map_err(|e| LuaEngineError::format_with_script(message, e, script_name))
+    }
+}
+
 /// Represents a suspended coroutine waiting for user input
 #[derive(Debug)]
 pub struct SuspendedCoroutine {
@@ -214,498 +274,198 @@ impl LuaEngine {
                 let state_ptr = state_ref as *mut TuiState as usize;
                 self.lua
                     .set_named_registry_value("tui_state_ptr", state_ptr)
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to store state pointer: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })
+                    .lua_err("Failed to store state pointer")
             }
             None => {
                 // Clear the state pointer from registry
                 self.lua
                     .set_named_registry_value("tui_state_ptr", mlua::Nil)
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to clear state pointer: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })
+                    .lua_err("Failed to clear state pointer")
             }
         }
+    }
+
+    /// Helper function to register a Lua function with minimal boilerplate
+    fn register_function<A, R, F>(&self, name: &str, func: F) -> Result<(), LuaEngineError>
+    where
+        A: mlua::FromLuaMulti,
+        R: mlua::IntoLuaMulti,
+        F: Fn(&mlua::Lua, A) -> LuaResult<R> + Send + Sync + 'static,
+    {
+        let globals = self.lua.globals();
+        let lua_func = self
+            .lua
+            .create_function(func)
+            .lua_err(&format!("Failed to create {}", name))?;
+        globals
+            .set(name, lua_func)
+            .lua_err(&format!("Failed to set {}", name))
     }
 
     /// Register immediate execution functions once at initialization
     /// Functions will access state via pointer stored in Lua registry during execution
     fn register_global_functions(&mut self) -> Result<(), LuaEngineError> {
-        let globals = self.lua.globals();
-
         // Core navigation and control commands - immediate execution
-        globals
-            .set(
-                "quit",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("quit() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.running = false;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create quit: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set quit: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("quit", |lua, ()| -> LuaResult<()> {
+            debug!("quit() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.running = false;
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "warning",
-                self.lua
-                    .create_function(|lua, msg: String| -> LuaResult<()> {
-                        debug!("warning('{}') called from Lua (immediate)", msg);
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.set_warning(msg);
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create warning: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set warning: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("warning", |lua, msg: String| -> LuaResult<()> {
+            debug!("warning('{}') called from Lua (immediate)", msg);
+            let state = Self::get_state_from_registry(lua)?;
+            state.set_warning(msg);
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "vmove",
-                self.lua
-                    .create_function(|lua, n: i32| -> LuaResult<()> {
-                        debug!("vmove({}) called from Lua (immediate)", n);
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.move_selection(n);
+        self.register_function("vmove", |lua, n: i32| -> LuaResult<()> {
+            debug!("vmove({}) called from Lua (immediate)", n);
+            let state = Self::get_state_from_registry(lua)?;
+            state.move_selection(n);
 
-                        // Update Lua context immediately
-                        let app_table: Table = lua.globals().get("app")?;
-                        app_table.set("position", state.position)?;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create vmove: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set vmove: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            // Update Lua context immediately
+            let app_table: Table = lua.globals().get("app")?;
+            app_table.set("position", state.position)?;
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "vgoto",
-                self.lua
-                    .create_function(|lua, n: usize| -> LuaResult<()> {
-                        debug!("vgoto({}) called from Lua (immediate)", n);
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.set_position(n);
+        self.register_function("vgoto", |lua, n: usize| -> LuaResult<()> {
+            debug!("vgoto({}) called from Lua (immediate)", n);
+            let state = Self::get_state_from_registry(lua)?;
+            state.set_position(n);
 
-                        // Update Lua context immediately
-                        let app_table: Table = lua.globals().get("app")?;
-                        app_table.set("position", state.position)?;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create vgoto: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set vgoto: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            // Update Lua context immediately
+            let app_table: Table = lua.globals().get("app")?;
+            app_table.set("position", state.position)?;
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "move_top",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("move_top() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.set_position(0);
-                        state.set_vposition(0);
+        self.register_function("move_top", |lua, ()| -> LuaResult<()> {
+            debug!("move_top() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.set_position(0);
+            state.set_vposition(0);
 
-                        // Update Lua context immediately
-                        let app_table: Table = lua.globals().get("app")?;
-                        app_table.set("position", state.position)?;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create move_top: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set move_top: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            // Update Lua context immediately
+            let app_table: Table = lua.globals().get("app")?;
+            app_table.set("position", state.position)?;
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "move_bottom",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("move_bottom() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.set_position(usize::MAX);
+        self.register_function("move_bottom", |lua, ()| -> LuaResult<()> {
+            debug!("move_bottom() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.set_position(usize::MAX);
 
-                        // Update Lua context immediately
-                        let app_table: Table = lua.globals().get("app")?;
-                        app_table.set("position", state.position)?;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create move_bottom: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set move_bottom: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            // Update Lua context immediately
+            let app_table: Table = lua.globals().get("app")?;
+            app_table.set("position", state.position)?;
+            Ok(())
+        })?;
 
         // Search functions
-        globals
-            .set(
-                "search_next",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("search_next() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.search_next();
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create search_next: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set search_next: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("search_next", |lua, ()| -> LuaResult<()> {
+            debug!("search_next() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.search_next();
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "search_prev",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("search_prev() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.search_prev();
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create search_prev: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set search_prev: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("search_prev", |lua, ()| -> LuaResult<()> {
+            debug!("search_prev() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.search_prev();
+            Ok(())
+        })?;
 
         // Mark functions
-        globals
-            .set(
-                "toggle_mark",
-                self.lua
-                    .create_function(|lua, color: Option<String>| -> LuaResult<()> {
-                        debug!("toggle_mark({:?}) called from Lua (immediate)", color);
-                        let state = Self::get_state_from_registry(lua)?;
-                        let color_str = color.as_deref().unwrap_or("yellow");
-                        state.toggle_mark(color_str);
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create toggle_mark: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set toggle_mark: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function(
+            "toggle_mark",
+            |lua, color: Option<String>| -> LuaResult<()> {
+                debug!("toggle_mark({:?}) called from Lua (immediate)", color);
+                let state = Self::get_state_from_registry(lua)?;
+                let color_str = color.as_deref().unwrap_or("yellow");
+                state.toggle_mark(color_str);
+                Ok(())
+            },
+        )?;
 
-        globals
-            .set(
-                "move_to_next_mark",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("move_to_next_mark() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.move_to_next_mark();
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create move_to_next_mark: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set move_to_next_mark: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("move_to_next_mark", |lua, ()| -> LuaResult<()> {
+            debug!("move_to_next_mark() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.move_to_next_mark();
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "move_to_prev_mark",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("move_to_prev_mark() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.move_to_prev_mark();
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create move_to_prev_mark: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set move_to_prev_mark: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("move_to_prev_mark", |lua, ()| -> LuaResult<()> {
+            debug!("move_to_prev_mark() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.move_to_prev_mark();
+            Ok(())
+        })?;
 
         // Mode and UI functions
-        globals
-            .set(
-                "mode",
-                self.lua
-                    .create_function(|lua, mode_name: String| -> LuaResult<()> {
-                        debug!("mode('{}') called from Lua (immediate)", mode_name);
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.set_mode(&mode_name);
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create mode: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set mode: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("mode", |lua, mode_name: String| -> LuaResult<()> {
+            debug!("mode('{}') called from Lua (immediate)", mode_name);
+            let state = Self::get_state_from_registry(lua)?;
+            state.set_mode(&mode_name);
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "toggle_details",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("toggle_details() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.view_details = !state.view_details;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create toggle_details: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set toggle_details: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("toggle_details", |lua, ()| -> LuaResult<()> {
+            debug!("toggle_details() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.view_details = !state.view_details;
+            Ok(())
+        })?;
 
         // System and utility functions
-        globals
-            .set(
-                "refresh_screen",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("refresh_screen() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.pending_refresh = true;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create refresh_screen: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set refresh_screen: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("refresh_screen", |lua, ()| -> LuaResult<()> {
+            debug!("refresh_screen() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.pending_refresh = true;
+            Ok(())
+        })?;
 
-        globals
-            .set(
-                "clear_records",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("clear_records() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.records.clear();
-                        state.position = 0;
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create clear_records: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set clear_records: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("clear_records", |lua, ()| -> LuaResult<()> {
+            debug!("clear_records() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.records.clear();
+            state.position = 0;
+            Ok(())
+        })?;
 
         // Movement functions
-        globals
-            .set(
-                "hmove",
-                self.lua
-                    .create_function(|lua, n: i32| -> LuaResult<()> {
-                        debug!("hmove({}) called from Lua (immediate)", n);
-                        let state = Self::get_state_from_registry(lua)?;
-                        if n > 0 {
-                            state.scroll_offset_left =
-                                state.scroll_offset_left.saturating_add(n as usize);
-                        } else {
-                            state.scroll_offset_left =
-                                state.scroll_offset_left.saturating_sub((-n) as usize);
-                        }
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create hmove: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set hmove: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("hmove", |lua, n: i32| -> LuaResult<()> {
+            debug!("hmove({}) called from Lua (immediate)", n);
+            let state = Self::get_state_from_registry(lua)?;
+            if n > 0 {
+                state.scroll_offset_left = state.scroll_offset_left.saturating_add(n as usize);
+            } else {
+                state.scroll_offset_left = state.scroll_offset_left.saturating_sub((-n) as usize);
+            }
+            Ok(())
+        })?;
 
         // External command execution
-        globals
-            .set(
-                "exec",
-                self.lua
-                    .create_function(|lua, command: String| -> LuaResult<bool> {
-                        debug!("exec('{}') called from Lua (immediate)", command);
-                        let state = Self::get_state_from_registry(lua)?;
-                        match state.exec(vec![command]) {
-                            Ok(_) => Ok(true),
-                            Err(_) => Ok(false),
-                        }
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create exec: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set exec: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("exec", |lua, command: String| -> LuaResult<bool> {
+            debug!("exec('{}') called from Lua (immediate)", command);
+            let state = Self::get_state_from_registry(lua)?;
+            match state.exec(vec![command]) {
+                Ok(_) => Ok(true),
+                Err(_) => Ok(false),
+            }
+        })?;
 
         // Settings function
-        globals
-            .set(
-                "settings",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<()> {
-                        debug!("settings() called from Lua (immediate)");
-                        let state = Self::get_state_from_registry(lua)?;
-                        state.open_settings();
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create settings: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set settings: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("settings", |lua, ()| -> LuaResult<()> {
+            debug!("settings() called from Lua (immediate)");
+            let state = Self::get_state_from_registry(lua)?;
+            state.open_settings();
+            Ok(())
+        })?;
 
         // Add utility functions
         self.register_utility_functions()?;
@@ -719,248 +479,92 @@ impl LuaEngine {
 
     /// Register state getter functions that retrieve specific pieces of state
     fn register_state_getter_functions(&mut self) -> Result<(), LuaEngineError> {
-        let globals = self.lua.globals();
-
         // Get current record data
-        globals
-            .set(
-                "get_record",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<Table> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        let record_table = lua.create_table()?;
+        self.register_function("get_record", |lua, ()| -> LuaResult<Table> {
+            let state = Self::get_state_from_registry(lua)?;
+            let record_table = lua.create_table()?;
 
-                        if let Some(record) = state.records.get(state.position) {
-                            record_table.set("line", record.original.clone())?;
-                            record_table.set("line_number", state.position + 1)?;
-                            record_table.set("index", record.index)?;
-                            record_table
-                                .set("lineqs", urlencoding::encode(&record.original).to_string())?;
+            if let Some(record) = state.records.get(state.position) {
+                record_table.set("line", record.original.clone())?;
+                record_table.set("line_number", state.position + 1)?;
+                record_table.set("index", record.index)?;
+                record_table.set("lineqs", urlencoding::encode(&record.original).to_string())?;
 
-                            // Add all parsed fields from the record
-                            for (key, value) in &record.data {
-                                record_table.set(key.as_str(), value.clone())?;
-                            }
-                        } else {
-                            // Set empty values when no record
-                            record_table.set("line", "")?;
-                            record_table.set("line_number", 0)?;
-                            record_table.set("index", 0)?;
-                            record_table.set("lineqs", "")?;
-                        }
+                // Add all parsed fields from the record
+                for (key, value) in &record.data {
+                    record_table.set(key.as_str(), value.clone())?;
+                }
+            } else {
+                // Set empty values when no record
+                record_table.set("line", "")?;
+                record_table.set("line_number", 0)?;
+                record_table.set("index", 0)?;
+                record_table.set("lineqs", "")?;
+            }
 
-                        Ok(record_table)
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_record: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_record: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            Ok(record_table)
+        })?;
 
         // Get current position
-        globals
-            .set(
-                "get_position",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<usize> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(state.position)
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_position: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_position: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_position", |lua, ()| -> LuaResult<usize> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(state.position)
+        })?;
 
         // Get viewport information
-        globals
-            .set(
-                "get_viewport",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<Table> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        let viewport_table = lua.create_table()?;
+        self.register_function("get_viewport", |lua, ()| -> LuaResult<Table> {
+            let state = Self::get_state_from_registry(lua)?;
+            let viewport_table = lua.create_table()?;
 
-                        viewport_table.set("height", state.visible_height)?;
-                        viewport_table.set("width", state.visible_width)?;
-                        viewport_table.set("scroll_top", state.scroll_offset_top)?;
-                        viewport_table.set("scroll_left", state.scroll_offset_left)?;
-                        viewport_table.set("view_details", state.view_details)?;
+            viewport_table.set("height", state.visible_height)?;
+            viewport_table.set("width", state.visible_width)?;
+            viewport_table.set("scroll_top", state.scroll_offset_top)?;
+            viewport_table.set("scroll_left", state.scroll_offset_left)?;
+            viewport_table.set("view_details", state.view_details)?;
 
-                        Ok(viewport_table)
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_viewport: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_viewport: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            Ok(viewport_table)
+        })?;
 
         // Get current mode
-        globals
-            .set(
-                "get_mode",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<String> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(match state.mode {
-                            Mode::Normal => "normal",
-                            Mode::Search => "search",
-                            Mode::Filter => "filter",
-                            Mode::Command => "command",
-                            Mode::Warning => "warning",
-                            Mode::ScriptInput => "script_input",
-                        }
-                        .to_string())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_mode: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_mode: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_mode", |lua, ()| -> LuaResult<String> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(match state.mode {
+                Mode::Normal => "normal",
+                Mode::Search => "search",
+                Mode::Filter => "filter",
+                Mode::Command => "command",
+                Mode::Warning => "warning",
+                Mode::ScriptInput => "script_input",
+            }
+            .to_string())
+        })?;
 
         // Get record count
-        globals
-            .set(
-                "get_record_count",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<usize> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(state.records.len())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_record_count: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_record_count: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_record_count", |lua, ()| -> LuaResult<usize> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(state.records.len())
+        })?;
 
         // Get search/filter/command state
-        globals
-            .set(
-                "get_search",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<String> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(state.search.clone())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_search: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_search: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_search", |lua, ()| -> LuaResult<String> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(state.search.clone())
+        })?;
 
-        globals
-            .set(
-                "get_filter",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<String> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(state.filter.clone())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_filter: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_filter: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_filter", |lua, ()| -> LuaResult<String> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(state.filter.clone())
+        })?;
 
-        globals
-            .set(
-                "get_command",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<String> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(state.command.clone())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_command: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_command: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_command", |lua, ()| -> LuaResult<String> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(state.command.clone())
+        })?;
 
-        globals
-            .set(
-                "get_warning",
-                self.lua
-                    .create_function(|lua, ()| -> LuaResult<String> {
-                        let state = Self::get_state_from_registry(lua)?;
-                        Ok(state.warning.clone())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create get_warning: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set get_warning: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("get_warning", |lua, ()| -> LuaResult<String> {
+            let state = Self::get_state_from_registry(lua)?;
+            Ok(state.warning.clone())
+        })?;
 
         debug!("State getter functions registered");
         Ok(())
@@ -995,97 +599,27 @@ impl LuaEngine {
 
     /// Register utility functions that don't need state access
     fn register_utility_functions(&mut self) -> Result<(), LuaEngineError> {
-        let globals = self.lua.globals();
-
         // Essential utility functions
-        globals
-            .set(
-                "url_encode",
-                self.lua
-                    .create_function(|_, input: String| -> LuaResult<String> {
-                        Ok(urlencoding::encode(&input).to_string())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create url_encode: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set url_encode: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("url_encode", |_, input: String| -> LuaResult<String> {
+            Ok(urlencoding::encode(&input).to_string())
+        })?;
 
-        globals
-            .set(
-                "url_decode",
-                self.lua
-                    .create_function(|_, input: String| -> LuaResult<String> {
-                        match urlencoding::decode(&input) {
-                            Ok(decoded) => Ok(decoded.to_string()),
-                            Err(_) => Ok(input), // Return original if decode fails
-                        }
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create url_decode: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set url_decode: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("url_decode", |_, input: String| -> LuaResult<String> {
+            match urlencoding::decode(&input) {
+                Ok(decoded) => Ok(decoded.to_string()),
+                Err(_) => Ok(input), // Return original if decode fails
+            }
+        })?;
 
-        globals
-            .set(
-                "escape_shell",
-                self.lua
-                    .create_function(|_, input: String| -> LuaResult<String> {
-                        // Simple shell escaping: wrap in single quotes and escape single quotes
-                        Ok(format!("'{}'", input.replace("'", "'\"'\"'")))
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create escape_shell: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set escape_shell: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("escape_shell", |_, input: String| -> LuaResult<String> {
+            // Simple shell escaping: wrap in single quotes and escape single quotes
+            Ok(format!("'{}'", input.replace("'", "'\"'\"'")))
+        })?;
 
-        globals
-            .set(
-                "debug_log",
-                self.lua
-                    .create_function(|_, msg: String| -> LuaResult<()> {
-                        debug!("Lua debug: {}", msg);
-                        Ok(())
-                    })
-                    .map_err(|e| LuaEngineError {
-                        message: format!("Failed to create debug_log: {}", e),
-                        script_name: None,
-                        line_number: None,
-                        stack_trace: None,
-                    })?,
-            )
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to set debug_log: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.register_function("debug_log", |_, msg: String| -> LuaResult<()> {
+            debug!("Lua debug: {}", msg);
+            Ok(())
+        })?;
 
         // Define ask() function for coroutines
         self.lua
@@ -1098,12 +632,7 @@ impl LuaEngine {
         "#,
             )
             .exec()
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to define ask function: {}", e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            .lua_err("Failed to define ask function")?;
 
         Ok(())
     }
@@ -1171,12 +700,9 @@ impl LuaEngine {
 
         // Validate and compile the script
         let chunk = self.lua.load(script);
-        let function = chunk.into_function().map_err(|e| LuaEngineError {
-            message: format!("Compilation failed: {}", e),
-            script_name: Some(name.to_string()),
-            line_number: None,
-            stack_trace: None,
-        })?;
+        let function = chunk
+            .into_function()
+            .lua_err_with_script("Compilation failed", name)?;
 
         // Generate bytecode
         let bytecode = function.dump(true); // true for stripping debug info for production
@@ -1199,33 +725,21 @@ impl LuaEngine {
         let path = file_path.as_ref().to_path_buf();
 
         // Read script content
-        let script = fs::read_to_string(&path).map_err(|e| LuaEngineError {
-            message: format!("Failed to read script file: {}", e),
-            script_name: Some(name.to_string()),
-            line_number: None,
-            stack_trace: None,
-        })?;
+        let script =
+            fs::read_to_string(&path).lua_err_with_script("Failed to read script file", name)?;
 
         // Validate and compile
         let chunk = self.lua.load(&script);
-        let function = chunk.into_function().map_err(|e| LuaEngineError {
-            message: format!("Compilation failed: {}", e),
-            script_name: Some(name.to_string()),
-            line_number: None,
-            stack_trace: None,
-        })?;
+        let function = chunk
+            .into_function()
+            .lua_err_with_script("Compilation failed", name)?;
 
         // Generate bytecode
         let bytecode = function.dump(true);
 
         // Store with file metadata
-        let compiled =
-            CompiledScript::from_file(path, script, bytecode).map_err(|e| LuaEngineError {
-                message: format!("Failed to create compiled script: {}", e),
-                script_name: Some(name.to_string()),
-                line_number: None,
-                stack_trace: None,
-            })?;
+        let compiled = CompiledScript::from_file(path, script, bytecode)
+            .lua_err_with_script("Failed to create compiled script", name)?;
 
         self.compiled_scripts.insert(name.to_string(), compiled);
         debug!("Successfully compiled script '{}' from file", name);
@@ -1306,20 +820,11 @@ impl LuaEngine {
                 continue;
             }
 
-            let entries = fs::read_dir(dir).map_err(|e| LuaEngineError {
-                message: format!("Failed to read directory {:?}: {}", dir, e),
-                script_name: None,
-                line_number: None,
-                stack_trace: None,
-            })?;
+            let entries =
+                fs::read_dir(dir).lua_err(format!("Failed to read directory {:?}", dir))?;
 
             for entry in entries {
-                let entry = entry.map_err(|e| LuaEngineError {
-                    message: format!("Failed to read directory entry: {}", e),
-                    script_name: None,
-                    line_number: None,
-                    stack_trace: None,
-                })?;
+                let entry = entry.lua_err("Failed to read directory entry")?;
 
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("lua") {
@@ -1426,12 +931,9 @@ impl LuaEngine {
             Ok(value) => {
                 // Check if this is a yield from ask()
                 if let Value::String(yielded_value) = &value {
-                    let prompt_str = yielded_value.to_str().map_err(|e| LuaEngineError {
-                        message: format!("Invalid yielded string: {}", e),
-                        script_name: Some(script_name.to_string()),
-                        line_number: None,
-                        stack_trace: None,
-                    })?;
+                    let prompt_str = yielded_value
+                        .to_str()
+                        .lua_err_with_script("Invalid yielded string", script_name)?;
 
                     // This is an ask() prompt
                     debug!(
