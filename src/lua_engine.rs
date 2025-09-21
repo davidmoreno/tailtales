@@ -249,6 +249,36 @@ impl LuaEngine {
         }
     }
 
+    /// Store or clear the state pointer in the Lua registry
+    /// Pass Some(state) to store the pointer, None to clear it
+    fn set_state_to_registry(&self, state: Option<&mut TuiState>) -> Result<(), LuaEngineError> {
+        match state {
+            Some(state_ref) => {
+                // Store state pointer in registry for function access
+                let state_ptr = state_ref as *mut TuiState as usize;
+                self.lua
+                    .set_named_registry_value("tui_state_ptr", state_ptr)
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to store state pointer: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })
+            }
+            None => {
+                // Clear the state pointer from registry
+                self.lua
+                    .set_named_registry_value("tui_state_ptr", mlua::Nil)
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to clear state pointer: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })
+            }
+        }
+    }
+
     /// Register immediate execution functions once at initialization
     /// Functions will access state via pointer stored in Lua registry during execution
     fn register_immediate_functions_once(&mut self) -> Result<(), LuaEngineError> {
@@ -735,22 +765,12 @@ impl LuaEngine {
         state: &mut TuiState,
     ) -> Result<Option<String>, LuaEngineError> {
         // Store state pointer in registry for function access
-        let state_ptr = state as *mut TuiState as usize;
-        self.lua
-            .set_named_registry_value("tui_state_ptr", state_ptr)
-            .map_err(|e| LuaEngineError {
-                message: format!("Failed to store state pointer: {}", e),
-                script_name: Some(script_name.to_string()),
-                line_number: None,
-                stack_trace: None,
-            })?;
+        self.set_state_to_registry(Some(state))?;
 
         // Update Lua context with current state
         if let Err(e) = self.update_context(state) {
             // Clear the pointer before returning error
-            let _ = self
-                .lua
-                .set_named_registry_value("tui_state_ptr", mlua::Nil);
+            self.set_state_to_registry(None)?;
             return Err(LuaEngineError {
                 message: format!("Failed to update Lua context: {}", e),
                 script_name: Some(script_name.to_string()),
@@ -770,9 +790,7 @@ impl LuaEngine {
             }
             _ => {
                 // Script completed or errored - clear state pointer
-                let _ = self
-                    .lua
-                    .set_named_registry_value("tui_state_ptr", mlua::Nil);
+                let _ = self.set_state_to_registry(None);
             }
         }
 
@@ -1306,16 +1324,12 @@ impl LuaEngine {
                 Ok(None) => {
                     // Script completed - clear state pointer
                     debug!("Script '{}' completed after input", script_name);
-                    let _ = self
-                        .lua
-                        .set_named_registry_value("tui_state_ptr", mlua::Nil);
+                    let _ = self.set_state_to_registry(None);
                     Ok(())
                 }
                 Err(e) => {
                     // Script errored - clear state pointer
-                    let _ = self
-                        .lua
-                        .set_named_registry_value("tui_state_ptr", mlua::Nil);
+                    let _ = self.set_state_to_registry(None);
                     Err(e)
                 }
             }
@@ -1334,9 +1348,7 @@ impl LuaEngine {
         if let Some(suspended) = self.suspended_coroutine.take() {
             debug!("Cancelled suspended script: {:?}", suspended.script_name);
             // Clear state pointer when cancelling
-            let _ = self
-                .lua
-                .set_named_registry_value("tui_state_ptr", mlua::Nil);
+            let _ = self.set_state_to_registry(None);
         }
     }
 
