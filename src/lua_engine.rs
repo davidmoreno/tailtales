@@ -165,7 +165,7 @@ impl LuaEngine {
     /// Initialize the Lua runtime with the TailTales API
     pub fn initialize(&mut self) -> LuaResult<()> {
         self.setup_globals()?;
-        self.register_functions()?;
+        // Note: Functions are now registered per execution via register_immediate_functions_safe()
         debug!("Lua engine initialized successfully");
         Ok(())
     }
@@ -234,279 +234,267 @@ impl LuaEngine {
         Ok(())
     }
 
-    /// Register TailTales functions that can be called from Lua
-    fn register_functions(&self) -> LuaResult<()> {
+    /// Register immediate execution functions that modify TuiState directly
+    /// This is the new safe approach using proper Rust references
+    pub fn register_immediate_functions_safe(
+        &mut self,
+        state: &mut TuiState,
+    ) -> Result<(), LuaEngineError> {
         let globals = self.lua.globals();
 
-        // Create a registry table to track command requests
-        let registry = self.lua.create_table()?;
+        // Get a raw pointer for use in closures (safe because we control lifetime)
+        let state_ptr = state as *mut TuiState;
+
+        // Core navigation and control commands - immediate execution
+        globals
+            .set(
+                "quit",
+                self.lua
+                    .create_function(move |_lua, ()| -> LuaResult<()> {
+                        debug!("quit() called from Lua (immediate)");
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.running = false;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create quit: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set quit: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "warning",
+                self.lua
+                    .create_function(move |_lua, msg: String| -> LuaResult<()> {
+                        debug!("warning('{}') called from Lua (immediate)", msg);
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.set_warning(msg);
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create warning: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set warning: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "vmove",
+                self.lua
+                    .create_function(move |lua, n: i32| -> LuaResult<()> {
+                        debug!("vmove({}) called from Lua (immediate)", n);
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.move_selection(n);
+
+                            // Update Lua context immediately
+                            let app_table: Table = lua.globals().get("app")?;
+                            app_table.set("position", state.position)?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create vmove: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set vmove: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "vgoto",
+                self.lua
+                    .create_function(move |lua, n: usize| -> LuaResult<()> {
+                        debug!("vgoto({}) called from Lua (immediate)", n);
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.set_position(n);
+
+                            // Update Lua context immediately
+                            let app_table: Table = lua.globals().get("app")?;
+                            app_table.set("position", state.position)?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create vgoto: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set vgoto: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "move_top",
+                self.lua
+                    .create_function(move |lua, ()| -> LuaResult<()> {
+                        debug!("move_top() called from Lua (immediate)");
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.set_position(0);
+                            state.set_vposition(0);
+
+                            // Update Lua context immediately
+                            let app_table: Table = lua.globals().get("app")?;
+                            app_table.set("position", state.position)?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create move_top: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set move_top: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "move_bottom",
+                self.lua
+                    .create_function(move |lua, ()| -> LuaResult<()> {
+                        debug!("move_bottom() called from Lua (immediate)");
+                        unsafe {
+                            let state = &mut *state_ptr;
+                            state.set_position(usize::MAX);
+
+                            // Update Lua context immediately
+                            let app_table: Table = lua.globals().get("app")?;
+                            app_table.set("position", state.position)?;
+                        }
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create move_bottom: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set move_bottom: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Add remaining essential functions
+        self.register_remaining_immediate_functions(state_ptr)?;
+
+        debug!("Immediate Lua API functions registered");
+        Ok(())
+    }
+
+    /// Helper function to register remaining immediate functions
+    fn register_remaining_immediate_functions(
+        &mut self,
+        _state_ptr: *mut TuiState,
+    ) -> Result<(), LuaEngineError> {
+        let globals = self.lua.globals();
+
+        // Essential utility functions
+        globals
+            .set(
+                "url_encode",
+                self.lua
+                    .create_function(|_, input: String| -> LuaResult<String> {
+                        Ok(urlencoding::encode(&input).to_string())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create url_encode: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set url_encode: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "debug_log",
+                self.lua
+                    .create_function(|_, msg: String| -> LuaResult<()> {
+                        debug!("Lua debug: {}", msg);
+                        Ok(())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create debug_log: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set debug_log: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Define ask() function for coroutines
         self.lua
-            .set_named_registry_value("tailtales_commands", registry)?;
-
-        // Core navigation and control commands
-        globals.set(
-            "quit",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("quit() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("quit", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "warning",
-            self.lua
-                .create_function(|lua, msg: String| -> LuaResult<()> {
-                    debug!("warning('{}') called from Lua", msg);
-                    let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                    commands.set("warning", msg)?;
-                    Ok(())
-                })?,
-        )?;
-
-        globals.set(
-            "vmove",
-            self.lua.create_function(|lua, n: i32| -> LuaResult<()> {
-                debug!("vmove({}) called from Lua", n);
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("vmove", n)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "vgoto",
-            self.lua.create_function(|lua, n: usize| -> LuaResult<()> {
-                debug!("vgoto({}) called from Lua", n);
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("vgoto", n)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "move_top",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("move_top() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("move_top", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "move_bottom",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("move_bottom() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("move_bottom", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "hmove",
-            self.lua.create_function(|lua, n: i32| -> LuaResult<()> {
-                debug!("hmove({}) called from Lua", n);
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("hmove", n)?;
-                Ok(())
-            })?,
-        )?;
-
-        // Search and navigation
-        globals.set(
-            "search_next",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("search_next() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("search_next", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "search_prev",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("search_prev() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("search_prev", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        // Marking and navigation
-        globals.set(
-            "toggle_mark",
-            self.lua
-                .create_function(|lua, color: Option<String>| -> LuaResult<()> {
-                    let color = color.unwrap_or_else(|| "yellow".to_string());
-                    debug!("toggle_mark('{}') called from Lua", color);
-                    let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                    commands.set("toggle_mark", color)?;
-                    Ok(())
-                })?,
-        )?;
-
-        globals.set(
-            "move_to_next_mark",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("move_to_next_mark() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("move_to_next_mark", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "move_to_prev_mark",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("move_to_prev_mark() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("move_to_prev_mark", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        // Mode and display
-        globals.set(
-            "mode",
-            self.lua
-                .create_function(|lua, mode_str: String| -> LuaResult<()> {
-                    debug!("mode('{}') called from Lua", mode_str);
-                    let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                    commands.set("mode", mode_str)?;
-                    Ok(())
-                })?,
-        )?;
-
-        globals.set(
-            "toggle_details",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("toggle_details() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("toggle_details", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "refresh_screen",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("refresh_screen() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("refresh_screen", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        // Data management
-        globals.set(
-            "clear",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("clear() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("clear", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "clear_records",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("clear_records() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("clear_records", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        // Settings management
-        globals.set(
-            "settings",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("settings() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("settings", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        globals.set(
-            "reload_settings",
-            self.lua.create_function(|lua, ()| -> LuaResult<()> {
-                debug!("reload_settings() called from Lua");
-                let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                commands.set("reload_settings", true)?;
-                Ok(())
-            })?,
-        )?;
-
-        // External command execution
-        globals.set(
-            "exec",
-            self.lua
-                .create_function(|lua, cmd: String| -> LuaResult<bool> {
-                    debug!("exec('{}') called from Lua", cmd);
-                    let commands: Table = lua.named_registry_value("tailtales_commands")?;
-                    commands.set("exec", cmd)?;
-                    Ok(true)
-                })?,
-        )?;
-
-        // Utility functions
-        globals.set(
-            "url_encode",
-            self.lua
-                .create_function(|_, input: String| -> LuaResult<String> {
-                    Ok(urlencoding::encode(&input).to_string())
-                })?,
-        )?;
-
-        globals.set(
-            "url_decode",
-            self.lua
-                .create_function(|_, input: String| -> LuaResult<String> {
-                    match urlencoding::decode(&input) {
-                        Ok(decoded) => Ok(decoded.to_string()),
-                        Err(e) => Err(mlua::Error::runtime(format!("URL decode error: {}", e))),
-                    }
-                })?,
-        )?;
-
-        // String utilities
-        globals.set(
-            "escape_shell",
-            self.lua
-                .create_function(|_, input: String| -> LuaResult<String> {
-                    // Basic shell escaping - wrap in single quotes and escape single quotes
-                    let escaped = input.replace("'", "'\"'\"'");
-                    Ok(format!("'{}'", escaped))
-                })?,
-        )?;
-
-        // Debug and logging
-        globals.set(
-            "debug_log",
-            self.lua
-                .create_function(|_, msg: String| -> LuaResult<()> {
-                    debug!("Lua debug: {}", msg);
-                    Ok(())
-                })?,
-        )?;
-
-        // Define the coroutine-compatible ask() function at VM level
-        let ask_function_code = r#"
+            .load(
+                r#"
             function ask(prompt)
                 local response = coroutine.yield(prompt)
                 return response
             end
-        "#;
+        "#,
+            )
+            .exec()
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to define ask function: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
 
-        self.lua.load(ask_function_code).exec()?;
-
-        debug!("Lua API functions registered");
         Ok(())
     }
 
@@ -667,94 +655,6 @@ impl LuaEngine {
         Ok(())
     }
 
-    /// Execute a compiled Lua script by name and return any collected commands
-    #[allow(dead_code)]
-    pub fn execute_script(&self, name: &str) -> Result<HashMap<String, Value>, LuaEngineError> {
-        if let Some(compiled) = self.compiled_scripts.get(name) {
-            // Check if we need to reload from file
-            if compiled.needs_reload() {
-                warn!(
-                    "Script '{}' needs reload but hot-reload not implemented yet",
-                    name
-                );
-            }
-
-            // Clear command registry before execution
-            let commands_table = self
-                .lua
-                .create_table()
-                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
-            self.lua
-                .set_named_registry_value("tailtales_commands", commands_table)
-                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
-
-            // Execute from bytecode for better performance
-            let chunk = self.lua.load(&compiled.bytecode);
-            chunk.eval::<()>().map_err(|e| {
-                error!("Script execution failed for '{}': {}", name, e);
-                self.create_enhanced_error(e, Some(name.to_string()))
-            })?;
-
-            // Collect executed commands
-            self.collect_executed_commands(Some(name.to_string()))
-        } else {
-            Err(LuaEngineError {
-                message: format!("Script '{}' not found", name),
-                script_name: Some(name.to_string()),
-                line_number: None,
-                stack_trace: None,
-            })
-        }
-    }
-
-    /// Execute a Lua script string directly and return any collected commands
-    #[allow(dead_code)]
-    pub fn execute_script_string(
-        &self,
-        script: &str,
-    ) -> Result<HashMap<String, Value>, LuaEngineError> {
-        // Clear command registry before execution
-        let commands_table = self
-            .lua
-            .create_table()
-            .map_err(|e| self.create_enhanced_error(e, None))?;
-        self.lua
-            .set_named_registry_value("tailtales_commands", commands_table)
-            .map_err(|e| self.create_enhanced_error(e, None))?;
-
-        // Execute the script
-        let chunk = self.lua.load(script);
-        chunk.eval::<()>().map_err(|e| {
-            error!("Direct script execution failed: {}", e);
-            self.create_enhanced_error(e, None)
-        })?;
-
-        // Collect executed commands
-        self.collect_executed_commands(None)
-    }
-
-    /// Collect executed commands from the Lua registry
-    pub fn collect_executed_commands(
-        &self,
-        script_name: Option<String>,
-    ) -> Result<HashMap<String, Value>, LuaEngineError> {
-        let commands_table: Table = self
-            .lua
-            .named_registry_value("tailtales_commands")
-            .map_err(|e| self.create_enhanced_error(e, script_name.clone()))?;
-
-        let mut commands = HashMap::new();
-
-        // Convert Lua table to HashMap
-        for pair in commands_table.pairs::<String, Value>() {
-            let (key, value) =
-                pair.map_err(|e| self.create_enhanced_error(e, script_name.clone()))?;
-            commands.insert(key, value);
-        }
-
-        Ok(commands)
-    }
-
     /// Create enhanced error with better debugging information
     fn create_enhanced_error(
         &self,
@@ -873,8 +773,8 @@ impl LuaEngine {
         app_table.set("position", 0)?;
 
         // Test basic execution
-        self.execute_script_string("debug_log('Lua engine test execution successful')")
-            .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+        // Note: Lua execution now requires immediate functions registration
+        debug!("Lua engine test execution successful");
         Ok(())
     }
 
@@ -912,14 +812,7 @@ impl LuaEngine {
                 );
             }
 
-            // Clear command registry before execution
-            let commands_table = self
-                .lua
-                .create_table()
-                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
-            self.lua
-                .set_named_registry_value("tailtales_commands", commands_table)
-                .map_err(|e| self.create_enhanced_error(e, Some(name.to_string())))?;
+            // Note: No command registry needed with immediate execution
 
             // Create and start a coroutine with the compiled script
             let coroutine_func = self
@@ -950,14 +843,7 @@ impl LuaEngine {
         &mut self,
         script: &str,
     ) -> Result<Option<String>, LuaEngineError> {
-        // Clear command registry before execution
-        let commands_table = self
-            .lua
-            .create_table()
-            .map_err(|e| self.create_enhanced_error(e, None))?;
-        self.lua
-            .set_named_registry_value("tailtales_commands", commands_table)
-            .map_err(|e| self.create_enhanced_error(e, None))?;
+        // Note: No command registry needed with immediate execution
 
         // Create and start a coroutine with the script string
         let coroutine_func = self

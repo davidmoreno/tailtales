@@ -8,7 +8,7 @@ use crate::{
     settings::Settings,
     state::{Mode, TuiState},
 };
-use mlua::Value;
+use log::debug;
 
 /**
  * This module is responsible for managing the keyboard input and output
@@ -89,7 +89,13 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine:
                 return;
             }
 
-            // Execute the script
+            // Register immediate functions with current state
+            if let Err(e) = lua_engine.register_immediate_functions_safe(state) {
+                state.set_warning(format!("Failed to register immediate functions: {}", e));
+                return;
+            }
+
+            // Execute the script with immediate execution
             match lua_engine.execute_script_async(&script_name) {
                 Ok(Some(prompt)) => {
                     // Script asking for input - handle in state
@@ -99,12 +105,11 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine:
                     state.script_input.clear();
                 }
                 Ok(None) => {
-                    // Script completed - process commands
-                    if let Err(e) =
-                        process_lua_commands_in_state(state, lua_engine, Some(script_name))
-                    {
-                        state.set_warning(format!("Error processing Lua commands: {}", e));
-                    }
+                    // Script completed immediately - no need to process commands since they executed immediately
+                    debug!(
+                        "Script '{}' completed with immediate execution",
+                        script_name
+                    );
                 }
                 Err(e) => {
                     state.set_warning(format!(
@@ -121,127 +126,6 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine:
         }
     } else {
         state.set_warning(format!("Unknown keybinding: {:?}", keyname));
-    }
-}
-
-/// Process commands collected from Lua script execution
-pub fn process_lua_commands_in_state(
-    state: &mut TuiState,
-    lua_engine: &mut LuaEngine,
-    script_name: Option<String>,
-) -> Result<(), String> {
-    match lua_engine.collect_executed_commands(script_name) {
-        Ok(commands) => {
-            for (command, value) in commands {
-                match command.as_str() {
-                    "quit" => {
-                        state.running = false;
-                    }
-                    "warning" => {
-                        if let Value::String(msg) = value {
-                            let msg_str = match msg.to_str() {
-                                Ok(s) => s.to_string(),
-                                Err(_) => "".to_string(),
-                            };
-                            state.set_warning(msg_str);
-                        }
-                    }
-                    "vmove" => {
-                        if let Value::Integer(n) = value {
-                            state.move_selection(n as i32);
-                        }
-                    }
-                    "vgoto" => {
-                        if let Value::Integer(n) = value {
-                            state.set_position(n as usize);
-                        }
-                    }
-                    "move_top" => {
-                        state.set_position(0);
-                        state.set_vposition(0);
-                    }
-                    "move_bottom" => {
-                        state.set_position(usize::MAX);
-                    }
-                    "hmove" => {
-                        if let Value::Integer(n) = value {
-                            state.set_vposition(state.scroll_offset_left as i32 + n as i32);
-                        }
-                    }
-                    "search_next" => {
-                        state.search_next();
-                    }
-                    "search_prev" => {
-                        state.search_prev();
-                    }
-                    "toggle_mark" => {
-                        if let Value::String(color) = value {
-                            let color_str = match color.to_str() {
-                                Ok(s) => s.to_string(),
-                                Err(_) => "yellow".to_string(),
-                            };
-                            state.toggle_mark(&color_str);
-                        }
-                    }
-                    "move_to_next_mark" => {
-                        state.move_to_next_mark();
-                    }
-                    "move_to_prev_mark" => {
-                        state.move_to_prev_mark();
-                    }
-                    "mode" => {
-                        if let Value::String(mode_str) = value {
-                            let mode = match mode_str.to_str() {
-                                Ok(s) => s.to_string(),
-                                Err(_) => "normal".to_string(),
-                            };
-                            state.set_mode(&mode);
-                        }
-                    }
-                    "toggle_details" => {
-                        state.view_details = !state.view_details;
-                    }
-                    "refresh_screen" => {
-                        state.refresh_screen();
-                    }
-                    "clear" => {
-                        state.records.clear();
-                        state.position = 0;
-                        state.scroll_offset_top = 0;
-                        state.scroll_offset_left = 0;
-                    }
-                    "clear_records" => {
-                        state.records.clear();
-                        state.set_position(0);
-                        state.set_vposition(0);
-                    }
-                    "settings" => {
-                        state.open_settings();
-                    }
-                    "reload_settings" => {
-                        state.reload_settings();
-                    }
-                    "exec" => {
-                        if let Value::String(cmd) = value {
-                            let cmd_str = match cmd.to_str() {
-                                Ok(s) => s.to_string(),
-                                Err(_) => "".to_string(),
-                            };
-                            let args: Vec<String> =
-                                cmd_str.split_whitespace().map(String::from).collect();
-                            if let Err(e) = state.exec(args) {
-                                state.set_warning(format!("Exec error: {}", e));
-                            }
-                        }
-                    }
-                    _ => {
-                        // Ignore unknown commands for forward compatibility
-                    }
-                }
-            }
-            Ok(())
-        }
-        Err(e) => Err(format!("Failed to collect commands: {}", e)),
     }
 }
 
@@ -427,10 +311,7 @@ pub fn handle_script_input_mode(
                         state.script_input.clear();
                         state.mode = Mode::Normal;
 
-                        // Process any commands that were executed immediately
-                        if let Err(e) = process_lua_commands_in_state(state, lua_engine, None) {
-                            state.set_warning(format!("Error processing Lua commands: {}", e));
-                        }
+                        // No need to process commands - they executed immediately
                     }
                 }
                 Err(e) => {
