@@ -1,6 +1,7 @@
 use std::cmp::min;
 
 use crossterm::event::{self, KeyCode, KeyEvent};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     ast,
@@ -26,7 +27,7 @@ pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState, lua_engine: &
             handle_filter_mode(key_event, state);
         }
         Mode::Command => {
-            handle_command_mode(key_event, state);
+            handle_command_mode(key_event, state, lua_engine);
         }
         Mode::ScriptInput => {
             handle_script_input_mode(key_event, state, lua_engine);
@@ -199,7 +200,7 @@ pub fn handle_textinput(text: &mut String, position: &mut usize, keyevent: KeyEv
     };
 }
 
-pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     match key_event.code {
         KeyCode::Tab => {
             show_completions(state);
@@ -209,16 +210,62 @@ pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState) {
         }
         KeyCode::Char('\n') => {
             state.mode = Mode::Normal;
-            state.handle_command();
+            handle_command_execution(state, lua_engine);
         }
         KeyCode::Enter => {
             state.mode = Mode::Normal;
-            state.handle_command();
+            handle_command_execution(state, lua_engine);
         }
         _ => {
             handle_textinput(&mut state.command, &mut state.text_edit_position, key_event);
         }
     }
+}
+
+/// Handle execution of user-entered commands from command mode
+pub fn handle_command_execution(state: &mut TuiState, lua_engine: &mut LuaEngine) {
+    let command = state.command.trim().to_string();
+    if command.is_empty() {
+        return;
+    }
+
+    debug!("Executing command from command mode: {}", command);
+
+    // Create a unique script name for the command
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let script_name = format!("cmd_{}", timestamp);
+
+    // Compile the command as a Lua script
+    match lua_engine.compile_script(&script_name, &command) {
+        Ok(_) => {
+            // Execute the compiled script
+            match lua_engine.execute_with_state(&script_name, state) {
+                Ok(Some(prompt)) => {
+                    // Script asking for input - handle in state
+                    state.script_prompt = prompt;
+                    state.script_waiting = true;
+                    state.mode = Mode::ScriptInput;
+                    state.script_input.clear();
+                }
+                Ok(None) => {
+                    // Script completed immediately
+                    debug!("Command '{}' completed successfully", command);
+                }
+                Err(e) => {
+                    state.set_warning(format!("Command execution failed: {}", e));
+                }
+            }
+        }
+        Err(e) => {
+            state.set_warning(format!("Command compilation failed: {}", e));
+        }
+    }
+
+    // Clear the command after execution
+    state.command.clear();
 }
 
 pub fn show_completions(state: &mut TuiState) {

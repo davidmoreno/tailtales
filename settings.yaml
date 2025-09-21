@@ -57,7 +57,7 @@ default_arguments:
 
 keybindings:
   ":": "mode('command')"
-  "=": "warning('Line: ' .. app.position + 1)"
+  "=": "warning('Line: ' .. (get_position() + 1))"
   "|": "mode('filter')"
   "f": "mode('filter')"
   "/": "mode('search')"
@@ -66,14 +66,15 @@ keybindings:
   "control-del": "clear_records()"
   "control-l": "refresh_screen()"
   "F1": "exec('xdg-open https://github.com/davidmoreno/tailtales/#use'); warning('Opened documentation')"
-  "F2": "exec('xdg-open https://www.perplexity.ai/search/new?q=' .. current.lineqs); warning('Opened Perplexity')"
-  "F3": "exec('xdg-open https://www.duckduckgo.com/?q=' .. current.lineqs); warning('Opened DuckDuckGo')"
-  "F4": "exec('xdg-open https://google.com/search?q=' .. current.lineqs); warning('Opened Google')"
+  "F2": "exec('xdg-open https://www.perplexity.ai/search/new?q=' .. get_record().lineqs); warning('Opened Perplexity')"
+  "F3": "exec('xdg-open https://www.duckduckgo.com/?q=' .. get_record().lineqs); warning('Opened DuckDuckGo')"
+  "F4": "exec('xdg-open https://google.com/search?q=' .. get_record().lineqs); warning('Opened Google')"
   "q": "quit()"
   "control-c": |
-    local success = exec('wl-copy "' .. escape_shell(current.line) .. '"')
+    local record = get_record()
+    local success = exec('wl-copy "' .. escape_shell(record.line) .. '"')
     if not success then
-      exec('echo "' .. escape_shell(current.line) .. '" | xclip -i -selection clipboard')
+      exec('echo "' .. escape_shell(record.line) .. '" | xclip -i -selection clipboard')
     end
     warning("Line copied to clipboard")
   "j": "vmove(1)"

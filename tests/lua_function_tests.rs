@@ -273,7 +273,7 @@ fn test_system_functions() {
     let mut state = create_test_state_with_records();
 
     // Test warning function
-    let warning_script = "warning('Line: ' .. (app.position + 1))";
+    let warning_script = "warning('Line: ' .. (get_position() + 1))";
     compile_and_execute_script(&mut engine, &mut state, warning_script).unwrap();
     assert!(
         state.warning.contains("Line:"),
@@ -383,7 +383,8 @@ fn test_complex_function_scenarios() {
 
     // Test complex script combining utility and state functions
     let complex_script = r#"
-        local encoded_line = url_encode(current.line or "empty")
+        local record = get_record()
+        local encoded_line = url_encode(record.line or "empty")
         warning("Would open Perplexity with: " .. encoded_line)
     "#;
 
@@ -397,7 +398,8 @@ fn test_complex_function_scenarios() {
 
     // Test script combining external command with utility functions
     let clipboard_script = r#"
-        local success = exec('echo "' .. escape_shell(current.line) .. '"')
+        local record = get_record()
+        local success = exec('echo "' .. escape_shell(record.line) .. '"')
         if success then
             warning("Line copied to clipboard")
         else

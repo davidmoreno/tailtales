@@ -35,15 +35,15 @@ The system now supports **both** legacy commands (as fallback) and modern Lua sc
 - ✅ mlua 0.11 integration with Lua 5.4
 - ✅ Bytecode compilation and caching
 - ✅ Enhanced error reporting with stack traces
-- ✅ Full application state exposure (`app` table)
-- ✅ Complete record data access (`current` table)
+- ✅ Full application state exposure (via getter functions)
+- ✅ Complete record data access (via `get_record()` function)
 - ✅ All legacy commands available as Lua functions
 - ✅ External `.lua` file support
 - ✅ Hot-reload capability (structure in place)
 - ✅ Script management and performance optimization
 - ✅ Async coroutine support with yield/resume mechanism
 - ✅ Interactive `ask()` function for user input during script execution
-- ✅ Lazy-loaded record data access for performance optimization
+- ✅ On-demand record data access via getter functions for performance optimization
 
 ## LUA Scripting Migration
 
@@ -97,8 +97,8 @@ We want to migrate this system to use LUA scripting via **mlua** (a high-level L
 
 - All existing commands become Lua functions: `quit()`, `vmove(n)`, `toggle_mark(color)`, etc.
 - New `ask(prompt)` function that yields and waits for user input
-- Access to record fields: `current.line`, `current.timestamp`, etc.
-- Application state access: `app.position`, `app.mode`, etc.
+- Access to record fields: `get_record().line`, `get_record().timestamp`, etc.
+- Application state access: `get_position()`, `get_mode()`, etc.
 
 **Tests:** LUA013, LUA014, LUA015, LUA016, LUA017, LUA018, LUA019, LUA020
 
@@ -118,10 +118,11 @@ keybindings:
 
 ```yaml
 keybindings:
-  "=": "warning('Line: ' .. app.position)"
+  "=": "warning('Line: ' .. get_position())"
   "control-c": |
-    local success = exec('wl-copy "' .. current.line .. '"') or
-                   exec('echo "' .. current.line .. '" | xclip -i -selection clipboard')
+    local record = get_record()
+    local success = exec('wl-copy "' .. record.line .. '"') or
+                   exec('echo "' .. record.line .. '" | xclip -i -selection clipboard')
     if success then
       warning("Line copied to clipboard")
     else
@@ -134,13 +135,15 @@ keybindings:
 ```lua
 local action = ask("What do you want to do with this log line? (copy/search/open)")
 if action == "copy" then
-    exec('wl-copy "' .. current.line .. '"')
+    local record = get_record()
+    exec('wl-copy "' .. record.line .. '"')
     warning("Copied to clipboard")
 elseif action == "search" then
     local query = ask("Search query:")
     search(query)
 elseif action == "open" then
-    exec('xdg-open "https://google.com/search?q=' .. url_encode(current.line) .. '"')
+    local record = get_record()
+    exec('xdg-open "https://google.com/search?q=' .. url_encode(record.line) .. '"')
 end
 ```
 
@@ -295,13 +298,13 @@ end
 
 - **✅ LUA007**: Current record data access
 
-  - ✅ Test `current.line`, `current.timestamp` and other record fields via lazy-loaded metatable
+  - ✅ Test `get_record().line`, `get_record().timestamp` and other record fields via getter functions
   - ✅ Verify data type consistency (strings, numbers, booleans)
   - ✅ Test handling of missing or null fields with graceful fallbacks
 
 - **✅ LUA008**: Application state access
 
-  - ✅ Test `app.position`, `app.mode` and other state variables
+  - ✅ Test `get_position()`, `get_mode()` and other state getter functions
   - ✅ Verify state updates are reflected in Lua context including `script_waiting` and `script_prompt`
   - ✅ Test read-only vs read-write access controls
 

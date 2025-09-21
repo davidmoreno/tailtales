@@ -147,12 +147,6 @@ impl TuiState {
             }
         }
     }
-    pub fn handle_command(&mut self) {
-        // Note: This method now needs to be called from Application with LuaEngine
-        self.set_warning(
-            "Command execution requires LuaEngine access from Application".to_string(),
-        );
-    }
 
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;

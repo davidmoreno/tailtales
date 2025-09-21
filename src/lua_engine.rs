@@ -182,52 +182,8 @@ impl LuaEngine {
         app_table.set("record_count", 0)?;
         globals.set("app", app_table)?;
 
-        // Create the 'current' table for current record data
-        // Create lazy-loaded current table using metatable for performance
-        let current_table = self.lua.create_table()?;
-        let current_meta = self.lua.create_table()?;
-
-        // Set up __index metamethod for lazy loading
-        current_meta.set(
-            "__index",
-            self.lua
-                .create_function(|lua, (_, key): (Value, String)| -> LuaResult<Value> {
-                    // Get the current state from the Lua registry
-                    let state_registry = lua.named_registry_value::<Table>("tailtales_state")?;
-                    let position = state_registry.get::<usize>("position")?;
-                    let record_count = state_registry.get::<usize>("record_count")?;
-
-                    // Check if we have a valid record at current position
-                    if position < record_count {
-                        // Access the actual record data from registry
-                        match key.as_str() {
-                            "line" => state_registry.get("current_line"),
-                            "line_number" => Ok(Value::Integer((position + 1) as i64)),
-                            "index" => state_registry.get("current_index"),
-                            "lineqs" => state_registry.get("current_lineqs"),
-                            _ => {
-                                // Try to get parsed field data
-                                let fields_table: Table = state_registry
-                                    .get("current_fields")
-                                    .unwrap_or_else(|_| lua.create_table().unwrap());
-                                fields_table.get(key.as_str()).or_else(|_| Ok(Value::Nil))
-                            }
-                        }
-                    } else {
-                        // No record available
-                        match key.as_str() {
-                            "line" => Ok(Value::String(lua.create_string("")?)),
-                            "line_number" => Ok(Value::Integer(0)),
-                            "index" => Ok(Value::Integer(0)),
-                            "lineqs" => Ok(Value::String(lua.create_string("")?)),
-                            _ => Ok(Value::Nil),
-                        }
-                    }
-                })?,
-        )?;
-
-        current_table.set_metatable(Some(current_meta))?;
-        globals.set("current", current_table)?;
+        // Note: The 'current' table is now replaced by get_record() function
+        // which provides on-demand access to current record data
 
         debug!("Lua global tables initialized");
         Ok(())
@@ -754,7 +710,259 @@ impl LuaEngine {
         // Add utility functions
         self.register_utility_functions()?;
 
+        // Add state getter functions
+        self.register_state_getter_functions()?;
+
         debug!("All Lua API functions registered once at startup");
+        Ok(())
+    }
+
+    /// Register state getter functions that retrieve specific pieces of state
+    fn register_state_getter_functions(&mut self) -> Result<(), LuaEngineError> {
+        let globals = self.lua.globals();
+
+        // Get current record data
+        globals
+            .set(
+                "get_record",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<Table> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        let record_table = lua.create_table()?;
+
+                        if let Some(record) = state.records.get(state.position) {
+                            record_table.set("line", record.original.clone())?;
+                            record_table.set("line_number", state.position + 1)?;
+                            record_table.set("index", record.index)?;
+                            record_table
+                                .set("lineqs", urlencoding::encode(&record.original).to_string())?;
+
+                            // Add all parsed fields from the record
+                            for (key, value) in &record.data {
+                                record_table.set(key.as_str(), value.clone())?;
+                            }
+                        } else {
+                            // Set empty values when no record
+                            record_table.set("line", "")?;
+                            record_table.set("line_number", 0)?;
+                            record_table.set("index", 0)?;
+                            record_table.set("lineqs", "")?;
+                        }
+
+                        Ok(record_table)
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_record: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_record: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Get current position
+        globals
+            .set(
+                "get_position",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<usize> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(state.position)
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_position: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_position: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Get viewport information
+        globals
+            .set(
+                "get_viewport",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<Table> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        let viewport_table = lua.create_table()?;
+
+                        viewport_table.set("height", state.visible_height)?;
+                        viewport_table.set("width", state.visible_width)?;
+                        viewport_table.set("scroll_top", state.scroll_offset_top)?;
+                        viewport_table.set("scroll_left", state.scroll_offset_left)?;
+                        viewport_table.set("view_details", state.view_details)?;
+
+                        Ok(viewport_table)
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_viewport: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_viewport: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Get current mode
+        globals
+            .set(
+                "get_mode",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<String> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(match state.mode {
+                            Mode::Normal => "normal",
+                            Mode::Search => "search",
+                            Mode::Filter => "filter",
+                            Mode::Command => "command",
+                            Mode::Warning => "warning",
+                            Mode::ScriptInput => "script_input",
+                        }
+                        .to_string())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_mode: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_mode: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Get record count
+        globals
+            .set(
+                "get_record_count",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<usize> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(state.records.len())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_record_count: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_record_count: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        // Get search/filter/command state
+        globals
+            .set(
+                "get_search",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<String> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(state.search.clone())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_search: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_search: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "get_filter",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<String> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(state.filter.clone())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_filter: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_filter: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "get_command",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<String> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(state.command.clone())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_command: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_command: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        globals
+            .set(
+                "get_warning",
+                self.lua
+                    .create_function(|lua, ()| -> LuaResult<String> {
+                        let state = Self::get_state_from_registry(lua)?;
+                        Ok(state.warning.clone())
+                    })
+                    .map_err(|e| LuaEngineError {
+                        message: format!("Failed to create get_warning: {}", e),
+                        script_name: None,
+                        line_number: None,
+                        stack_trace: None,
+                    })?,
+            )
+            .map_err(|e| LuaEngineError {
+                message: format!("Failed to set get_warning: {}", e),
+                script_name: None,
+                line_number: None,
+                stack_trace: None,
+            })?;
+
+        debug!("State getter functions registered");
         Ok(())
     }
 
@@ -767,19 +975,7 @@ impl LuaEngine {
         // Store state pointer in registry for function access
         self.set_state_to_registry(Some(state))?;
 
-        // Update Lua context with current state
-        if let Err(e) = self.update_context(state) {
-            // Clear the pointer before returning error
-            self.set_state_to_registry(None)?;
-            return Err(LuaEngineError {
-                message: format!("Failed to update Lua context: {}", e),
-                script_name: Some(script_name.to_string()),
-                line_number: None,
-                stack_trace: None,
-            });
-        }
-
-        // Execute the script
+        // Execute the script directly - state getter functions will access state on demand
         let result = self.execute_script_async(script_name);
 
         // Only clear the state pointer if the script completed (not suspended)
@@ -912,52 +1108,19 @@ impl LuaEngine {
         Ok(())
     }
 
-    /// Update the Lua context with current application state
-    /// Records data is now lazy-loaded via registry for performance
+    /// Update the Lua context with basic application state (kept for backwards compatibility)
+    /// Most state data is now accessed on-demand via getter functions
+    #[allow(dead_code)]
     pub fn update_context(&self, state: &TuiState) -> LuaResult<()> {
         let globals = self.lua.globals();
 
-        // Update app table with full application state
+        // Update basic app table for backwards compatibility
         let app_table: Table = globals.get("app")?;
         app_table.set("position", state.position)?;
         app_table.set("mode", self.mode_to_string(&state.mode))?;
         app_table.set("visible_height", state.visible_height)?;
         app_table.set("visible_width", state.visible_width)?;
         app_table.set("record_count", state.records.len())?;
-        app_table.set("scroll_offset_top", state.scroll_offset_top)?;
-        app_table.set("scroll_offset_left", state.scroll_offset_left)?;
-        app_table.set("view_details", state.view_details)?;
-        app_table.set("search", state.search.clone())?;
-        app_table.set("filter", state.filter.clone())?;
-        app_table.set("command", state.command.clone())?;
-        app_table.set("warning", state.warning.clone())?;
-        app_table.set("script_prompt", state.script_prompt.clone())?;
-        app_table.set("script_waiting", state.script_waiting)?;
-
-        // Update registry with current record data for lazy access
-        let state_registry = self.lua.create_table()?;
-        state_registry.set("position", state.position)?;
-        state_registry.set("record_count", state.records.len())?;
-
-        // Only populate current record data if there's a valid record
-        if let Some(record) = state.records.get(state.position) {
-            state_registry.set("current_line", record.original.clone())?;
-            state_registry.set("current_index", record.index)?;
-            state_registry.set(
-                "current_lineqs",
-                urlencoding::encode(&record.original).to_string(),
-            )?;
-
-            // Store parsed fields in a separate table
-            let fields_table = self.lua.create_table()?;
-            for (key, value) in &record.data {
-                fields_table.set(key.as_str(), value.clone())?;
-            }
-            state_registry.set("current_fields", fields_table)?;
-        }
-
-        self.lua
-            .set_named_registry_value("tailtales_state", state_registry)?;
 
         Ok(())
     }
@@ -1507,28 +1670,36 @@ mod tests {
         let result = engine.update_context(&state);
         assert!(result.is_ok());
 
-        // Test that app state is correctly exposed
-        let app_position: usize = engine.lua.load("return app.position").eval().unwrap();
-        assert_eq!(app_position, 0);
+        // Store state pointer for function access during testing
+        engine.set_state_to_registry(Some(&mut state)).unwrap();
 
-        let app_mode: String = engine.lua.load("return app.mode").eval().unwrap();
-        assert_eq!(app_mode, "search");
+        // Test state getter functions
+        let position: usize = engine.lua.load("return get_position()").eval().unwrap();
+        assert_eq!(position, 0);
 
-        let app_height: usize = engine.lua.load("return app.visible_height").eval().unwrap();
-        assert_eq!(app_height, 30);
+        let mode: String = engine.lua.load("return get_mode()").eval().unwrap();
+        assert_eq!(mode, "search");
 
-        let search_text: String = engine.lua.load("return app.search").eval().unwrap();
+        let viewport: Table = engine.lua.load("return get_viewport()").eval().unwrap();
+        let height: usize = viewport.get("height").unwrap();
+        assert_eq!(height, 30);
+
+        let search_text: String = engine.lua.load("return get_search()").eval().unwrap();
         assert_eq!(search_text, "test search");
 
-        // Test that current record data is exposed
-        let current_line: String = engine.lua.load("return current.line").eval().unwrap();
-        assert_eq!(current_line, "test log line");
+        // Test record getter function
+        let record: Table = engine.lua.load("return get_record()").eval().unwrap();
+        let line: String = record.get("line").unwrap();
+        assert_eq!(line, "test log line");
 
-        let current_level: String = engine.lua.load("return current.level").eval().unwrap();
-        assert_eq!(current_level, "INFO");
+        let level: String = record.get("level").unwrap();
+        assert_eq!(level, "INFO");
 
-        let current_timestamp: String = engine.lua.load("return current.timestamp").eval().unwrap();
-        assert_eq!(current_timestamp, "2024-01-01T00:00:00Z");
+        let timestamp: String = record.get("timestamp").unwrap();
+        assert_eq!(timestamp, "2024-01-01T00:00:00Z");
+
+        // Clear state pointer after test
+        engine.set_state_to_registry(None).unwrap();
     }
 
     #[test]
@@ -1674,15 +1845,21 @@ mod tests {
         let context_result = engine.update_context(&state);
         assert!(context_result.is_ok(), "Failed to update context");
 
-        // Verify enhanced app state access
-        let position: usize = engine.lua.load("return app.position").eval().unwrap();
+        // Store state pointer for function access during testing
+        engine.set_state_to_registry(Some(&mut state)).unwrap();
+
+        // Verify enhanced state access via getter functions
+        let position: usize = engine.lua.load("return get_position()").eval().unwrap();
         assert_eq!(position, 42);
 
-        let mode: String = engine.lua.load("return app.mode").eval().unwrap();
+        let mode: String = engine.lua.load("return get_mode()").eval().unwrap();
         assert_eq!(mode, "filter");
 
-        let warning: String = engine.lua.load("return app.warning").eval().unwrap();
+        let warning: String = engine.lua.load("return get_warning()").eval().unwrap();
         assert_eq!(warning, "Test warning");
+
+        // Clear state pointer after test
+        engine.set_state_to_registry(None).unwrap();
 
         println!("Phase 2 comprehensive test completed successfully!");
         println!("✓ LUA004: Script compilation and bytecode caching");
