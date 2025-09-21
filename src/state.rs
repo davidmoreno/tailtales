@@ -194,7 +194,10 @@ impl TuiState {
                     self.repl_output_history.push(
                         "Supports multiline input: functions, if/do blocks, etc.".to_string(),
                     );
-                    self.repl_output_history.push("Use print() to output text. Available functions: get_position(), get_record(), warning(), quit(), etc.".to_string());
+                    self.repl_output_history.push(
+                        "Use print() to output text, dir() to explore, help() for assistance."
+                            .to_string(),
+                    );
                     self.repl_output_history
                         .push("Press Esc to exit, Ctrl+C to cancel multiline input.".to_string());
                     self.repl_output_history.push("".to_string());

@@ -226,6 +226,7 @@ impl LuaEngine {
         self.setup_print_override()?;
         self.register_global_functions()
             .map_err(|e| mlua::Error::runtime(e.to_string()))?; // Register all functions once at startup
+        self.load_init_script()?;
         debug!("Lua engine initialized successfully");
         Ok(())
     }
@@ -264,6 +265,28 @@ impl LuaEngine {
         self.lua.globals().set("print", print_fn)?;
         debug!("Print function override setup");
         Ok(())
+    }
+
+    /// Load and execute the embedded initialization script
+    fn load_init_script(&mut self) -> LuaResult<()> {
+        let init_script = Self::get_embedded_init_script();
+
+        // Execute the init script
+        match self.lua.load(init_script).exec() {
+            Ok(_) => {
+                debug!("Initialization script loaded successfully");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Failed to load initialization script: {}", e);
+                Err(e)
+            }
+        }
+    }
+
+    /// Get the embedded initialization script
+    fn get_embedded_init_script() -> &'static str {
+        include_str!("../_init.lua")
     }
 
     /// Format a Lua value for display, including table contents
