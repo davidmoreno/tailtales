@@ -470,74 +470,54 @@ impl LuaEngine {
     fn register_global_functions(&mut self) -> Result<(), LuaEngineError> {
         // Core navigation and control commands - immediate execution
         self.register_function("quit", |lua, ()| -> LuaResult<()> {
-            debug!("quit() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.running = false;
             Ok(())
         })?;
 
         self.register_function("warning", |lua, msg: String| -> LuaResult<()> {
-            debug!("warning('{}') called from Lua (immediate)", msg);
             let state = Self::get_state_from_registry(lua)?;
             state.set_warning(msg);
             Ok(())
         })?;
 
         self.register_function("vmove", |lua, n: i32| -> LuaResult<()> {
-            debug!("vmove({}) called from Lua (immediate)", n);
             let state = Self::get_state_from_registry(lua)?;
             state.move_selection(n);
 
-            // Update Lua context immediately
-            let app_table: Table = lua.globals().get("app")?;
-            app_table.set("position", state.position)?;
             Ok(())
         })?;
 
         self.register_function("vgoto", |lua, n: usize| -> LuaResult<()> {
-            debug!("vgoto({}) called from Lua (immediate)", n);
             let state = Self::get_state_from_registry(lua)?;
             state.set_position(n);
 
-            // Update Lua context immediately
-            let app_table: Table = lua.globals().get("app")?;
-            app_table.set("position", state.position)?;
             Ok(())
         })?;
 
         self.register_function("move_top", |lua, ()| -> LuaResult<()> {
-            debug!("move_top() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.set_position(0);
             state.set_vposition(0);
 
-            // Update Lua context immediately
-            let app_table: Table = lua.globals().get("app")?;
-            app_table.set("position", state.position)?;
             Ok(())
         })?;
 
         self.register_function("move_bottom", |lua, ()| -> LuaResult<()> {
-            debug!("move_bottom() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.set_position(usize::MAX);
 
-            // Update Lua context immediately
-            let app_table: Table = lua.globals().get("app")?;
-            app_table.set("position", state.position)?;
             Ok(())
         })?;
 
         // Search functions
         self.register_function("search_next", |lua, ()| -> LuaResult<()> {
-            debug!("search_next() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.search_next();
             Ok(())
         })?;
 
         self.register_function("search_prev", |lua, ()| -> LuaResult<()> {
-            debug!("search_prev() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.search_prev();
             Ok(())
@@ -547,7 +527,6 @@ impl LuaEngine {
         self.register_function(
             "toggle_mark",
             |lua, color: Option<String>| -> LuaResult<()> {
-                debug!("toggle_mark({:?}) called from Lua (immediate)", color);
                 let state = Self::get_state_from_registry(lua)?;
                 let color_str = color.as_deref().unwrap_or("yellow");
                 state.toggle_mark(color_str);
@@ -556,14 +535,12 @@ impl LuaEngine {
         )?;
 
         self.register_function("move_to_next_mark", |lua, ()| -> LuaResult<()> {
-            debug!("move_to_next_mark() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.move_to_next_mark();
             Ok(())
         })?;
 
         self.register_function("move_to_prev_mark", |lua, ()| -> LuaResult<()> {
-            debug!("move_to_prev_mark() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.move_to_prev_mark();
             Ok(())
@@ -571,21 +548,18 @@ impl LuaEngine {
 
         // Mode and UI functions
         self.register_function("mode", |lua, mode_name: String| -> LuaResult<()> {
-            debug!("mode('{}') called from Lua (immediate)", mode_name);
             let state = Self::get_state_from_registry(lua)?;
             state.set_mode(&mode_name);
             Ok(())
         })?;
 
         self.register_function("toggle_details", |lua, ()| -> LuaResult<()> {
-            debug!("toggle_details() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.view_details = !state.view_details;
             Ok(())
         })?;
 
         self.register_function("lua_repl", |lua, ()| -> LuaResult<()> {
-            debug!("lua_repl() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.set_mode("lua_repl");
             Ok(())
@@ -593,14 +567,12 @@ impl LuaEngine {
 
         // System and utility functions
         self.register_function("refresh_screen", |lua, ()| -> LuaResult<()> {
-            debug!("refresh_screen() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.pending_refresh = true;
             Ok(())
         })?;
 
         self.register_function("clear_records", |lua, ()| -> LuaResult<()> {
-            debug!("clear_records() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.records.clear();
             state.position = 0;
@@ -609,7 +581,6 @@ impl LuaEngine {
 
         // Movement functions
         self.register_function("hmove", |lua, n: i32| -> LuaResult<()> {
-            debug!("hmove({}) called from Lua (immediate)", n);
             let state = Self::get_state_from_registry(lua)?;
             if n > 0 {
                 state.scroll_offset_left = state.scroll_offset_left.saturating_add(n as usize);
@@ -621,7 +592,6 @@ impl LuaEngine {
 
         // External command execution
         self.register_function("exec", |lua, command: String| -> LuaResult<bool> {
-            debug!("exec('{}') called from Lua (immediate)", command);
             let state = Self::get_state_from_registry(lua)?;
             match state.exec(vec![command]) {
                 Ok(_) => Ok(true),
@@ -631,7 +601,6 @@ impl LuaEngine {
 
         // Settings function
         self.register_function("settings", |lua, ()| -> LuaResult<()> {
-            debug!("settings() called from Lua (immediate)");
             let state = Self::get_state_from_registry(lua)?;
             state.open_settings();
             Ok(())
