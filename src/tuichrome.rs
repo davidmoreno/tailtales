@@ -593,10 +593,35 @@ impl TuiChrome {
         );
         Self::render_tag(
             &mut spans,
-            "Navigate",
-            "↑↓ PgUp PgDn",
+            "History",
+            "↑↓ arrows",
             state.settings.colors.footer.other,
         );
+        Self::render_tag(
+            &mut spans,
+            "Scroll",
+            "Ctrl+↑↓ PgUp PgDn",
+            state.settings.colors.footer.other,
+        );
+
+        // Show history position if navigating
+        if let Some(index) = state.repl_history_index {
+            if !state.repl_command_history.is_empty() {
+                Self::render_tag(
+                    &mut spans,
+                    &format!("Pos {}/{}", index + 1, state.repl_command_history.len()),
+                    "",
+                    state.settings.colors.footer.command,
+                );
+            }
+        } else if !state.repl_command_history.is_empty() {
+            Self::render_tag(
+                &mut spans,
+                &format!("History: {}", state.repl_command_history.len()),
+                "",
+                state.settings.colors.footer.other,
+            );
+        }
 
         let line = Line::from(spans);
         Block::default()
@@ -656,7 +681,7 @@ impl TuiChrome {
         let cursor_pos = state.text_edit_position;
 
         // Choose prompt based on multiline state
-        let prompt = if state.repl_is_multiline && !state.repl_multiline_buffer.is_empty() {
+        let prompt = if state.repl_is_multiline {
             ">> " // Continuation prompt
         } else {
             "> " // Main prompt

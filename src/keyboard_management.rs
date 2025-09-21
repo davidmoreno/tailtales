@@ -442,9 +442,20 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
                     }
                 }
 
+                // Add command to history with semicolon separators for multiline
+                let history_command = if state.repl_multiline_buffer.len() > 1 {
+                    state.repl_multiline_buffer.join("; ")
+                } else {
+                    full_code
+                };
+                state.add_to_repl_history(history_command);
+
                 // Reset multiline state
                 state.repl_multiline_buffer.clear();
                 state.repl_is_multiline = false;
+
+                // Reset history navigation
+                state.reset_repl_history_navigation();
 
                 // Keep output history reasonable size
                 if state.repl_output_history.len() > 1000 {
@@ -474,18 +485,49 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
             let max_scroll = total_lines.saturating_sub(visible_lines);
             state.repl_scroll_offset = (state.repl_scroll_offset + 10).min(max_scroll);
         }
-        KeyCode::Up => {
+        // Alternative scrolling keys (Ctrl+Up/Down for output history scrolling)
+        KeyCode::Up if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Scroll up one line in output history
             state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(1);
         }
-        KeyCode::Down => {
+        KeyCode::Down if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Scroll down one line in output history
             let visible_lines = state.visible_height.saturating_sub(2);
             let total_lines = state.repl_output_history.len() + 1; // +1 for input line
             let max_scroll = total_lines.saturating_sub(visible_lines);
             state.repl_scroll_offset = (state.repl_scroll_offset + 1).min(max_scroll);
         }
+        KeyCode::Up => {
+            // Navigate command history up (older commands)
+            if state.repl_history_up() {
+                // Auto-scroll to show input line
+                let visible_lines = state.visible_height.saturating_sub(2);
+                let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+                if total_lines > visible_lines {
+                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                }
+            }
+        }
+        KeyCode::Down => {
+            // Navigate command history down (newer commands)
+            if state.repl_history_down() {
+                // Auto-scroll to show input line
+                let visible_lines = state.visible_height.saturating_sub(2);
+                let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+                if total_lines > visible_lines {
+                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                }
+            }
+        }
         _ => {
+            // Reset history navigation when user starts typing
+            if matches!(
+                key_event.code,
+                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete
+            ) {
+                state.reset_repl_history_navigation();
+            }
+
             // Handle text input for the REPL
             handle_textinput(
                 &mut state.repl_input,

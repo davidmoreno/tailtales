@@ -48,6 +48,9 @@ pub struct TuiState {
     pub repl_scroll_offset: usize,
     pub repl_multiline_buffer: Vec<String>,
     pub repl_is_multiline: bool,
+    pub repl_command_history: Vec<String>,
+    pub repl_history_index: Option<usize>,
+    pub repl_temp_input: String,
 }
 
 impl TuiState {
@@ -92,6 +95,9 @@ impl TuiState {
             repl_scroll_offset: 0,
             repl_multiline_buffer: Vec::new(),
             repl_is_multiline: false,
+            repl_command_history: Vec::new(),
+            repl_history_index: None,
+            repl_temp_input: String::new(),
         })
     }
 
@@ -200,8 +206,14 @@ impl TuiState {
                     );
                     self.repl_output_history
                         .push("Press Esc to exit, Ctrl+C to cancel multiline input.".to_string());
+                    self.repl_output_history
+                        .push("Use ↑/↓ arrows to navigate command history.".to_string());
                     self.repl_output_history.push("".to_string());
                 }
+
+                // Load command history from disk when entering REPL mode
+                self.load_repl_history();
+                self.reset_repl_history_navigation();
             }
             _ => {
                 self.set_warning(format!("Unknown mode: {}", mode));
@@ -269,6 +281,123 @@ impl TuiState {
 
         // Input is complete if brackets are balanced and blocks are balanced
         brackets_balanced && blocks_balanced
+    }
+
+    /// Load REPL command history from disk
+    pub fn load_repl_history(&mut self) {
+        if let Some(history_path) = Self::get_repl_history_path() {
+            if let Ok(contents) = std::fs::read_to_string(&history_path) {
+                self.repl_command_history = contents
+                    .lines()
+                    .map(|line| line.to_string())
+                    .filter(|line| !line.is_empty())
+                    .collect();
+            }
+        }
+    }
+
+    /// Save REPL command history to disk
+    pub fn save_repl_history(&self) {
+        if let Some(history_path) = Self::get_repl_history_path() {
+            if let Some(parent) = history_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+
+            let contents = self.repl_command_history.join("\n");
+            let _ = std::fs::write(&history_path, contents);
+        }
+    }
+
+    /// Get the path for REPL history file
+    fn get_repl_history_path() -> Option<std::path::PathBuf> {
+        use xdg::BaseDirectories;
+
+        if let Ok(xdg) = BaseDirectories::with_prefix("tailtales") {
+            if let Ok(path) = xdg.place_config_file("history") {
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    /// Add a command to REPL history
+    pub fn add_to_repl_history(&mut self, command: String) {
+        if command.trim().is_empty() {
+            return;
+        }
+
+        // Don't add duplicate consecutive commands
+        if let Some(last) = self.repl_command_history.last() {
+            if last == &command {
+                return;
+            }
+        }
+
+        self.repl_command_history.push(command);
+
+        // Keep history size reasonable (last 1000 commands)
+        if self.repl_command_history.len() > 1000 {
+            self.repl_command_history.drain(0..500);
+        }
+
+        // Save to disk
+        self.save_repl_history();
+    }
+
+    /// Navigate REPL history up (older commands)
+    pub fn repl_history_up(&mut self) -> bool {
+        if self.repl_command_history.is_empty() {
+            return false;
+        }
+
+        match self.repl_history_index {
+            None => {
+                // First time accessing history - save current input and go to most recent
+                self.repl_temp_input = self.repl_input.clone();
+                self.repl_history_index = Some(self.repl_command_history.len() - 1);
+                self.repl_input =
+                    self.repl_command_history[self.repl_history_index.unwrap()].clone();
+                self.text_edit_position = self.repl_input.len();
+                true
+            }
+            Some(index) => {
+                if index > 0 {
+                    self.repl_history_index = Some(index - 1);
+                    self.repl_input = self.repl_command_history[index - 1].clone();
+                    self.text_edit_position = self.repl_input.len();
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Navigate REPL history down (newer commands)
+    pub fn repl_history_down(&mut self) -> bool {
+        match self.repl_history_index {
+            None => false,
+            Some(index) => {
+                if index < self.repl_command_history.len() - 1 {
+                    self.repl_history_index = Some(index + 1);
+                    self.repl_input = self.repl_command_history[index + 1].clone();
+                    self.text_edit_position = self.repl_input.len();
+                    true
+                } else {
+                    // Back to current input
+                    self.repl_history_index = None;
+                    self.repl_input = self.repl_temp_input.clone();
+                    self.text_edit_position = self.repl_input.len();
+                    true
+                }
+            }
+        }
+    }
+
+    /// Reset REPL history navigation
+    pub fn reset_repl_history_navigation(&mut self) {
+        self.repl_history_index = None;
+        self.repl_temp_input.clear();
     }
 
     pub fn toggle_mark(&mut self, color: &str) {
