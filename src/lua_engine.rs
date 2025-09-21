@@ -650,30 +650,32 @@ impl LuaEngine {
     /// Register state getter functions that retrieve specific pieces of state
     fn register_state_getter_functions(&mut self) -> Result<(), LuaEngineError> {
         // Get current record data
-        self.register_function("get_record", |lua, ()| -> LuaResult<Table> {
-            let state = Self::get_state_from_registry(lua)?;
-            let record_table = lua.create_table()?;
+        self.register_function(
+            "get_record",
+            |lua, index: Option<usize>| -> LuaResult<Option<Table>> {
+                let state = Self::get_state_from_registry(lua)?;
 
-            if let Some(record) = state.records.get(state.position) {
-                record_table.set("line", record.original.clone())?;
-                record_table.set("line_number", state.position + 1)?;
-                record_table.set("index", record.index)?;
-                record_table.set("lineqs", urlencoding::encode(&record.original).to_string())?;
+                // Get record at specified index, or current position if none provided
+                let position = index.unwrap_or(state.position);
 
-                // Add all parsed fields from the record
-                for (key, value) in &record.data {
-                    record_table.set(key.as_str(), value.clone())?;
+                if let Some(record) = state.records.get(position) {
+                    let record_table = lua.create_table()?;
+
+                    // Add basic record elements
+                    record_table.set("original", record.original.clone())?;
+                    record_table.set("index", record.index)?;
+
+                    // Add all fields from the record's data hashmap
+                    for (key, value) in &record.data {
+                        record_table.set(key.as_str(), value.clone())?;
+                    }
+
+                    Ok(Some(record_table))
+                } else {
+                    Ok(None)
                 }
-            } else {
-                // Set empty values when no record
-                record_table.set("line", "")?;
-                record_table.set("line_number", 0)?;
-                record_table.set("index", 0)?;
-                record_table.set("lineqs", "")?;
-            }
-
-            Ok(record_table)
-        })?;
+            },
+        )?;
 
         // Get current position
         self.register_function("get_position", |lua, ()| -> LuaResult<usize> {
