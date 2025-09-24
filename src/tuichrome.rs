@@ -5,6 +5,7 @@ use crate::state::Mode;
 use crate::state::TuiState;
 use crate::utils::ansi_to_style;
 use crate::utils::clean_ansi_text;
+use crate::utils::parse_tabs;
 use crate::utils::reverse_style;
 
 use crossterm::ExecutableCommand;
@@ -267,6 +268,7 @@ impl TuiChrome {
 
     fn render_record_original<'a>(state: &'a TuiState, record: &record::Record) -> Line<'a> {
         let original = &record.original;
+        let original = parse_tabs(original);
         let voffset = state.scroll_offset_left;
         let initial_style = Self::get_row_style(state, &record);
 
@@ -283,7 +285,8 @@ impl TuiChrome {
         }
 
         // Process text and get style changes, we get an array of style changes, with the position of the change, the style, and if it is a match
-        let style_changes = Self::process_text_styles(original, &state.search, initial_style);
+        let style_changes = Self::process_text_styles(&original, &state.search, initial_style);
+        let clean_original = clean_ansi_text(&original);
 
         // Build spans based on style changes
         let mut spans = Vec::new();
@@ -292,7 +295,7 @@ impl TuiChrome {
 
         for change in style_changes {
             if change.position > current_pos {
-                let text = original[current_pos..change.position].to_string();
+                let text = clean_original[current_pos..change.position].to_string();
                 spans.push(Span::styled(text, current_style));
             }
             current_style = change.style;
@@ -300,9 +303,9 @@ impl TuiChrome {
         }
 
         // Add remaining text
-        if current_pos < original.len() {
-            let text = original[current_pos..].to_string();
-            spans.push(Span::styled(text, current_style));
+        let text = &clean_original[current_pos..];
+        if text.len() > 0 {
+            spans.push(Span::styled(text.to_string(), current_style));
         }
 
         Line::from(spans)
@@ -629,5 +632,87 @@ impl Drop for TuiChrome {
     fn drop(&mut self) {
         // restore terminal
         ratatui::restore();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_record_original_tab_and_colors() {
+        let original = "\x1b[32mINFO\x1b[0m\tLog line\t\x1b[31m\tError\x1b[0m";
+        let state = TuiState::new().unwrap();
+        let record = record::Record::new(original.to_string());
+        let line = TuiChrome::render_record_original(&state, &record);
+        println!("line: {:?}", line);
+        assert_eq!(line.spans.len(), 3);
+        let line0 = line.spans.get(0).unwrap();
+        let line1 = line.spans.get(1).unwrap();
+        let line2 = line.spans.get(2).unwrap();
+        assert_eq!(line0.content, "INFO");
+        assert_eq!(line0.style.fg.unwrap(), Color::Green);
+        assert_eq!(line1.content, "    Log line        ");
+        assert!(line1.style.fg.is_none());
+        assert_eq!(line2.content, "        Error");
+        assert_eq!(line2.style.fg.unwrap(), Color::Red);
+    }
+
+    #[test]
+    fn test_render_record_original_vscroll() {
+        let original = "\x1b[32mINFO\x1b[0m\tLog line\t\x1b[31m\tError\x1b[0m";
+        let mut state = TuiState::new().unwrap();
+        let record = record::Record::new(original.to_string());
+        let line = TuiChrome::render_record_original(&state, &record);
+        println!("line: {:?}", line);
+        let texts: Vec<Vec<&str>> = vec![
+            vec!["INFO", "    Log line        ", "        Error"],
+            vec!["NFO", "    Log line        ", "        Error"],
+            vec!["FO", "    Log line        ", "        Error"],
+            vec!["O", "    Log line        ", "        Error"],
+            vec!["    Log line        ", "        Error"],
+            vec!["   Log line        ", "        Error"],
+            vec!["  Log line        ", "        Error"],
+            vec![" Log line        ", "        Error"],
+            vec!["Log line        ", "        Error"],
+            vec!["og line        ", "        Error"],
+            vec!["g line        ", "        Error"],
+            vec![" line        ", "        Error"],
+            vec!["line        ", "        Error"],
+            vec!["ine        ", "        Error"],
+            vec!["ne        ", "        Error"],
+            vec!["e        ", "        Error"],
+            vec!["        ", "        Error"],
+            vec!["       ", "        Error"],
+            vec!["      ", "        Error"],
+            vec!["     ", "        Error"],
+            vec!["    ", "        Error"],
+            vec!["   ", "        Error"],
+            vec!["  ", "        Error"],
+            vec![" ", "        Error"],
+            vec!["        Error"],
+            vec!["       Error"],
+            vec!["      Error"],
+            vec!["     Error"],
+            vec!["    Error"],
+            vec!["   Error"],
+            vec!["  Error"],
+            vec![" Error"],
+            vec!["Error"],
+            vec!["rror"],
+            vec!["ror"],
+            vec!["or"],
+            vec!["r"],
+            vec![],
+        ];
+        for (i, text) in texts.iter().enumerate() {
+            state.scroll_offset_left = i;
+            let line = TuiChrome::render_record_original(&state, &record);
+            println!("line: {:?}", line);
+            assert_eq!(line.spans.len(), text.len());
+            for (j, span) in line.spans.iter().enumerate() {
+                assert_eq!(span.content, text[j]);
+            }
+        }
     }
 }
