@@ -37,11 +37,22 @@ impl TuiChrome {
     }
 
     pub fn update_state(&mut self, state: &mut TuiState) -> io::Result<()> {
-        // update the state
-        let mut visible_lines = self.terminal.size()?.height as i32 - 2;
+        // update the viewport state
+        let visible_width = self.terminal.size()?.width as i32;
+        if visible_width != state.visible_width as i32 {
+            state.visible_width = visible_width as usize;
+        }
+
+        let mut visible_lines = self.terminal.size()?.height as i32 - 2; // header and footer
         if state.view_details && state.records.visible_records.len() > 0 {
-            visible_lines =
-                visible_lines - state.records.visible_records[state.position].data.len() as i32;
+            if let Some(record) = state.records.visible_records.get(state.position) {
+                visible_lines = visible_lines - 3 - 2; // frame + separator + padding
+                visible_lines = visible_lines - record.data.len() as i32; // data lines
+
+                // If more than one line for being too wide, use several lines, minimum 1
+                visible_lines =
+                    visible_lines - ((record.data.len() as i32) / (visible_width / 2)) as i32 + 1;
+            }
         }
 
         if visible_lines < 0 {
@@ -49,10 +60,6 @@ impl TuiChrome {
         }
         if visible_lines != state.visible_height as i32 {
             state.visible_height = visible_lines as usize;
-        }
-        let visible_width = self.terminal.size()?.width as i32;
-        if visible_width != state.visible_width as i32 {
-            state.visible_width = visible_width as usize;
         }
 
         if state.pending_refresh {
@@ -588,9 +595,6 @@ impl TuiChrome {
         );
 
         let right_line = Line::from(spans);
-
-        // On the left I want the text: "Tailtales (C) 2025 David Moreno"
-        // On the right the line
 
         let version = format!("v{}", env!("CARGO_PKG_VERSION"));
         let mut spans = vec![];
