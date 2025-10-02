@@ -206,8 +206,10 @@ impl TuiState {
                     );
                     self.repl_output_history
                         .push("Press Esc to exit, Ctrl+C to cancel multiline input.".to_string());
-                    self.repl_output_history
-                        .push("Use ↑/↓ arrows to navigate command history.".to_string());
+                    self.repl_output_history.push(
+                        "Use ↑/↓ arrows to navigate command history, Ctrl+L to clear screen."
+                            .to_string(),
+                    );
                     self.repl_output_history.push("".to_string());
                 }
 

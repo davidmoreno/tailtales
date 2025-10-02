@@ -579,6 +579,13 @@ impl LuaEngine {
             Ok(())
         })?;
 
+        // Clear REPL console buffer
+        self.register_function("clear", |lua, ()| -> LuaResult<()> {
+            let state = Self::get_state_from_registry(lua)?;
+            state.repl_output_history.clear();
+            Ok(())
+        })?;
+
         // Movement functions
         self.register_function("hmove", |lua, n: i32| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;

@@ -126,6 +126,7 @@ function help(topic)
         print("  quit()          - Exit the application")
         print("  warning(msg)    - Show warning message")
         print("  print(...)      - Output text to REPL")
+        print("  clear()         - Clear REPL console buffer")
     elseif topic == "functions" then
         print("TailTales Functions:")
         print("  Movement: vmove(n), vgoto(n), hmove(n)")

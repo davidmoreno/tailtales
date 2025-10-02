@@ -394,6 +394,10 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
                 state.text_edit_position = 0;
             }
         }
+        KeyCode::Char('l') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+            // Clear REPL console buffer (Ctrl+L)
+            state.repl_output_history.clear();
+        }
         KeyCode::Char('\n') | KeyCode::Enter => {
             let input = state.repl_input.trim().to_string();
 
