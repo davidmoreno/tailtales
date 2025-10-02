@@ -1,4 +1,5 @@
 use chrono::prelude::*;
+use chrono::NaiveDateTime;
 use std::{collections::HashMap, sync::RwLock};
 
 #[derive(Debug)]
@@ -13,6 +14,7 @@ pub enum Parser {
     LogFmt(regex::Regex),
     AutoDatetime,
     Csv(Box<RwLock<CsvParser>>),
+    TransformTimestampIso8601,
 }
 
 #[derive(Debug)]
@@ -41,6 +43,10 @@ impl Parser {
             }
             "csv" => {
                 return Ok(Parser::new_csv());
+            }
+            "transform" => {
+                let rest = parts.next().ok_or(ParserError::InvalidParser(s.into()))?;
+                return Parser::new_transform(rest);
             }
             _ => Err(ParserError::InvalidParser(s.into())),
         }
@@ -113,12 +119,24 @@ impl Parser {
         })))
     }
 
+    pub fn new_transform(transform_type: &str) -> Result<Parser, ParserError> {
+        match transform_type {
+            "timestamp iso8601" => Ok(Parser::TransformTimestampIso8601),
+            "timestamp rfc3339" => Ok(Parser::TransformTimestampIso8601), // RFC3339 is the same as ISO8601
+            _ => Err(ParserError::InvalidParser(format!(
+                "transform {}",
+                transform_type
+            ))),
+        }
+    }
+
     pub fn parse_line(&self, data: HashMap<String, String>, line: &str) -> HashMap<String, String> {
         match self {
             Parser::Regex(_) => self.parse_regex(data, line),
             Parser::AutoDatetime => self.parse_autodate(data, line),
             Parser::Csv(_) => self.parse_csv(data, line),
             Parser::LogFmt(_) => self.parse_logfmt(data, line),
+            Parser::TransformTimestampIso8601 => self.parse_transform_timestamp_iso8601(data, line),
         }
     }
 
@@ -244,6 +262,63 @@ impl Parser {
         }
         parts.push(current);
         parts
+    }
+
+    fn parse_transform_timestamp_iso8601(
+        &self,
+        mut data: HashMap<String, String>,
+        _line: &str,
+    ) -> HashMap<String, String> {
+        // Look for timestamp field in the data
+        if let Some(timestamp) = data.get("timestamp") {
+            // Try to parse various timestamp formats and convert to ISO8601
+            if let Some(iso8601_timestamp) = self.convert_to_iso8601(timestamp) {
+                data.insert("timestamp".to_string(), iso8601_timestamp);
+            }
+        }
+        data
+    }
+
+    fn convert_to_iso8601(&self, timestamp: &str) -> Option<String> {
+        // Try various timestamp formats and convert to ISO8601
+
+        // Format: "2024-01-01T12:30:45Z" (with Z) - already RFC3339
+        if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+            return Some(dt.to_rfc3339());
+        }
+
+        // Format: "2024-01-01T12:30:45.123Z" (with milliseconds) - already RFC3339
+        if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+            return Some(dt.to_rfc3339());
+        }
+
+        // Format: "02/Jan/2024:12:30:45 +0100" (nginx/apache format)
+        if let Ok(dt) = DateTime::parse_from_str(timestamp, "%d/%b/%Y:%H:%M:%S %z") {
+            return Some(dt.to_rfc3339());
+        }
+
+        // Format: "2024-01-01 12:30:45" (space separated) - assume UTC
+        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%d %H:%M:%S") {
+            let utc_dt = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
+            return Some(utc_dt.to_rfc3339());
+        }
+
+        // Format: "2024-01-01T12:30:45" (T separated) - assume UTC
+        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp, "%Y-%m-%dT%H:%M:%S") {
+            let utc_dt = DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc);
+            return Some(utc_dt.to_rfc3339());
+        }
+
+        // Format: "Jan 02 12:30:45" (syslog format) - assume UTC and current year
+        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(timestamp, "%b %d %H:%M:%S") {
+            let now = Utc::now();
+            let dt_with_year = naive_dt.with_year(now.year()).unwrap_or(naive_dt);
+            let utc_dt = DateTime::<Utc>::from_naive_utc_and_offset(dt_with_year, Utc);
+            return Some(utc_dt.to_rfc3339());
+        }
+
+        // If we can't parse it, return None (keep original)
+        None
     }
 }
 
@@ -483,5 +558,122 @@ mod tests {
         let _result = csv_parser.parse_line(HashMap::new(), "header1,header2");
         let result = csv_parser.parse_line(HashMap::new(), "value1,value2");
         assert!(result.contains_key("header1"));
+    }
+
+    #[test]
+    fn test_parser_new_with_transform() {
+        // Test that "transform timestamp iso8601" now works correctly
+        let result = Parser::new("transform timestamp iso8601");
+        assert!(result.is_ok());
+        match result.unwrap() {
+            Parser::TransformTimestampIso8601 => {}
+            _ => panic!("Expected TransformTimestampIso8601 parser"),
+        }
+    }
+
+    #[test]
+    fn test_parser_new_with_empty_string() {
+        // Test that empty string produces InvalidParser error
+        let result = Parser::new("");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ParserError::InvalidParser(msg) => {
+                assert_eq!(msg, "");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parser_new_with_unknown_types() {
+        // Test various unknown parser types that should fail
+        let unknown_types = vec![
+            "transform",
+            "transform unknown_format",
+            "json",
+            "xml",
+            "yaml",
+            "unknown_parser_type",
+        ];
+
+        for parser_type in unknown_types {
+            let result = Parser::new(parser_type);
+            assert!(result.is_err(), "Parser type '{}' should fail", parser_type);
+            match result.unwrap_err() {
+                ParserError::InvalidParser(msg) => {
+                    assert_eq!(msg, parser_type);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_transform_timestamp_iso8601_conversion() {
+        let parser = Parser::new("transform timestamp iso8601").unwrap();
+
+        // Test space-separated format
+        let mut data = HashMap::new();
+        data.insert("timestamp".to_string(), "2024-01-01 12:30:45".to_string());
+        let result = parser.parse_line(data.clone(), "test line");
+        let timestamp = result.get("timestamp").unwrap();
+        assert!(timestamp.contains("2024-01-01T12:30:45"));
+        assert!(timestamp.contains("+00:00") || timestamp.contains("Z"));
+
+        // Test T-separated format
+        data.insert("timestamp".to_string(), "2024-01-01T12:30:45".to_string());
+        let result = parser.parse_line(data.clone(), "test line");
+        let timestamp = result.get("timestamp").unwrap();
+        assert!(timestamp.contains("2024-01-01T12:30:45"));
+        assert!(timestamp.contains("+00:00") || timestamp.contains("Z"));
+
+        // Test RFC3339 format (should remain unchanged)
+        data.insert("timestamp".to_string(), "2024-01-01T12:30:45Z".to_string());
+        let result = parser.parse_line(data.clone(), "test line");
+        let timestamp = result.get("timestamp").unwrap();
+        assert!(timestamp.contains("2024-01-01T12:30:45"));
+        assert!(timestamp.contains("Z") || timestamp.contains("+00:00"));
+
+        // Test nginx/apache format
+        data.insert(
+            "timestamp".to_string(),
+            "02/Jan/2024:12:30:45 +0100".to_string(),
+        );
+        let result = parser.parse_line(data.clone(), "test line");
+        let timestamp = result.get("timestamp").unwrap();
+        assert!(timestamp.contains("2024-01-02T12:30:45"));
+        assert!(timestamp.contains("+01:00"));
+
+        // Test syslog format
+        data.insert("timestamp".to_string(), "Jan 02 12:30:45".to_string());
+        let result = parser.parse_line(data.clone(), "test line");
+        let timestamp = result.get("timestamp").unwrap();
+        assert!(timestamp.contains("12:30:45"));
+
+        // Test with no timestamp field (should not change data)
+        let mut data = HashMap::new();
+        data.insert("other_field".to_string(), "value".to_string());
+        let result = parser.parse_line(data.clone(), "test line");
+        assert_eq!(result.get("other_field"), Some(&"value".to_string()));
+        assert!(result.get("timestamp").is_none());
+
+        // Test with unparseable timestamp (should keep original)
+        data.insert("timestamp".to_string(), "invalid timestamp".to_string());
+        let result = parser.parse_line(data.clone(), "test line");
+        assert_eq!(
+            result.get("timestamp"),
+            Some(&"invalid timestamp".to_string())
+        );
+    }
+
+    #[test]
+    fn test_transform_parser_routing() {
+        // Test that transform parser correctly routes to the right method
+        let transform_parser = Parser::new("transform timestamp iso8601").unwrap();
+        let mut data = HashMap::new();
+        data.insert("timestamp".to_string(), "2024-01-01 12:30:45".to_string());
+
+        let result = transform_parser.parse_line(data, "test line");
+        let timestamp = result.get("timestamp").unwrap();
+        assert!(timestamp.contains("2024-01-01T12:30:45"));
+        assert!(timestamp.contains("+00:00") || timestamp.contains("Z"));
     }
 }

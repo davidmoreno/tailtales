@@ -373,3 +373,151 @@ pub fn load_parsers(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::RulesSettings;
+
+    #[test]
+    fn test_load_parsers_with_transforms() {
+        // Test that load_parsers correctly skips transformation operations
+        let rule = RulesSettings {
+            name: "test".to_string(),
+            file_patterns: vec!["*.log".to_string()],
+            extractors: vec![
+                "logfmt".to_string(),
+                "transform timestamp iso8601".to_string(),
+                "regex (?P<level>\\w+)".to_string(),
+                "transform timestamp rfc3339".to_string(),
+                "pattern <timestamp> <message>".to_string(),
+            ],
+            filters: vec![],
+            columns: vec![],
+        };
+
+        let mut parsers = Vec::new();
+        let result = load_parsers(&rule, &mut parsers);
+
+        // Should succeed without errors
+        assert!(result.is_ok());
+
+        // Should have 5 parsers (logfmt, transform, regex, transform, pattern)
+        assert_eq!(parsers.len(), 5);
+
+        // Verify the parsers are of the expected types
+        match &parsers[0] {
+            parser::Parser::LogFmt(_) => {} // logfmt
+            _ => panic!("Expected LogFmt parser"),
+        }
+
+        match &parsers[1] {
+            parser::Parser::TransformTimestampIso8601 => {} // transform timestamp iso8601
+            _ => panic!("Expected TransformTimestampIso8601 parser"),
+        }
+
+        match &parsers[2] {
+            parser::Parser::Regex(_) => {} // regex
+            _ => panic!("Expected Regex parser"),
+        }
+
+        match &parsers[3] {
+            parser::Parser::TransformTimestampIso8601 => {} // transform timestamp rfc3339 (same as iso8601)
+            _ => panic!("Expected TransformTimestampIso8601 parser"),
+        }
+
+        match &parsers[4] {
+            parser::Parser::Regex(_) => {} // pattern creates a Regex parser
+            _ => panic!("Expected Regex parser from pattern"),
+        }
+    }
+
+    #[test]
+    fn test_load_parsers_with_invalid_parser() {
+        // Test that load_parsers still fails for invalid parser types (not transforms)
+        let rule = RulesSettings {
+            name: "test".to_string(),
+            file_patterns: vec!["*.log".to_string()],
+            extractors: vec!["logfmt".to_string(), "invalid_parser_type".to_string()],
+            filters: vec![],
+            columns: vec![],
+        };
+
+        let mut parsers = Vec::new();
+        let result = load_parsers(&rule, &mut parsers);
+
+        // Should fail with InvalidParser error
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            parser::ParserError::InvalidParser(msg) => {
+                assert_eq!(msg, "invalid_parser_type");
+            }
+        }
+    }
+
+    #[test]
+    fn test_load_parsers_with_real_world_scenario() {
+        // Test the exact scenario from the user's report: nginx rule with transform
+        let rule = RulesSettings {
+            name: "nginx".to_string(),
+            file_patterns: vec!["nginx/*.log".to_string()],
+            extractors: vec![
+                "pattern <ip> - <user> [<timestamp>] \"<method> <url> <protocol>\" <status> <bytes> \"<referer>\" \"<user_agent>\"".to_string(),
+                "transform timestamp iso8601".to_string(),
+            ],
+            filters: vec![],
+            columns: vec![],
+        };
+
+        let mut parsers = Vec::new();
+        let result = load_parsers(&rule, &mut parsers);
+
+        // Should succeed without errors
+        assert!(result.is_ok());
+
+        // Should have 2 parsers (pattern and transform)
+        assert_eq!(parsers.len(), 2);
+
+        // Verify the parsers are of the expected types
+        match &parsers[0] {
+            parser::Parser::Regex(_) => {} // pattern creates a Regex parser
+            _ => panic!("Expected Regex parser from pattern"),
+        }
+
+        match &parsers[1] {
+            parser::Parser::TransformTimestampIso8601 => {} // transform timestamp iso8601
+            _ => panic!("Expected TransformTimestampIso8601 parser"),
+        }
+    }
+
+    #[test]
+    fn test_load_parsers_with_empty_file_scenario() {
+        // Test the scenario with empty file (/dev/null) - default rule
+        let rule = RulesSettings {
+            name: "default".to_string(),
+            file_patterns: vec![".*".to_string()],
+            extractors: vec![
+                "logfmt".to_string(),
+                "regex (?P<timestamp>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2})".to_string(),
+                "regex (?P<timestamp>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.\\d{3}Z)"
+                    .to_string(),
+                "regex (?P<level>info|warning|error|debug|warn)".to_string(),
+                "regex (?P<date>\\d{4}-\\d{2}-\\d{2})".to_string(),
+                "regex (?P<what>status|upgrade|startup)".to_string(),
+                "autodatetime".to_string(),
+            ],
+            filters: vec![],
+            columns: vec![],
+        };
+
+        let mut parsers = Vec::new();
+        let result = load_parsers(&rule, &mut parsers);
+
+        // Should succeed without errors
+        assert!(result.is_ok());
+
+        // Should have 7 parsers (no transforms in this rule)
+        // logfmt + 5 regex patterns + autodatetime = 7 parsers
+        assert_eq!(parsers.len(), 7);
+    }
+}
