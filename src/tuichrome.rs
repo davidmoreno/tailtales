@@ -1,11 +1,9 @@
 use crate::events::TuiEvent;
+use crate::lua_console::{render_console_footer, render_console_output};
 use crate::record;
 use crate::settings::string_to_style;
-use crate::state::{ConsoleLine, Mode, TuiState};
-use crate::utils::ansi_to_style;
-use crate::utils::clean_ansi_text;
-use crate::utils::parse_tabs;
-use crate::utils::reverse_style;
+use crate::state::{Mode, TuiState};
+use crate::utils::{ansi_to_style, clean_ansi_text, parse_tabs, reverse_style};
 
 use crossterm::ExecutableCommand;
 use ratatui::{prelude::*, widgets::*};
@@ -572,167 +570,11 @@ impl TuiChrome {
     }
 
     pub fn render_footer_lua_repl(state: &TuiState) -> Block {
-        // Simple footer for REPL mode - no input field here since input is shown inline
-        let mut spans = vec![];
-
-        if state.repl_is_multiline {
-            Self::render_tag(
-                &mut spans,
-                "Multiline Mode",
-                "Ctrl+C to cancel",
-                state.settings.colors.footer.command,
-            );
-        }
-
-        Self::render_tag(
-            &mut spans,
-            "Lua REPL",
-            "ESC to exit",
-            state.settings.colors.footer.other,
-        );
-        Self::render_tag(
-            &mut spans,
-            "History",
-            "↑↓ arrows",
-            state.settings.colors.footer.other,
-        );
-        Self::render_tag(
-            &mut spans,
-            "Scroll",
-            "Ctrl+↑↓ PgUp PgDn",
-            state.settings.colors.footer.other,
-        );
-
-        // Show history position if navigating
-        if let Some(index) = state.repl_history_index {
-            if !state.repl_command_history.is_empty() {
-                Self::render_tag(
-                    &mut spans,
-                    &format!("Pos {}/{}", index + 1, state.repl_command_history.len()),
-                    "",
-                    state.settings.colors.footer.command,
-                );
-            }
-        } else if !state.repl_command_history.is_empty() {
-            Self::render_tag(
-                &mut spans,
-                &format!("History: {}", state.repl_command_history.len()),
-                "",
-                state.settings.colors.footer.other,
-            );
-        }
-
-        let line = Line::from(spans);
-        Block::default()
-            .title_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
-            .title(line)
+        render_console_footer(&state.lua_console, &state.settings)
     }
 
     pub fn render_repl_output<'a>(state: &'a TuiState) -> Paragraph<'a> {
-        let visible_lines = state.visible_height.saturating_sub(2); // Account for footer
-        let start_line = state.repl_scroll_offset;
-
-        // Create a combined list of history lines
-        let mut lines: Vec<Line> = state
-            .repl_output_history
-            .iter()
-            .skip(start_line)
-            .take(visible_lines)
-            .map(|console_line| {
-                match console_line {
-                    ConsoleLine::Stdout(msg) => {
-                        if msg.starts_with("> ") {
-                            // Input line - style differently
-                            Line::from(Span::styled(
-                                msg.clone(),
-                                Style::default().fg(Color::Green).bold(),
-                            ))
-                        } else {
-                            // Output line - normal style
-                            Line::from(Span::styled(
-                                msg.clone(),
-                                Style::default().fg(Color::White),
-                            ))
-                        }
-                    }
-                    ConsoleLine::Stderr(msg) => {
-                        // Error line - style in red
-                        Line::from(Span::styled(msg.clone(), Style::default().fg(Color::Red)))
-                    }
-                }
-            })
-            .collect();
-
-        // Add current input line with cursor (only if we have space)
-        if lines.len() < visible_lines {
-            let input_line = Self::render_repl_input_line(state);
-            lines.push(input_line);
-        }
-
-        let paragraph = Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .title("Lua REPL Output")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Blue)),
-            )
-            .wrap(Wrap { trim: false });
-
-        paragraph
-    }
-
-    fn render_repl_input_line(state: &TuiState) -> Line {
-        let input = &state.repl_input;
-        let cursor_pos = state.text_edit_position;
-
-        // Choose prompt based on multiline state
-        let prompt = if state.repl_is_multiline {
-            ">> " // Continuation prompt
-        } else {
-            "> " // Main prompt
-        };
-
-        // Create spans for the input line with cursor visualization
-        let mut spans = vec![Span::styled(
-            prompt.to_string(),
-            Style::default().fg(Color::Green).bold(),
-        )];
-
-        if input.is_empty() {
-            // Show cursor at start when empty - use a space with reversed style
-            spans.push(Span::styled(
-                " ".to_string(),
-                Style::default().fg(Color::Black).bg(Color::Green),
-            ));
-        } else {
-            // Insert characters with cursor reversal
-            let chars: Vec<char> = input.chars().collect();
-            for (i, &ch) in chars.iter().enumerate() {
-                if i == cursor_pos {
-                    // Reverse the character under cursor
-                    spans.push(Span::styled(
-                        ch.to_string(),
-                        Style::default().fg(Color::Black).bg(Color::Green),
-                    ));
-                } else {
-                    // Normal character
-                    spans.push(Span::styled(
-                        ch.to_string(),
-                        Style::default().fg(Color::Green).bold(),
-                    ));
-                }
-            }
-
-            // If cursor is at the end, add a reversed space
-            if cursor_pos >= chars.len() {
-                spans.push(Span::styled(
-                    " ".to_string(),
-                    Style::default().fg(Color::Black).bg(Color::Green),
-                ));
-            }
-        }
-
-        Line::from(spans)
+        render_console_output(&state.lua_console, state.visible_height)
     }
 
     pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {

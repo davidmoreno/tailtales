@@ -11,7 +11,8 @@
 //! - Full record data exposure and application state access
 //! - Improved parameter validation and type conversion
 
-use crate::state::{ConsoleLine, Mode, TuiState};
+use crate::lua_console::ConsoleLine;
+use crate::state::{Mode, TuiState};
 use log::{debug, error, warn};
 use mlua::prelude::LuaError;
 use mlua::{FromLua, Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
@@ -624,8 +625,8 @@ impl LuaEngine {
         // Clear REPL console buffer
         self.register_function("clear", |lua, ()| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
-            state.repl_scroll_offset = 0;
-            state.repl_output_history.clear();
+            state.lua_console.scroll_offset = 0;
+            state.lua_console.output_history.clear();
             Ok(())
         })?;
 

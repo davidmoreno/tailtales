@@ -6,9 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::{
     ast,
     completions::{handle_command_completion, handle_repl_completion},
+    lua_console::ConsoleLine,
     lua_engine::LuaEngine,
     settings::Settings,
-    state::{ConsoleLine, Mode, TuiState},
+    state::{Mode, TuiState},
 };
 use log::debug;
 
@@ -358,68 +359,74 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
         KeyCode::Esc | KeyCode::F(12) => {
             // Exit REPL mode back to Normal
             state.mode = Mode::Normal;
-            state.repl_input.clear();
-            state.text_edit_position = 0;
+            state.lua_console.input.clear();
+            state.lua_console.text_edit_position = 0;
             // Reset multiline state
-            state.repl_multiline_buffer.clear();
-            state.repl_is_multiline = false;
+            state.lua_console.multiline_buffer.clear();
+            state.lua_console.is_multiline = false;
         }
         KeyCode::Char('c') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Cancel current multiline input (Ctrl+C)
-            if state.repl_is_multiline {
+            if state.lua_console.is_multiline {
                 state
-                    .repl_output_history
+                    .lua_console
+                    .output_history
                     .push(ConsoleLine::Stdout("^C".to_string()));
-                state.repl_multiline_buffer.clear();
-                state.repl_is_multiline = false;
-                state.repl_input.clear();
-                state.text_edit_position = 0;
+                state.lua_console.multiline_buffer.clear();
+                state.lua_console.is_multiline = false;
+                state.lua_console.input.clear();
+                state.lua_console.text_edit_position = 0;
             }
         }
         KeyCode::Char('l') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Clear REPL console buffer (Ctrl+L)
-            state.repl_output_history.clear();
+            state.lua_console.output_history.clear();
         }
         KeyCode::Tab => {
             // Tab completion for Lua REPL
             handle_repl_completion(state, lua_engine);
         }
         KeyCode::Char('\n') | KeyCode::Enter => {
-            let input = state.repl_input.trim().to_string();
+            let input = state.lua_console.input.trim().to_string();
 
-            if input.is_empty() && !state.repl_is_multiline {
+            if input.is_empty() && !state.lua_console.is_multiline {
                 // Empty input - add empty line with prompt to history for console interactivity check
                 state
-                    .repl_output_history
+                    .lua_console
+                    .output_history
                     .push(ConsoleLine::Stdout("> ".to_string()));
 
                 // Clear current input line for next input
-                state.repl_input.clear();
-                state.text_edit_position = 0;
+                state.lua_console.input.clear();
+                state.lua_console.text_edit_position = 0;
                 return;
             }
 
             // Add current line to multiline buffer or start one
-            if state.repl_is_multiline {
+            if state.lua_console.is_multiline {
                 // Add continuation line to buffer
-                let prompt = if state.repl_multiline_buffer.is_empty() {
+                let prompt = if state.lua_console.multiline_buffer.is_empty() {
                     "> "
                 } else {
                     ">> "
                 };
-                state.add_to_lua_console(format!("{}{}", prompt, input));
-                state.repl_multiline_buffer.push(input.clone());
+                state
+                    .lua_console
+                    .add_output(format!("{}{}", prompt, input), state.visible_width);
+                state.lua_console.multiline_buffer.push(input.clone());
             } else {
                 // This might be the start of a multiline construct
-                state.add_to_lua_console(format!("> {}", input));
-                state.repl_multiline_buffer.push(input.clone());
-                state.repl_is_multiline = true;
+                state
+                    .lua_console
+                    .add_output(format!("> {}", input), state.visible_width);
+                state.lua_console.multiline_buffer.push(input.clone());
+                state.lua_console.is_multiline = true;
             }
 
             // Check if input is complete
             if state.is_lua_input_complete() {
                 // Execute the complete multiline code
-                let full_code = state.repl_multiline_buffer.join("\n");
+                let full_code = state.lua_console.multiline_buffer.join("\n");
 
                 match lua_engine.execute_script_string_with_state(&full_code, state) {
                     Ok(result) => {
@@ -427,79 +434,84 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
                             // Split multi-line output into separate history entries with text wrapping
                             for line in result.lines() {
                                 if !line.is_empty() {
-                                    state.add_to_lua_console(line.to_string());
+                                    state
+                                        .lua_console
+                                        .add_output(line.to_string(), state.visible_width);
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        state.add_error_to_lua_console(format!("Error: {}", e));
+                        state
+                            .lua_console
+                            .add_error(format!("Error: {}", e), state.visible_width);
                     }
                 }
 
                 // Add command to history with semicolon separators for multiline
-                let history_command = if state.repl_multiline_buffer.len() > 1 {
-                    state.repl_multiline_buffer.join("; ")
+                let history_command = if state.lua_console.multiline_buffer.len() > 1 {
+                    state.lua_console.multiline_buffer.join("; ")
                 } else {
                     full_code
                 };
                 state.add_to_repl_history(history_command);
 
                 // Reset multiline state
-                state.repl_multiline_buffer.clear();
-                state.repl_is_multiline = false;
+                state.lua_console.multiline_buffer.clear();
+                state.lua_console.is_multiline = false;
 
                 // Reset history navigation
                 state.reset_repl_history_navigation();
 
                 // Keep output history reasonable size
-                if state.repl_output_history.len() > 1000 {
-                    state.repl_output_history.drain(0..500);
+                if state.lua_console.output_history.len() > 1000 {
+                    state.lua_console.output_history.drain(0..500);
                 }
 
                 // Auto-scroll to bottom to show new output and input line
                 let visible_lines = state.visible_height.saturating_sub(2);
-                let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+                let total_lines = state.lua_console.output_history.len() + 1; // +1 for current input line
                 if total_lines > visible_lines {
-                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                    state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
                 }
             }
 
             // Clear current input line for next input
-            state.repl_input.clear();
-            state.text_edit_position = 0;
+            state.lua_console.input.clear();
+            state.lua_console.text_edit_position = 0;
         }
         KeyCode::PageUp => {
             // Scroll up in output history
-            state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(10);
+            state.lua_console.scroll_offset = state.lua_console.scroll_offset.saturating_sub(10);
         }
         KeyCode::PageDown => {
             // Scroll down in output history
             let visible_lines = state.visible_height.saturating_sub(2);
-            let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+            let total_lines = state.lua_console.output_history.len() + 1; // +1 for input line
             let max_scroll = total_lines.saturating_sub(visible_lines);
-            state.repl_scroll_offset = (state.repl_scroll_offset + 10).min(max_scroll);
+            state.lua_console.scroll_offset =
+                (state.lua_console.scroll_offset + 10).min(max_scroll);
         }
         // Alternative scrolling keys (Ctrl+Up/Down for output history scrolling)
         KeyCode::Up if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Scroll up one line in output history
-            state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(1);
+            state.lua_console.scroll_offset = state.lua_console.scroll_offset.saturating_sub(1);
         }
         KeyCode::Down if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Scroll down one line in output history
             let visible_lines = state.visible_height.saturating_sub(2);
-            let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+            let total_lines = state.lua_console.output_history.len() + 1; // +1 for input line
             let max_scroll = total_lines.saturating_sub(visible_lines);
-            state.repl_scroll_offset = (state.repl_scroll_offset + 1).min(max_scroll);
+            state.lua_console.scroll_offset = (state.lua_console.scroll_offset + 1).min(max_scroll);
         }
         KeyCode::Up => {
             // Navigate command history up (older commands)
             if state.repl_history_up() {
                 // Auto-scroll to show input line
                 let visible_lines = state.visible_height.saturating_sub(2);
-                let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+                let total_lines = state.lua_console.output_history.len() + 1; // +1 for input line
                 if total_lines > visible_lines {
-                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                    state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
                 }
             }
         }
@@ -508,9 +520,9 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
             if state.repl_history_down() {
                 // Auto-scroll to show input line
                 let visible_lines = state.visible_height.saturating_sub(2);
-                let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+                let total_lines = state.lua_console.output_history.len() + 1; // +1 for input line
                 if total_lines > visible_lines {
-                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                    state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
                 }
             }
         }
@@ -525,16 +537,16 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
 
             // Handle text input for the REPL
             handle_textinput(
-                &mut state.repl_input,
-                &mut state.text_edit_position,
+                &mut state.lua_console.input,
+                &mut state.lua_console.text_edit_position,
                 key_event,
             );
 
             // Auto-scroll to keep input line visible while typing
             let visible_lines = state.visible_height.saturating_sub(2);
-            let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+            let total_lines = state.lua_console.output_history.len() + 1; // +1 for current input line
             if total_lines > visible_lines {
-                state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
             }
         }
     }

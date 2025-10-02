@@ -10,6 +10,7 @@ pub mod completions;
 pub mod events;
 pub mod keyboard_input;
 pub mod keyboard_management;
+pub mod lua_console;
 pub mod lua_engine;
 pub mod parser;
 pub mod record;

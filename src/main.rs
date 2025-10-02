@@ -19,6 +19,7 @@ mod completions;
 mod events;
 mod keyboard_input;
 mod keyboard_management;
+mod lua_console;
 mod lua_engine;
 mod parser;
 mod record;
@@ -171,8 +172,10 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
         Ok(content) => content,
         Err(e) => {
             // Add error to Lua console instead of stderr
-            app.state
-                .add_error_to_lua_console(format!("Error reading Lua script '{}': {}", script_path, e));
+            app.state.lua_console.add_error(
+                format!("Error reading Lua script '{}': {}", script_path, e),
+                app.state.visible_width,
+            );
             std::process::exit(1);
         }
     };
@@ -197,32 +200,40 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
                 Ok(output) => {
                     // Add script output to Lua console instead of printing to stderr
                     if !output.is_empty() {
-                        app.state
-                            .add_to_lua_console(format!("Script '{}' output:", script_path));
+                        app.state.lua_console.add_output(
+                            format!("Script '{}' output:", script_path),
+                            app.state.visible_width,
+                        );
                         let output_lines: Vec<String> =
                             output.lines().map(|line| format!("  {}", line)).collect();
-                        app.state.add_lines_to_lua_console(output_lines);
+                        for line in output_lines {
+                            app.state
+                                .lua_console
+                                .add_output(line, app.state.visible_width);
+                        }
                     }
                     // Add success message to Lua console
-                    app.state.add_to_lua_console(format!(
-                        "Script '{}' executed successfully.",
-                        script_path
-                    ));
+                    app.state.lua_console.add_output(
+                        format!("Script '{}' executed successfully.", script_path),
+                        app.state.visible_width,
+                    );
                 }
                 Err(e) => {
                     // Add error to Lua console instead of stderr
-                    app.state.add_error_to_lua_console(format!(
-                        "Error executing script '{}': {}",
-                        script_path, e
-                    ));
+                    app.state.lua_console.add_error(
+                        format!("Error executing script '{}': {}", script_path, e),
+                        app.state.visible_width,
+                    );
                     std::process::exit(1);
                 }
             }
         }
         Err(e) => {
             // Add error to Lua console instead of stderr
-            app.state
-                .add_error_to_lua_console(format!("Error compiling script '{}': {}", script_path, e));
+            app.state.lua_console.add_error(
+                format!("Error compiling script '{}': {}", script_path, e),
+                app.state.visible_width,
+            );
             std::process::exit(1);
         }
     }

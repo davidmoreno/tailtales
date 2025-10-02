@@ -3,8 +3,9 @@
 //! This test verifies that Lua print statements from external scripts
 //! are captured and redirected to the Lua console instead of going to stderr.
 
+use tailtales::lua_console::ConsoleLine;
 use tailtales::lua_engine::LuaEngine;
-use tailtales::state::{ConsoleLine, TuiState};
+use tailtales::state::TuiState;
 
 #[test]
 fn test_lua_print_output_redirection() {
@@ -16,7 +17,7 @@ fn test_lua_print_output_redirection() {
     let mut state = TuiState::new().unwrap();
 
     // Clear any existing output history
-    state.repl_output_history.clear();
+    state.lua_console.output_history.clear();
 
     // Create a test script with print statements
     let test_script = r#"
@@ -61,7 +62,7 @@ fn test_bytes_count_processor_print_output() {
     let mut state = TuiState::new().unwrap();
 
     // Clear any existing output history
-    state.repl_output_history.clear();
+    state.lua_console.output_history.clear();
 
     // Create a script similar to the bytes_count_processor.lua
     let processor_script = r#"
@@ -113,7 +114,7 @@ fn test_lua_print_vs_return_value() {
     let mut state = TuiState::new().unwrap();
 
     // Clear any existing output history
-    state.repl_output_history.clear();
+    state.lua_console.output_history.clear();
 
     // Test script with both print statements and return value
     let test_script = r#"
@@ -157,7 +158,7 @@ fn test_external_script_print_output_integration() {
     let mut state = TuiState::new().unwrap();
 
     // Clear any existing output history
-    state.repl_output_history.clear();
+    state.lua_console.output_history.clear();
 
     // Create a test script similar to bytes_count_processor.lua
     let external_script = r#"
@@ -189,18 +190,28 @@ fn test_external_script_print_output_integration() {
 
             // Simulate what main.rs does: add the output to REPL history
             if !output.is_empty() {
-                state.add_to_lua_console("Script 'test_script.lua' output:".to_string());
+                state.lua_console.add_output(
+                    "Script 'test_script.lua' output:".to_string(),
+                    state.visible_width,
+                );
                 let output_lines: Vec<String> =
                     output.lines().map(|line| format!("  {}", line)).collect();
-                state.add_lines_to_lua_console(output_lines);
+                for line in output_lines {
+                    state.lua_console.add_output(line, state.visible_width);
+                }
             }
 
             // Add success message to Lua console (as main.rs now does)
-            state.add_to_lua_console("Script 'test_script.lua' executed successfully.".to_string());
+            state.lua_console.add_output(
+                "Script 'test_script.lua' executed successfully.".to_string(),
+                state.visible_width,
+            );
 
             // Now verify that the output was added to the REPL history
-            assert!(!state.repl_output_history.is_empty());
-            let history_text: String = state.repl_output_history
+            assert!(!state.lua_console.output_history.is_empty());
+            let history_text: String = state
+                .lua_console
+                .output_history
                 .iter()
                 .map(|line| match line {
                     ConsoleLine::Stdout(msg) => msg.clone(),
@@ -231,7 +242,7 @@ fn test_lua_script_error_handling() {
     let mut state = TuiState::new().unwrap();
 
     // Clear any existing output history
-    state.repl_output_history.clear();
+    state.lua_console.output_history.clear();
 
     // Create a script with a syntax error
     let error_script = r#"
@@ -252,11 +263,16 @@ fn test_lua_script_error_handling() {
             println!("✓ Script failed as expected with error: {}", e);
 
             // Simulate what main.rs does for errors: add to REPL history
-            state.add_error_to_lua_console(format!("Error executing script 'test_error.lua': {}", e));
+            state.lua_console.add_error(
+                format!("Error executing script 'test_error.lua': {}", e),
+                state.visible_width,
+            );
 
             // Verify that the error was added to the REPL history
-            assert!(!state.repl_output_history.is_empty());
-            let history_text: String = state.repl_output_history
+            assert!(!state.lua_console.output_history.is_empty());
+            let history_text: String = state
+                .lua_console
+                .output_history
                 .iter()
                 .map(|line| match line {
                     ConsoleLine::Stdout(msg) => msg.clone(),

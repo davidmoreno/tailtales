@@ -999,23 +999,23 @@ fn test_repl_history_functionality() {
     let mut state = create_test_state_with_records();
 
     // Initially no history
-    assert_eq!(state.repl_command_history.len(), 0);
-    assert_eq!(state.repl_history_index, None);
+    assert_eq!(state.lua_console.command_history.len(), 0);
+    assert_eq!(state.lua_console.history_index, None);
 
     // Add some commands to history
     state.add_to_repl_history("print('hello')".to_string());
     state.add_to_repl_history("x = 42".to_string());
     state.add_to_repl_history("print(x)".to_string());
 
-    assert_eq!(state.repl_command_history.len(), 3);
-    assert_eq!(state.repl_command_history[0], "print('hello')");
-    assert_eq!(state.repl_command_history[1], "x = 42");
-    assert_eq!(state.repl_command_history[2], "print(x)");
+    assert_eq!(state.lua_console.command_history.len(), 3);
+    assert_eq!(state.lua_console.command_history[0], "print('hello')");
+    assert_eq!(state.lua_console.command_history[1], "x = 42");
+    assert_eq!(state.lua_console.command_history[2], "print(x)");
 
     // Test not adding duplicate consecutive commands
     state.add_to_repl_history("print(x)".to_string());
     assert_eq!(
-        state.repl_command_history.len(),
+        state.lua_console.command_history.len(),
         3,
         "Should not add duplicate"
     );
@@ -1024,61 +1024,61 @@ fn test_repl_history_functionality() {
     state.add_to_repl_history("".to_string());
     state.add_to_repl_history("   ".to_string());
     assert_eq!(
-        state.repl_command_history.len(),
+        state.lua_console.command_history.len(),
         3,
         "Should not add empty commands"
     );
 
     // Test history navigation
-    state.repl_input = "current_input".to_string();
+    state.lua_console.input = "current_input".to_string();
 
     // Navigate up (should go to most recent)
     assert!(state.repl_history_up());
-    assert_eq!(state.repl_history_index, Some(2));
-    assert_eq!(state.repl_input, "print(x)");
-    assert_eq!(state.repl_temp_input, "current_input");
+    assert_eq!(state.lua_console.history_index, Some(2));
+    assert_eq!(state.lua_console.input, "print(x)");
+    assert_eq!(state.lua_console.temp_input, "current_input");
 
     // Navigate up again (should go to older)
     assert!(state.repl_history_up());
-    assert_eq!(state.repl_history_index, Some(1));
-    assert_eq!(state.repl_input, "x = 42");
+    assert_eq!(state.lua_console.history_index, Some(1));
+    assert_eq!(state.lua_console.input, "x = 42");
 
     // Navigate up again (should go to oldest)
     assert!(state.repl_history_up());
-    assert_eq!(state.repl_history_index, Some(0));
-    assert_eq!(state.repl_input, "print('hello')");
+    assert_eq!(state.lua_console.history_index, Some(0));
+    assert_eq!(state.lua_console.input, "print('hello')");
 
     // Try to navigate up past oldest (should not change)
     assert!(!state.repl_history_up());
-    assert_eq!(state.repl_history_index, Some(0));
-    assert_eq!(state.repl_input, "print('hello')");
+    assert_eq!(state.lua_console.history_index, Some(0));
+    assert_eq!(state.lua_console.input, "print('hello')");
 
     // Navigate down
     assert!(state.repl_history_down());
-    assert_eq!(state.repl_history_index, Some(1));
-    assert_eq!(state.repl_input, "x = 42");
+    assert_eq!(state.lua_console.history_index, Some(1));
+    assert_eq!(state.lua_console.input, "x = 42");
 
     // Navigate down again
     assert!(state.repl_history_down());
-    assert_eq!(state.repl_history_index, Some(2));
-    assert_eq!(state.repl_input, "print(x)");
+    assert_eq!(state.lua_console.history_index, Some(2));
+    assert_eq!(state.lua_console.input, "print(x)");
 
     // Navigate down to current input
     assert!(state.repl_history_down());
-    assert_eq!(state.repl_history_index, None);
-    assert_eq!(state.repl_input, "current_input");
+    assert_eq!(state.lua_console.history_index, None);
+    assert_eq!(state.lua_console.input, "current_input");
 
     // Try to navigate down past current (should not change)
     assert!(!state.repl_history_down());
-    assert_eq!(state.repl_history_index, None);
-    assert_eq!(state.repl_input, "current_input");
+    assert_eq!(state.lua_console.history_index, None);
+    assert_eq!(state.lua_console.input, "current_input");
 
     // Test reset history navigation
     state.repl_history_up(); // Go to history
-    assert!(state.repl_history_index.is_some());
+    assert!(state.lua_console.history_index.is_some());
     state.reset_repl_history_navigation();
-    assert_eq!(state.repl_history_index, None);
-    assert_eq!(state.repl_temp_input, "");
+    assert_eq!(state.lua_console.history_index, None);
+    assert_eq!(state.lua_console.temp_input, "");
 
     println!("✓ REPL history functionality works correctly");
 }
@@ -1092,50 +1092,50 @@ fn test_repl_multiline_history_format() {
     let mut state = create_test_state_with_records();
 
     // Test single line command
-    state.repl_multiline_buffer = vec!["print('hello')".to_string()];
-    let history_command = if state.repl_multiline_buffer.len() > 1 {
-        state.repl_multiline_buffer.join("; ")
+    state.lua_console.multiline_buffer = vec!["print('hello')".to_string()];
+    let history_command = if state.lua_console.multiline_buffer.len() > 1 {
+        state.lua_console.multiline_buffer.join("; ")
     } else {
-        state.repl_multiline_buffer.join("\n")
+        state.lua_console.multiline_buffer.join("\n")
     };
     state.add_to_repl_history(history_command);
 
     // Test multiline command
-    state.repl_multiline_buffer = vec![
+    state.lua_console.multiline_buffer = vec![
         "for i = 1, 3 do".to_string(),
         "  print(i)".to_string(),
         "end".to_string(),
     ];
-    let history_command = if state.repl_multiline_buffer.len() > 1 {
-        state.repl_multiline_buffer.join("; ")
+    let history_command = if state.lua_console.multiline_buffer.len() > 1 {
+        state.lua_console.multiline_buffer.join("; ")
     } else {
-        state.repl_multiline_buffer.join("\n")
+        state.lua_console.multiline_buffer.join("\n")
     };
     state.add_to_repl_history(history_command);
 
     // Test another multiline command
-    state.repl_multiline_buffer = vec![
+    state.lua_console.multiline_buffer = vec![
         "if true then".to_string(),
         "  x = 42".to_string(),
         "  print(x)".to_string(),
         "end".to_string(),
     ];
-    let history_command = if state.repl_multiline_buffer.len() > 1 {
-        state.repl_multiline_buffer.join("; ")
+    let history_command = if state.lua_console.multiline_buffer.len() > 1 {
+        state.lua_console.multiline_buffer.join("; ")
     } else {
-        state.repl_multiline_buffer.join("\n")
+        state.lua_console.multiline_buffer.join("\n")
     };
     state.add_to_repl_history(history_command);
 
     // Verify history format
-    assert_eq!(state.repl_command_history.len(), 3);
-    assert_eq!(state.repl_command_history[0], "print('hello')");
+    assert_eq!(state.lua_console.command_history.len(), 3);
+    assert_eq!(state.lua_console.command_history[0], "print('hello')");
     assert_eq!(
-        state.repl_command_history[1],
+        state.lua_console.command_history[1],
         "for i = 1, 3 do;   print(i); end"
     );
     assert_eq!(
-        state.repl_command_history[2],
+        state.lua_console.command_history[2],
         "if true then;   x = 42;   print(x); end"
     );
 

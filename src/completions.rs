@@ -4,7 +4,7 @@
 //! and Lua REPL mode, with clean formatting and single responsibility functions.
 
 use crate::lua_engine::LuaEngine;
-use crate::state::{ConsoleLine, Mode, TuiState};
+use crate::state::{Mode, TuiState};
 
 /// Calculate the common prefix from a list of completions
 pub fn calculate_common_prefix(completions: &[String]) -> String {
@@ -125,20 +125,21 @@ pub fn handle_command_completion(state: &mut TuiState, lua_engine: &mut LuaEngin
 
 /// Handle completion logic for REPL mode
 pub fn handle_repl_completion(state: &mut TuiState, lua_engine: &mut LuaEngine) {
-    let current = state.repl_input.trim();
+    let current = state.lua_console.input.trim();
 
     // Get completions from Lua VM
     let completions = match lua_engine.get_completions_from_lua(current) {
         Ok(lua_completions) => lua_completions,
         Err(_) => {
-            state.repl_output_history.push(ConsoleLine::Stderr(
+            state.lua_console.add_error(
                 "Completion system unavailable".to_string(),
-            ));
+                state.visible_width,
+            );
             // Auto-scroll to show the error message
             let visible_lines = state.visible_height.saturating_sub(2);
-            let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+            let total_lines = state.lua_console.output_history.len() + 1; // +1 for current input line
             if total_lines > visible_lines {
-                state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
             }
             return;
         }
@@ -147,39 +148,39 @@ pub fn handle_repl_completion(state: &mut TuiState, lua_engine: &mut LuaEngine) 
     // Handle completion results
     if completions.is_empty() {
         state
-            .repl_output_history
-            .push(ConsoleLine::Stdout("No completions found".to_string()));
+            .lua_console
+            .add_output("No completions found".to_string(), state.visible_width);
         // Auto-scroll to show the message
         let visible_lines = state.visible_height.saturating_sub(2);
-        let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+        let total_lines = state.lua_console.output_history.len() + 1; // +1 for current input line
         if total_lines > visible_lines {
-            state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+            state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
         }
         return;
     }
 
     let common_prefix = calculate_common_prefix(&completions);
 
-    if common_prefix != state.repl_input {
+    if common_prefix != state.lua_console.input {
         // Auto-complete with common prefix
-        state.repl_input = common_prefix;
-        state.text_edit_position = state.repl_input.len();
+        state.lua_console.input = common_prefix;
+        state.text_edit_position = state.lua_console.input.len();
     } else if completions.len() == 1 {
         // Auto-complete with single completion
-        state.repl_input = completions[0].clone();
-        state.text_edit_position = state.repl_input.len();
+        state.lua_console.input = completions[0].clone();
+        state.text_edit_position = state.lua_console.input.len();
     } else {
         // Show multiple completions in a formatted table in REPL output
         let formatted_lines = format_completions_table(&completions);
         for line in formatted_lines {
-            state.add_to_lua_console(line);
+            state.lua_console.add_output(line, state.visible_width);
         }
 
         // Auto-scroll to show the completion lines
         let visible_lines = state.visible_height.saturating_sub(2);
-        let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+        let total_lines = state.lua_console.output_history.len() + 1; // +1 for current input line
         if total_lines > visible_lines {
-            state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+            state.lua_console.scroll_offset = total_lines.saturating_sub(visible_lines);
         }
     }
 }
