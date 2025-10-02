@@ -118,7 +118,7 @@ function help(topic)
         print("  help()          - Show this help message")
         print("  help('topic')   - Show help for specific topic")
         print("")
-        print("Available topics: 'functions', 'navigation', 'records', 'analysis', 'filtering', 'attributes'")
+        print("Available topics: 'functions', 'navigation', 'records', 'analysis', 'filtering', 'attributes', 'processing'")
         print("")
         print("Core functions:")
         print("  get_position()  - Get current line position")
@@ -130,6 +130,7 @@ function help(topic)
         print("  filter(expr)    - Filter records by expression")
         print("  update_record_attribute(index, key, value) - Add/update/remove record attribute")
         print("  get_record_attribute(index, key) - Get record attribute value")
+        print("  for_each_record(func) - Process each record with custom function")
     elseif topic == "functions" then
         print("TailTales Functions:")
         print("  Movement: vmove(n), vgoto(n), hmove(n)")
@@ -269,9 +270,54 @@ function help(topic)
         print("  - Update existing fields with better values")
         print("  - Remove incorrect or unwanted fields")
         print("  - Data cleaning and normalization")
+    elseif topic == "processing" then
+        print("Record Processing Help:")
+        print("  for_each_record(processor_func)")
+        print("    - Process each record with a custom function")
+        print("    - processor_func: function that receives a record and returns a table")
+        print("    - Returns table with attributes to add/update/remove")
+        print("    - Use \"__REMOVE__\" values to remove attributes")
+        print("    - Returns nil to skip updating the record")
+        print("")
+        print("Examples:")
+        print("  -- Mark error records")
+        print("  for_each_record(function(record)")
+        print("      if record.original and string.find(record.original, 'error') then")
+        print("          return {mark = 'red white'}")
+        print("      end")
+        print("      return nil")
+        print("  end)")
+        print("")
+        print("  -- Add severity based on log level")
+        print("  for_each_record(function(record)")
+        print("      if record.level == 'ERROR' then")
+        print("          return {severity = 'high'}")
+        print("      elseif record.level == 'WARN' then")
+        print("          return {severity = 'medium'}")
+        print("      elseif record.level == 'INFO' then")
+        print("          return {severity = 'low'}")
+        print("      end")
+        print("      return nil")
+        print("  end)")
+        print("")
+        print("  -- Remove unwanted attributes")
+        print("  for_each_record(function(record)")
+        print("      return {debug_info = \"__REMOVE__\"}  -- Remove debug_info attribute")
+        print("  end)")
+        print("")
+        print("  -- Add computed fields")
+        print("  for_each_record(function(record)")
+        print("      if record.duration then")
+        print("          local duration_ms = tonumber(record.duration) * 1000")
+        print("          return {duration_ms = tostring(duration_ms)}")
+        print("      end")
+        print("      return nil")
+        print("  end)")
+        print("")
+        print("Note: See examples/ directory for sample scripts using for_each_record")
     else
         print("Unknown help topic: " .. tostring(topic))
-        print("Available topics: 'functions', 'navigation', 'records', 'analysis', 'filtering', 'attributes'")
+        print("Available topics: 'functions', 'navigation', 'records', 'analysis', 'filtering', 'attributes', 'processing'")
     end
 end
 
@@ -541,5 +587,52 @@ end
 -- and returns a table with new attributes to add/update/remove
 -- Use nil values to remove attributes
 record_processors = {}
+
+-- Process each record with a custom function
+-- The function receives the record and can return a table to update the record
+-- To remove an attribute, use the special value "__REMOVE__" instead of nil
+function for_each_record(processor_func)
+    if type(processor_func) ~= "function" then
+        print("Error: for_each_record requires a function parameter")
+        return
+    end
+    
+    local total_records = get_record_count()
+    if total_records == 0 then
+        print("No records to process")
+        return
+    end
+    
+    local processed = 0
+    local updated = 0
+    
+    for i = 0, total_records - 1 do
+        local record = get_record(i)
+        if record then
+            processed = processed + 1
+            
+            -- Call the processor function with the record
+            local result = processor_func(record)
+            
+            -- If the function returns a table, update the record
+            if type(result) == "table" then
+                for key, value in pairs(result) do
+                    if value == "__REMOVE__" then
+                        -- Remove attribute if value is "__REMOVE__"
+                        update_record_attribute(i + 1, key, nil)  -- Convert to 1-based for update_record_attribute
+                    else
+                        -- Add or update attribute
+                        update_record_attribute(i + 1, key, tostring(value))  -- Convert to 1-based for update_record_attribute
+                    end
+                end
+                updated = updated + 1
+            end
+        else
+            print("Warning: Could not get record " .. i .. " of " .. total_records)
+        end
+    end
+    
+    print(string.format("Processed %d records, updated %d records", processed, updated))
+end
 
 print("TailTales Lua environment initialized. Use dir() to explore or help() for assistance.")
