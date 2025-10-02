@@ -483,6 +483,8 @@ impl TuiState {
             self.position = 1; // Use 1-based indexing
         } else if position > visible_len {
             self.position = visible_len; // Use 1-based indexing
+        } else if position == 0 {
+            self.position = visible_len; // Use 1-based indexing
         } else if position < 1 {
             self.position = 1; // Use 1-based indexing
         } else {

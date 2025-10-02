@@ -88,8 +88,8 @@ keybindings:
   "right": "hmove(1)"
   "control-left": "hmove(-10)"
   "control-right": "hmove(10)"
-  "home": "vgoto(0)"
-  "end": "vgoto(2000000000)" # should be enough, and 32 bits signed
+  "home": "vgoto(1)"
+  "end": "vgoto(0)" # 0 is the last line
   " ": "toggle_mark('yellow')"
   "1": "toggle_mark('red')"
   "2": "toggle_mark('green')"
