@@ -151,6 +151,8 @@ function help(topic)
         print("  histogram(attr, buckets) - Calculate histogram data for attribute")
         print("  print_histogram(attr, buckets) - Display histogram with ASCII art")
         print("  extract_number(value) - Extract numeric value from string with units")
+        print("  count(attr) - Count occurrences of different values for attribute")
+        print("  print_count(attr) - Display count results in formatted table")
     elseif topic == "analysis" then
         print("Analysis Functions Help:")
         print("  histogram(attribute, buckets)")
@@ -172,6 +174,21 @@ function help(topic)
         print("  print_histogram('duration', 15)")
         print("  print_histogram('response_time')")
         print("  local data = histogram('latency', 20)")
+        print("")
+        print("  count(attribute)")
+        print("    - Count occurrences of different values for an attribute")
+        print("    - Returns sorted table with value/count pairs")
+        print("    - Useful for categorical data (log levels, status codes, etc.)")
+        print("")
+        print("  print_count(attribute)")
+        print("    - Display count results in formatted table")
+        print("    - Shows value, count, percentage, and ASCII bar")
+        print("    - Sorted by count (descending) then value (ascending)")
+        print("")
+        print("Count Examples:")
+        print("  print_count('level')     -- Count log levels")
+        print("  print_count('status')    -- Count status codes")
+        print("  local data = count('type') -- Get raw count data")
     else
         print("Unknown help topic: " .. tostring(topic))
         print("Available topics: 'functions', 'navigation', 'records', 'analysis'")
@@ -344,6 +361,96 @@ function print_histogram(attribute, buckets)
         -- Print line with count, bar, and percentage
         local percentage = (hist_data.count > 0) and (count / hist_data.count * 100) or 0
         print(string.format("%-20s %6d %s %5.1f%%", range_str, count, bar, percentage))
+    end
+    
+    print("")
+end
+
+-- Count occurrences of different values for a given attribute across all records
+function count(attribute)
+    local total_records = get_record_count()
+    if total_records == 0 then
+        return {}
+    end
+    
+    local counts = {}
+    local skipped = 0
+    
+    -- Count occurrences of each value for the attribute
+    for i = 1, total_records do
+        local record = get_record(i)
+        if record and record[attribute] then
+            local value = tostring(record[attribute])
+            if counts[value] then
+                counts[value] = counts[value] + 1
+            else
+                counts[value] = 1
+            end
+        else
+            skipped = skipped + 1
+        end
+    end
+    
+    -- Convert to sorted table format
+    local result = {}
+    for value, count in pairs(counts) do
+        table.insert(result, {value = value, count = count})
+    end
+    
+    -- Sort by count (descending) then by value (ascending)
+    table.sort(result, function(a, b)
+        if a.count == b.count then
+            return a.value < b.value
+        end
+        return a.count > b.count
+    end)
+    
+    -- Add metadata
+    result._metadata = {
+        total_records = total_records,
+        skipped = skipped,
+        unique_values = #result
+    }
+    
+    return result
+end
+
+-- Print count results in a formatted table
+function print_count(attribute)
+    local count_data = count(attribute)
+    
+    if #count_data == 0 then
+        print("No data found for attribute '" .. attribute .. "'")
+        if count_data._metadata and count_data._metadata.skipped > 0 then
+            print("Skipped " .. count_data._metadata.skipped .. " records (missing values)")
+        end
+        return
+    end
+    
+    local metadata = count_data._metadata
+    print("Count for attribute '" .. attribute .. "'")
+    print("Total records: " .. metadata.total_records .. " (skipped: " .. metadata.skipped .. ")")
+    print("Unique values: " .. metadata.unique_values)
+    print("")
+    
+    -- Find max count for percentage calculation
+    local max_count = 0
+    for _, item in ipairs(count_data) do
+        max_count = math.max(max_count, item.count)
+    end
+    
+    -- Print header
+    print(string.format("%-20s %8s %6s %s", "Value", "Count", "Pct", "Bar"))
+    print(string.rep("-", 50))
+    
+    -- Print each value with count, percentage, and ASCII bar
+    for _, item in ipairs(count_data) do
+        local percentage = (metadata.total_records > 0) and (item.count / metadata.total_records * 100) or 0
+        local bar_length = math.floor((item.count / max_count) * 20)
+        local bar = string.rep("█", bar_length)
+        
+        print(string.format("%-20s %8d %5.1f%% %s", 
+            item.value, item.count, percentage, bar))
     end
     
     print("")
