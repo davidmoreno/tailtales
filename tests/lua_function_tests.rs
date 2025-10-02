@@ -363,10 +363,8 @@ fn test_exec_function_debugging() {
 
     // Test xdg-open with a URL (this will actually try to open a browser, but should return true)
     // Note: In a real test environment, this might fail if no display is available
-    let result = engine.execute_script_string_with_state(
-        "return exec('xdg-open https://example.com')",
-        &mut state,
-    );
+    let result = engine
+        .execute_script_string_with_state("return exec('test https://example.com')", &mut state);
     // Don't assert the result since it depends on the environment, just verify it doesn't crash
     assert!(
         result.is_ok(),
@@ -389,7 +387,7 @@ fn test_f2_keybinding_simulation() {
 
     // Test the exact F2 keybinding code from settings.yaml
     let f2_script = r#"
-        exec('xdg-open https://www.perplexity.ai/search/new?q=' .. url_encode(get_record().original))
+        exec('test https://www.perplexity.ai/search/new?q=' .. url_encode(get_record().original))
         warning('Opened Perplexity')
     "#;
 
@@ -408,7 +406,7 @@ fn test_f2_keybinding_simulation() {
 
     // Test F3 and F4 keybindings as well (DuckDuckGo and Google)
     let f3_script = r#"
-        exec('xdg-open https://www.duckduckgo.com/?q=' .. url_encode(get_record().original))
+        exec('test https://www.duckduckgo.com/?q=' .. url_encode(get_record().original))
         warning('Opened DuckDuckGo')
     "#;
 
