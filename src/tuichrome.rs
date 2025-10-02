@@ -1,8 +1,7 @@
 use crate::events::TuiEvent;
 use crate::record;
 use crate::settings::string_to_style;
-use crate::state::Mode;
-use crate::state::TuiState;
+use crate::state::{ConsoleLine, Mode, TuiState};
 use crate::utils::ansi_to_style;
 use crate::utils::clean_ansi_text;
 use crate::utils::parse_tabs;
@@ -639,22 +638,27 @@ impl TuiChrome {
             .iter()
             .skip(start_line)
             .take(visible_lines)
-            .map(|line| {
-                if line.starts_with("> ") {
-                    // Input line - style differently
-                    Line::from(Span::styled(
-                        line.clone(),
-                        Style::default().fg(Color::Green).bold(),
-                    ))
-                } else if line.starts_with("Error: ") {
-                    // Error line - style in red
-                    Line::from(Span::styled(line.clone(), Style::default().fg(Color::Red)))
-                } else {
-                    // Output line - normal style
-                    Line::from(Span::styled(
-                        line.clone(),
-                        Style::default().fg(Color::White),
-                    ))
+            .map(|console_line| {
+                match console_line {
+                    ConsoleLine::Stdout(msg) => {
+                        if msg.starts_with("> ") {
+                            // Input line - style differently
+                            Line::from(Span::styled(
+                                msg.clone(),
+                                Style::default().fg(Color::Green).bold(),
+                            ))
+                        } else {
+                            // Output line - normal style
+                            Line::from(Span::styled(
+                                msg.clone(),
+                                Style::default().fg(Color::White),
+                            ))
+                        }
+                    }
+                    ConsoleLine::Stderr(msg) => {
+                        // Error line - style in red
+                        Line::from(Span::styled(msg.clone(), Style::default().fg(Color::Red)))
+                    }
                 }
             })
             .collect();

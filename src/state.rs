@@ -6,6 +6,13 @@ use crate::{
     settings::{RulesSettings, Settings},
 };
 
+/// Represents a line of output in the Lua console
+#[derive(Debug, Clone)]
+pub enum ConsoleLine {
+    Stdout(String),
+    Stderr(String),
+}
+
 #[derive(PartialEq, Debug, Clone, Copy)]
 pub enum Mode {
     Normal,
@@ -44,7 +51,7 @@ pub struct TuiState {
     pub script_waiting: bool,
     // Lua REPL state
     pub repl_input: String,
-    pub repl_output_history: Vec<String>,
+    pub repl_output_history: Vec<ConsoleLine>,
     pub repl_scroll_offset: usize,
     pub repl_multiline_buffer: Vec<String>,
     pub repl_is_multiline: bool,
@@ -383,9 +390,79 @@ impl TuiState {
         self.repl_temp_input.clear();
     }
 
-    /// Add a message to the Lua console output history
+    /// Wrap text to fit within the specified width, splitting on word boundaries when possible
+    fn wrap_text_to_width(&self, text: &str, max_width: usize) -> Vec<String> {
+        if text.is_empty() {
+            return vec![String::new()];
+        }
+
+        // If the text is already short enough, return as-is
+        if text.len() <= max_width {
+            return vec![text.to_string()];
+        }
+
+        let mut lines = Vec::new();
+        let mut current_line = String::new();
+        let mut current_width = 0;
+
+        for word in text.split_whitespace() {
+            let word_width = word.len();
+
+            // If adding this word would exceed the width, start a new line
+            if current_width + word_width + 1 > max_width && !current_line.is_empty() {
+                lines.push(current_line.trim().to_string());
+                current_line.clear();
+                current_width = 0;
+            }
+
+            // Add the word to the current line
+            if !current_line.is_empty() {
+                current_line.push(' ');
+                current_width += 1;
+            }
+            current_line.push_str(word);
+            current_width += word_width;
+        }
+
+        // Add the last line if it's not empty
+        if !current_line.is_empty() {
+            lines.push(current_line.trim().to_string());
+        }
+
+        // If no lines were created (e.g., very long single word), force split
+        if lines.is_empty() {
+            lines.push(text.to_string());
+        }
+
+        lines
+    }
+
+    /// Add a stdout message to the Lua console output history with text wrapping
     pub fn add_to_lua_console(&mut self, message: String) {
-        self.repl_output_history.push(message);
+        self.add_console_line(ConsoleLine::Stdout(message));
+    }
+
+    /// Add a stderr message to the Lua console output history with text wrapping
+    pub fn add_error_to_lua_console(&mut self, message: String) {
+        self.add_console_line(ConsoleLine::Stderr(message));
+    }
+
+    /// Internal function to add a console line with text wrapping
+    fn add_console_line(&mut self, line: ConsoleLine) {
+        let message = match &line {
+            ConsoleLine::Stdout(msg) => msg.clone(),
+            ConsoleLine::Stderr(msg) => msg.clone(),
+        };
+
+        let wrapped_lines = self.wrap_text_to_width(&message, self.visible_width.saturating_sub(4)); // Account for borders
+
+        for wrapped_line in wrapped_lines {
+            let console_line = match &line {
+                ConsoleLine::Stdout(_) => ConsoleLine::Stdout(wrapped_line),
+                ConsoleLine::Stderr(_) => ConsoleLine::Stderr(wrapped_line),
+            };
+            self.repl_output_history.push(console_line);
+        }
 
         // Limit the output history to prevent memory issues
         if self.repl_output_history.len() > 1000 {
@@ -397,6 +474,13 @@ impl TuiState {
     pub fn add_lines_to_lua_console(&mut self, lines: Vec<String>) {
         for line in lines {
             self.add_to_lua_console(line);
+        }
+    }
+
+    /// Add multiple error lines to the Lua console output history
+    pub fn add_error_lines_to_lua_console(&mut self, lines: Vec<String>) {
+        for line in lines {
+            self.add_error_to_lua_console(line);
         }
     }
 
@@ -655,6 +739,77 @@ impl TuiState {
             Err(err) => {
                 self.set_warning(format!("Error reloading settings: {}", err));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod text_wrapping_tests {
+    use super::*;
+
+    #[test]
+    fn test_wrap_text_to_width() {
+        let mut state = TuiState::new().unwrap();
+        state.visible_width = 80; // Set a reasonable width for testing
+
+        // Test short text (should not wrap)
+        let short_text = "Hello world";
+        let wrapped = state.wrap_text_to_width(short_text, 76); // 80 - 4 for borders
+        assert_eq!(wrapped.len(), 1);
+        assert_eq!(wrapped[0], "Hello world");
+
+        // Test long text (should wrap)
+        let long_text = "This is a very long line of text that should definitely wrap when the width is limited to a reasonable size for console output";
+        let wrapped = state.wrap_text_to_width(long_text, 40);
+        assert!(wrapped.len() > 1);
+
+        // All wrapped lines should be within the width limit
+        for line in &wrapped {
+            assert!(
+                line.len() <= 40,
+                "Line '{}' is too long: {} chars",
+                line,
+                line.len()
+            );
+        }
+
+        // Test empty text
+        let empty_wrapped = state.wrap_text_to_width("", 40);
+        assert_eq!(empty_wrapped.len(), 1);
+        assert_eq!(empty_wrapped[0], "");
+
+        // Test very long single word (should not break word)
+        let long_word = "supercalifragilisticexpialidocious";
+        let wrapped_word = state.wrap_text_to_width(long_word, 20);
+        assert_eq!(wrapped_word.len(), 1);
+        assert_eq!(wrapped_word[0], long_word);
+    }
+
+    #[test]
+    fn test_add_to_lua_console_with_wrapping() {
+        let mut state = TuiState::new().unwrap();
+        state.visible_width = 50; // Set a small width for testing
+        state.repl_output_history.clear();
+
+        // Add a long message
+        let long_message = "This is a very long error message that should be wrapped across multiple lines when added to the Lua console output history";
+        state.add_to_lua_console(long_message.to_string());
+
+        // Should have multiple lines in history
+        assert!(state.repl_output_history.len() > 1);
+
+        // All lines should be within the width limit
+        for console_line in &state.repl_output_history {
+            let line_len = match console_line {
+                ConsoleLine::Stdout(msg) => msg.len(),
+                ConsoleLine::Stderr(msg) => msg.len(),
+            };
+            assert!(
+                line_len <= 46,
+                "Line '{:?}' is too long: {} chars",
+                console_line,
+                line_len
+            ); // 50 - 4 for borders
         }
     }
 }

@@ -11,7 +11,7 @@
 //! - Full record data exposure and application state access
 //! - Improved parameter validation and type conversion
 
-use crate::state::{Mode, TuiState};
+use crate::state::{ConsoleLine, Mode, TuiState};
 use log::{debug, error, warn};
 use mlua::prelude::LuaError;
 use mlua::{FromLua, Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
@@ -386,34 +386,72 @@ impl LuaEngine {
         }
     }
 
-    /// Create a print function that captures output to the given vector
-    fn create_print_function(
+    /// Create print functions that capture output to the given vector
+    fn create_print_functions(
         &self,
-        output_capture: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
-    ) -> Result<mlua::Function, LuaEngineError> {
+        output_capture: std::rc::Rc<std::cell::RefCell<Vec<ConsoleLine>>>,
+    ) -> Result<(mlua::Function, mlua::Function), LuaEngineError> {
         let engine_ptr = self as *const LuaEngine;
 
-        self.lua
-            .create_function(move |_lua, args: mlua::Variadic<Value>| {
-                let mut output_line = Vec::new();
+        // Create print function for stdout
+        let print_fn = self
+            .lua
+            .create_function({
+                let output_capture = output_capture.clone();
+                move |_lua, args: mlua::Variadic<Value>| {
+                    let mut output_line = Vec::new();
 
-                for arg in args {
-                    let formatted_arg = unsafe {
-                        // Safe because we know the engine is alive during this call
-                        let engine = &*engine_ptr;
-                        engine.format_lua_value(&arg, 0, 3) // Max depth of 3
-                    };
-                    // Split the formatted arg into lines
-                    let lines: Vec<&str> = formatted_arg.split('\n').collect();
-                    for line in lines {
-                        output_line.push(line.to_string());
+                    for arg in args {
+                        let formatted_arg = unsafe {
+                            // Safe because we know the engine is alive during this call
+                            let engine = &*engine_ptr;
+                            engine.format_lua_value(&arg, 0, 3) // Max depth of 3
+                        };
+                        // Split the formatted arg into lines
+                        let lines: Vec<&str> = formatted_arg.split('\n').collect();
+                        for line in lines {
+                            output_line.push(line.to_string());
+                        }
                     }
-                }
 
-                output_capture.borrow_mut().push(output_line.join("\t"));
-                Ok(())
+                    output_capture
+                        .borrow_mut()
+                        .push(ConsoleLine::Stdout(output_line.join("\t")));
+                    Ok(())
+                }
             })
-            .map_err(|e| self.create_enhanced_error(e, None))
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        // Create print_error function for stderr
+        let print_error_fn = self
+            .lua
+            .create_function({
+                let output_capture = output_capture.clone();
+                move |_lua, args: mlua::Variadic<Value>| {
+                    let mut output_line = Vec::new();
+
+                    for arg in args {
+                        let formatted_arg = unsafe {
+                            // Safe because we know the engine is alive during this call
+                            let engine = &*engine_ptr;
+                            engine.format_lua_value(&arg, 0, 3) // Max depth of 3
+                        };
+                        // Split the formatted arg into lines
+                        let lines: Vec<&str> = formatted_arg.split('\n').collect();
+                        for line in lines {
+                            output_line.push(line.to_string());
+                        }
+                    }
+
+                    output_capture
+                        .borrow_mut()
+                        .push(ConsoleLine::Stderr(output_line.join("\t")));
+                    Ok(())
+                }
+            })
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        Ok((print_fn, print_error_fn))
     }
 
     /// Helper function to safely get TuiState from Lua registry
@@ -896,13 +934,18 @@ impl LuaEngine {
     /// Set up print output capture and return the capture container
     fn setup_print_capture(
         &mut self,
-    ) -> Result<std::rc::Rc<std::cell::RefCell<Vec<String>>>, LuaEngineError> {
-        let print_output = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
-        let print_fn = self.create_print_function(print_output.clone())?;
+    ) -> Result<std::rc::Rc<std::cell::RefCell<Vec<ConsoleLine>>>, LuaEngineError> {
+        let print_output = std::rc::Rc::new(std::cell::RefCell::new(Vec::<ConsoleLine>::new()));
+        let (print_fn, print_error_fn) = self.create_print_functions(print_output.clone())?;
 
         self.lua
             .globals()
             .set("print", print_fn)
+            .map_err(|e| self.create_enhanced_error(e, None))?;
+
+        self.lua
+            .globals()
+            .set("print_error", print_error_fn)
             .map_err(|e| self.create_enhanced_error(e, None))?;
 
         Ok(print_output)
@@ -919,17 +962,22 @@ impl LuaEngine {
     /// Combine print output and script result into final output
     fn combine_output_and_result(
         &self,
-        print_output: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        print_output: std::rc::Rc<std::cell::RefCell<Vec<ConsoleLine>>>,
         result: String,
     ) -> Result<String, LuaEngineError> {
         let print_lines = print_output.borrow();
         let mut output = Vec::new();
 
-        // Add all print output
-        output.extend(print_lines.iter().cloned());
+        // Add all print output (convert ConsoleLine to String)
+        for console_line in print_lines.iter() {
+            match console_line {
+                ConsoleLine::Stdout(msg) => output.push(msg.clone()),
+                ConsoleLine::Stderr(msg) => output.push(msg.clone()),
+            }
+        }
 
         // Add return value if meaningful
-        if self.should_show_result(&result, &print_lines) {
+        if self.should_show_result(&result, &output) {
             output.push(result);
         }
 

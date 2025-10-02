@@ -4,7 +4,7 @@
 //! are captured and redirected to the Lua console instead of going to stderr.
 
 use tailtales::lua_engine::LuaEngine;
-use tailtales::state::TuiState;
+use tailtales::state::{ConsoleLine, TuiState};
 
 #[test]
 fn test_lua_print_output_redirection() {
@@ -200,7 +200,14 @@ fn test_external_script_print_output_integration() {
 
             // Now verify that the output was added to the REPL history
             assert!(!state.repl_output_history.is_empty());
-            let history_text = state.repl_output_history.join("\n");
+            let history_text: String = state.repl_output_history
+                .iter()
+                .map(|line| match line {
+                    ConsoleLine::Stdout(msg) => msg.clone(),
+                    ConsoleLine::Stderr(msg) => msg.clone(),
+                })
+                .collect::<Vec<String>>()
+                .join("\n");
             assert!(history_text.contains("External script loaded"));
             assert!(history_text.contains("Setting up record processors"));
             assert!(history_text.contains("Record processor added successfully"));
@@ -245,11 +252,18 @@ fn test_lua_script_error_handling() {
             println!("✓ Script failed as expected with error: {}", e);
 
             // Simulate what main.rs does for errors: add to REPL history
-            state.add_to_lua_console(format!("Error executing script 'test_error.lua': {}", e));
+            state.add_error_to_lua_console(format!("Error executing script 'test_error.lua': {}", e));
 
             // Verify that the error was added to the REPL history
             assert!(!state.repl_output_history.is_empty());
-            let history_text = state.repl_output_history.join("\n");
+            let history_text: String = state.repl_output_history
+                .iter()
+                .map(|line| match line {
+                    ConsoleLine::Stdout(msg) => msg.clone(),
+                    ConsoleLine::Stderr(msg) => msg.clone(),
+                })
+                .collect::<Vec<String>>()
+                .join("\n");
             assert!(history_text.contains("Error executing script"));
             assert!(history_text.contains("test_error.lua"));
 

@@ -4,8 +4,7 @@
 //! and Lua REPL mode, with clean formatting and single responsibility functions.
 
 use crate::lua_engine::LuaEngine;
-use crate::state::Mode;
-use crate::state::TuiState;
+use crate::state::{ConsoleLine, Mode, TuiState};
 
 /// Calculate the common prefix from a list of completions
 pub fn calculate_common_prefix(completions: &[String]) -> String {
@@ -132,9 +131,9 @@ pub fn handle_repl_completion(state: &mut TuiState, lua_engine: &mut LuaEngine) 
     let completions = match lua_engine.get_completions_from_lua(current) {
         Ok(lua_completions) => lua_completions,
         Err(_) => {
-            state
-                .repl_output_history
-                .push("Completion system unavailable".to_string());
+            state.repl_output_history.push(ConsoleLine::Stderr(
+                "Completion system unavailable".to_string(),
+            ));
             // Auto-scroll to show the error message
             let visible_lines = state.visible_height.saturating_sub(2);
             let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
@@ -149,7 +148,7 @@ pub fn handle_repl_completion(state: &mut TuiState, lua_engine: &mut LuaEngine) 
     if completions.is_empty() {
         state
             .repl_output_history
-            .push("No completions found".to_string());
+            .push(ConsoleLine::Stdout("No completions found".to_string()));
         // Auto-scroll to show the message
         let visible_lines = state.visible_height.saturating_sub(2);
         let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
@@ -173,7 +172,7 @@ pub fn handle_repl_completion(state: &mut TuiState, lua_engine: &mut LuaEngine) 
         // Show multiple completions in a formatted table in REPL output
         let formatted_lines = format_completions_table(&completions);
         for line in formatted_lines {
-            state.repl_output_history.push(line);
+            state.add_to_lua_console(line);
         }
 
         // Auto-scroll to show the completion lines

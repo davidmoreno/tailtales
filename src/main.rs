@@ -172,7 +172,7 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
         Err(e) => {
             // Add error to Lua console instead of stderr
             app.state
-                .add_to_lua_console(format!("Error reading Lua script '{}': {}", script_path, e));
+                .add_error_to_lua_console(format!("Error reading Lua script '{}': {}", script_path, e));
             std::process::exit(1);
         }
     };
@@ -211,7 +211,7 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
                 }
                 Err(e) => {
                     // Add error to Lua console instead of stderr
-                    app.state.add_to_lua_console(format!(
+                    app.state.add_error_to_lua_console(format!(
                         "Error executing script '{}': {}",
                         script_path, e
                     ));
@@ -222,7 +222,7 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
         Err(e) => {
             // Add error to Lua console instead of stderr
             app.state
-                .add_to_lua_console(format!("Error compiling script '{}': {}", script_path, e));
+                .add_error_to_lua_console(format!("Error compiling script '{}': {}", script_path, e));
             std::process::exit(1);
         }
     }

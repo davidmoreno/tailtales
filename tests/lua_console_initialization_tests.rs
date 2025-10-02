@@ -1,4 +1,12 @@
-use tailtales::state::TuiState;
+use tailtales::state::{ConsoleLine, TuiState};
+
+// Helper function to extract text from ConsoleLine
+fn get_console_text(console_line: &ConsoleLine) -> &str {
+    match console_line {
+        ConsoleLine::Stdout(msg) => msg,
+        ConsoleLine::Stderr(msg) => msg,
+    }
+}
 
 #[test]
 fn test_lua_console_initialization_consistency() {
@@ -13,13 +21,13 @@ fn test_lua_console_initialization_consistency() {
     
     // Now it should have the welcome message
     assert!(!state.repl_output_history.is_empty());
-    assert!(state.repl_output_history[0].contains("Welcome to Lua REPL!"));
-    assert!(state.repl_output_history[1].contains("Supports multiline input"));
-    assert!(state.repl_output_history[2].contains("Use print() to output text"));
-    assert!(state.repl_output_history[3].contains("Press Esc to exit"));
-    assert!(state.repl_output_history[4].contains("Use ↑/↓ arrows"));
-    assert!(state.repl_output_history[5].contains("Press Tab for function"));
-    assert_eq!(state.repl_output_history[6], ""); // Empty line separator
+    assert!(get_console_text(&state.repl_output_history[0]).contains("Welcome to Lua REPL!"));
+    assert!(get_console_text(&state.repl_output_history[1]).contains("Supports multiline input"));
+    assert!(get_console_text(&state.repl_output_history[2]).contains("Use print() to output text"));
+    assert!(get_console_text(&state.repl_output_history[3]).contains("Press Esc to exit"));
+    assert!(get_console_text(&state.repl_output_history[4]).contains("Use ↑/↓ arrows"));
+    assert!(get_console_text(&state.repl_output_history[5]).contains("Press Tab for function"));
+    assert_eq!(get_console_text(&state.repl_output_history[6]), ""); // Empty line separator
 }
 
 #[test]
@@ -53,7 +61,7 @@ fn test_lua_console_initialization_with_existing_content() {
     
     // Should not have added anything
     assert_eq!(initial_count, final_count);
-    assert_eq!(state.repl_output_history[0], "Some existing content");
+    assert_eq!(get_console_text(&state.repl_output_history[0]), "Some existing content");
 }
 
 #[test]
@@ -69,5 +77,5 @@ fn test_lua_console_initialization_via_set_mode() {
     
     // Should now have welcome message
     assert!(!state.repl_output_history.is_empty());
-    assert!(state.repl_output_history[0].contains("Welcome to Lua REPL!"));
+    assert!(get_console_text(&state.repl_output_history[0]).contains("Welcome to Lua REPL!"));
 }

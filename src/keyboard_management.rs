@@ -8,7 +8,7 @@ use crate::{
     completions::{handle_command_completion, handle_repl_completion},
     lua_engine::LuaEngine,
     settings::Settings,
-    state::{Mode, TuiState},
+    state::{ConsoleLine, Mode, TuiState},
 };
 use log::debug;
 
@@ -272,7 +272,6 @@ pub fn handle_command_execution(state: &mut TuiState, lua_engine: &mut LuaEngine
     state.command.clear();
 }
 
-
 pub fn handle_filter_mode(key_event: KeyEvent, state: &mut TuiState) {
     match key_event.code {
         KeyCode::Esc => {
@@ -368,7 +367,9 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
         KeyCode::Char('c') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Cancel current multiline input (Ctrl+C)
             if state.repl_is_multiline {
-                state.repl_output_history.push("^C".to_string());
+                state
+                    .repl_output_history
+                    .push(ConsoleLine::Stdout("^C".to_string()));
                 state.repl_multiline_buffer.clear();
                 state.repl_is_multiline = false;
                 state.repl_input.clear();
@@ -388,7 +389,9 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
 
             if input.is_empty() && !state.repl_is_multiline {
                 // Empty input - add empty line with prompt to history for console interactivity check
-                state.repl_output_history.push("> ".to_string());
+                state
+                    .repl_output_history
+                    .push(ConsoleLine::Stdout("> ".to_string()));
 
                 // Clear current input line for next input
                 state.repl_input.clear();
@@ -404,13 +407,11 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
                 } else {
                     ">> "
                 };
-                state
-                    .repl_output_history
-                    .push(format!("{}{}", prompt, input));
+                state.add_to_lua_console(format!("{}{}", prompt, input));
                 state.repl_multiline_buffer.push(input.clone());
             } else {
                 // This might be the start of a multiline construct
-                state.repl_output_history.push(format!("> {}", input));
+                state.add_to_lua_console(format!("> {}", input));
                 state.repl_multiline_buffer.push(input.clone());
                 state.repl_is_multiline = true;
             }
@@ -423,16 +424,16 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
                 match lua_engine.execute_script_string_with_state(&full_code, state) {
                     Ok(result) => {
                         if !result.is_empty() {
-                            // Split multi-line output into separate history entries
+                            // Split multi-line output into separate history entries with text wrapping
                             for line in result.lines() {
                                 if !line.is_empty() {
-                                    state.repl_output_history.push(line.to_string());
+                                    state.add_to_lua_console(line.to_string());
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        state.repl_output_history.push(format!("Error: {}", e));
+                        state.add_error_to_lua_console(format!("Error: {}", e));
                     }
                 }
 
