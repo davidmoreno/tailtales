@@ -260,3 +260,19 @@ rules:
       - regex (?P<date>\d{4}-\d{2}-\d{2})
       - regex (?P<what>status|upgrade|startup)
       - autodatetime
+    filters:
+      - name: errors
+        expression: "error"
+        gutter: red
+      - name: warnings
+        expression: "warning"
+        gutter: yellow
+      - name: warn
+        expression: "warn"
+        gutter: yellow
+      - name: infos
+        expression: "info"
+        gutter: green
+      - name: debug
+        expression: "debug"
+        gutter: blue
