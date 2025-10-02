@@ -14,7 +14,7 @@ use std::fs;
 
 #[derive(Debug)]
 struct ParsedArgs {
-    mode: Option<String>,
+    rule: Option<String>,
     files: Vec<String>,
     lua_script: Option<String>,
 }
@@ -79,15 +79,21 @@ fn get_rule_by_filename(settings: &mut Settings, filename: String) -> RulesSetti
 }
 
 fn parse_args_with_clap() -> ParsedArgs {
+    let settings = Settings::new().unwrap();
+    let rules = settings
+        .rules
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
     let matches = Command::new("tt")
         .about("TailTales - Flexible log viewer for logfmt and other formats")
         .version("0.2.0")
         .arg(
-            Arg::new("mode")
-                .short('m')
-                .long("mode")
-                .value_name("MODE")
-                .help("Force parsing mode (apache, nginx, json, csv, logfmt, etc.)"),
+            Arg::new("rule")
+                .long("rule")
+                .value_name("RULE")
+                .help(format!("Force parsing rule ({})", &rules)),
         )
         .arg(
             Arg::new("lua")
@@ -102,7 +108,7 @@ fn parse_args_with_clap() -> ParsedArgs {
         )
         .get_matches();
 
-    let mode = matches.get_one::<String>("mode").cloned();
+    let rule = matches.get_one::<String>("rule").cloned();
     let lua_script = matches.get_one::<String>("lua").cloned();
     let files = matches
         .get_many::<String>("files")
@@ -110,7 +116,7 @@ fn parse_args_with_clap() -> ParsedArgs {
         .unwrap_or_default();
 
     ParsedArgs {
-        mode,
+        rule,
         files,
         lua_script,
     }
@@ -124,8 +130,8 @@ fn apply_args_to_app(args: ParsedArgs, app: &mut Application) {
     }
 
     // Handle mode selection
-    if let Some(mode) = args.mode {
-        set_rule_by_mode(&mode, app);
+    if let Some(rule) = args.rule {
+        set_rule_by_name(&rule, app);
     } else {
         // Use default behavior - determine mode from first file or default arguments
         let args_vec = if !args.files.is_empty() {
@@ -264,14 +270,14 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
     }
 }
 
-fn set_rule_by_mode(mode: &str, app: &mut Application) {
+fn set_rule_by_name(name: &str, app: &mut Application) {
     // Find rule by name instead of filename
     let rule = app
         .state
         .settings
         .rules
         .iter()
-        .find(|rule| rule.name == mode)
+        .find(|rule| rule.name == name)
         .cloned();
 
     match rule {
@@ -279,11 +285,11 @@ fn set_rule_by_mode(mode: &str, app: &mut Application) {
             app.state.current_rule = rule;
             if let Err(err) = load_parsers(&app.state.current_rule, &mut app.state.records.parsers)
             {
-                panic!("Could not load parsers for mode '{}': {:?}", mode, err);
+                panic!("Could not load parsers for mode '{}': {:?}", name, err);
             }
         }
         None => {
-            eprintln!("Error: Unknown mode '{}'", mode);
+            eprintln!("Error: Unknown mode '{}'", name);
             eprintln!(
                 "Available modes: {}",
                 app.state
