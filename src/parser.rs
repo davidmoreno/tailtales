@@ -442,6 +442,39 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_logfmt_complex_line() {
+        let parser = Parser::new_logfmt();
+        let data = HashMap::new();
+
+        // Test complex logfmt line with multiple key-value pairs and special characters
+        let complex_line = "level=INFO module=test function=login filename=views.py | level=4 allowed=True user_id=568 mod=users description=\"login /bombards.parapsychology@serial.com/\"";
+        let result = parser.parse_line(data, complex_line);
+
+        // The logfmt parser correctly extracts key-value pairs separated by spaces
+        // It treats the pipe character as a separator between key-value pairs
+        // The parser finds: level=INFO, module=test, function=login, filename=views.py, |, level=4, allowed=True, etc.
+        // Note: The pipe character "|" is treated as a standalone key with no value
+
+        // Verify the key-value pairs that are actually parsed
+        assert_eq!(result.get("level"), Some(&"4".to_string())); // Second level=4 overwrites first level=INFO
+        assert_eq!(result.get("module"), Some(&"test".to_string()));
+        assert_eq!(result.get("function"), Some(&"login".to_string()));
+        assert_eq!(result.get("filename"), Some(&"views.py".to_string()));
+        assert_eq!(result.get("allowed"), Some(&"True".to_string()));
+        assert_eq!(result.get("user_id"), Some(&"568".to_string()));
+        assert_eq!(result.get("mod"), Some(&"users".to_string()));
+        assert_eq!(
+            result.get("description"),
+            Some(&"login /bombards.parapsychology@serial.com/".to_string())
+        );
+
+        // Test that the parser correctly handles the complex line structure
+        // The parser successfully extracts all the key-value pairs from the complex logfmt line
+        // This demonstrates that the logfmt parser can handle lines with special characters
+        // and multiple key-value pairs, including cases where keys are duplicated (last value wins)
+    }
+
+    #[test]
     fn test_parse_regex() {
         let parser = Parser::new_from_regex(r"(?P<method>\w+) (?P<path>/\S+)");
         let data = HashMap::new();
