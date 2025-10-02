@@ -873,7 +873,7 @@ impl LuaEngine {
         self.set_state_to_registry(Some(state))?;
 
         // Set up print output capture
-        let print_output = self.setup_print_capture()?;
+        let _print_output = self.setup_print_capture()?;
 
         // Execute the script and get the result
         let result = self.execute_lua_code(source);
@@ -883,7 +883,7 @@ impl LuaEngine {
 
         // Handle result and combine with print output
         match result {
-            Ok(result_str) => self.combine_output_and_result(print_output, result_str),
+            Ok(result_str) => self.combine_output_and_result(_print_output, result_str),
             Err(e) => Err(e),
         }
     }

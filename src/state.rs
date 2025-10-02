@@ -191,30 +191,8 @@ impl TuiState {
             }
             "lua_repl" => {
                 self.mode = Mode::LuaRepl;
-                // Add welcome message if REPL history is empty
-                if self.repl_output_history.is_empty() {
-                    self.repl_output_history.push(
-                        "Welcome to Lua REPL! Type Lua code and press Enter to execute."
-                            .to_string(),
-                    );
-                    self.repl_output_history.push(
-                        "Supports multiline input: functions, if/do blocks, etc.".to_string(),
-                    );
-                    self.repl_output_history.push(
-                        "Use print() to output text, dir() to explore, help() for assistance."
-                            .to_string(),
-                    );
-                    self.repl_output_history
-                        .push("Press Esc to exit, Ctrl+C to cancel multiline input.".to_string());
-                    self.repl_output_history.push(
-                        "Use ↑/↓ arrows to navigate command history, Ctrl+L to clear screen."
-                            .to_string(),
-                    );
-                    self.repl_output_history.push(
-                        "Press Tab for function/variable completion, Esc to exit.".to_string(),
-                    );
-                    self.repl_output_history.push("".to_string());
-                }
+                // Ensure Lua console is initialized with welcome message
+                self.ensure_lua_console_initialized();
 
                 // Load command history from disk when entering REPL mode
                 self.load_repl_history();
@@ -403,6 +381,48 @@ impl TuiState {
     pub fn reset_repl_history_navigation(&mut self) {
         self.repl_history_index = None;
         self.repl_temp_input.clear();
+    }
+
+    /// Add a message to the Lua console output history
+    pub fn add_to_lua_console(&mut self, message: String) {
+        self.repl_output_history.push(message);
+
+        // Limit the output history to prevent memory issues
+        if self.repl_output_history.len() > 1000 {
+            self.repl_output_history.drain(0..500);
+        }
+    }
+
+    /// Add multiple lines to the Lua console output history
+    pub fn add_lines_to_lua_console(&mut self, lines: Vec<String>) {
+        for line in lines {
+            self.add_to_lua_console(line);
+        }
+    }
+
+    /// Initialize the Lua console with welcome message if it's empty
+    pub fn ensure_lua_console_initialized(&mut self) {
+        if self.repl_output_history.is_empty() {
+            self.add_to_lua_console(
+                "Welcome to Lua REPL! Type Lua code and press Enter to execute.".to_string(),
+            );
+            self.add_to_lua_console(
+                "Supports multiline input: functions, if/do blocks, etc.".to_string(),
+            );
+            self.add_to_lua_console(
+                "Use print() to output text, dir() to explore, help() for assistance.".to_string(),
+            );
+            self.add_to_lua_console(
+                "Press Esc to exit, Ctrl+C to cancel multiline input.".to_string(),
+            );
+            self.add_to_lua_console(
+                "Use ↑/↓ arrows to navigate command history, Ctrl+L to clear screen.".to_string(),
+            );
+            self.add_to_lua_console(
+                "Press Tab for function/variable completion, Esc to exit.".to_string(),
+            );
+            self.add_to_lua_console("".to_string());
+        }
     }
 
     pub fn toggle_mark(&mut self, color: &str) {
