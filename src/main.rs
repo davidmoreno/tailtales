@@ -10,11 +10,13 @@ use settings::Settings;
 use settings::{Alignment, RulesSettings};
 
 use crate::recordlist::load_parsers;
+use std::fs;
 
 #[derive(Debug)]
 struct ParsedArgs {
     mode: Option<String>,
     files: Vec<String>,
+    lua_script: Option<String>,
 }
 
 mod application;
@@ -88,6 +90,12 @@ fn parse_args_with_clap() -> ParsedArgs {
                 .help("Force parsing mode (apache, nginx, json, csv, logfmt, etc.)"),
         )
         .arg(
+            Arg::new("lua")
+                .long("lua")
+                .value_name("SCRIPT")
+                .help("Run a Lua script file in console mode"),
+        )
+        .arg(
             Arg::new("files")
                 .num_args(0..)
                 .help("Files to process, or '-' for stdin, or '--' followed by command to execute"),
@@ -95,15 +103,26 @@ fn parse_args_with_clap() -> ParsedArgs {
         .get_matches();
 
     let mode = matches.get_one::<String>("mode").cloned();
+    let lua_script = matches.get_one::<String>("lua").cloned();
     let files = matches
         .get_many::<String>("files")
         .map(|f| f.cloned().collect())
         .unwrap_or_default();
 
-    ParsedArgs { mode, files }
+    ParsedArgs {
+        mode,
+        files,
+        lua_script,
+    }
 }
 
 fn apply_args_to_app(args: ParsedArgs, app: &mut Application) {
+    // Handle Lua script execution first
+    if let Some(script_path) = args.lua_script {
+        execute_lua_script(&script_path, app);
+        return; // Don't process files when running Lua script
+    }
+
     // Handle mode selection
     if let Some(mode) = args.mode {
         set_rule_by_mode(&mode, app);
@@ -179,6 +198,68 @@ fn apply_args_to_app(args: ParsedArgs, app: &mut Application) {
                         align: Alignment::Left,
                     });
             }
+        }
+    }
+}
+
+fn execute_lua_script(script_path: &str, app: &mut Application) {
+    // Read the Lua script file
+    let script_content = match fs::read_to_string(script_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("Error reading Lua script '{}': {}", script_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // Set up the application for Lua REPL mode
+    app.state.set_mode("lua_repl");
+
+    // Add a message indicating external script execution
+    app.state
+        .repl_output_history
+        .push(format!("Executing external Lua script: {}", script_path));
+    app.state.repl_output_history.push("=".repeat(50));
+    app.state.repl_output_history.push("".to_string());
+
+    // Compile and execute the script
+    let script_name = format!(
+        "external_script_{}",
+        script_path.replace("/", "_").replace("\\", "_")
+    );
+
+    match app.lua_engine.compile_script(&script_name, &script_content) {
+        Ok(_) => {
+            // Execute the script and capture output
+            match app
+                .lua_engine
+                .execute_script_string_with_state(&script_content, &mut app.state)
+            {
+                Ok(output) => {
+                    if !output.is_empty() {
+                        // Split multi-line output into separate history entries
+                        for line in output.lines() {
+                            if !line.is_empty() {
+                                app.state.repl_output_history.push(line.to_string());
+                            }
+                        }
+                    }
+                    app.state.repl_output_history.push("".to_string());
+                    app.state
+                        .repl_output_history
+                        .push("Script execution completed.".to_string());
+                }
+                Err(e) => {
+                    app.state
+                        .repl_output_history
+                        .push(format!("Error executing script: {}", e));
+                }
+            }
+        }
+        Err(e) => {
+            app.state
+                .repl_output_history
+                .push(format!("Error compiling script: {}", e));
         }
     }
 }
