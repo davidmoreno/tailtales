@@ -27,8 +27,18 @@ function cleanup_marks()
     end)
 end
 
-print("Example script loaded. Available functions:")
-print("  mark_by_log_level() - Mark records by log level")
-print("  cleanup_marks() - Remove marks from records")
-print("")
-print("Usage: Load this script and call any of the functions above.")
+documentation.mark_by_log_level = {
+    name = "mark_by_log_level",
+    description = "Mark records by log level",
+    parameters = {},
+    return_value = "none",
+    category = "processing"
+}
+
+documentation.cleanup_marks = { 
+    name = "cleanup_marks",
+    description = "Remove marks from records",
+    parameters = {},
+    return_value = "none",
+    category = "processing"
+}

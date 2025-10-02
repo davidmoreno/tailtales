@@ -403,7 +403,11 @@ impl LuaEngine {
                         let engine = &*engine_ptr;
                         engine.format_lua_value(&arg, 0, 3) // Max depth of 3
                     };
-                    output_line.push(formatted_arg);
+                    // Split the formatted arg into lines
+                    let lines: Vec<&str> = formatted_arg.split('\n').collect();
+                    for line in lines {
+                        output_line.push(line.to_string());
+                    }
                 }
 
                 output_capture.borrow_mut().push(output_line.join("\t"));

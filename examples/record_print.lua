@@ -59,3 +59,18 @@ function print_current_record()
     print("") -- Empty line for readability
 end
 
+documentation.print_record = {
+    name = "print_record",
+    description = "Pretty print a record by position",
+    parameters = {"position (number) - Record position"},
+    return_value = "none",
+    category = "records"
+}
+
+documentation.print_current_record = {
+    name = "print_current_record",
+    description = "Pretty print the current record",
+    parameters = {},
+    return_value = "none",
+    category = "records"
+}

@@ -1,6 +1,400 @@
 -- TailTales Lua Initialization Script
 -- This file is loaded automatically when the Lua engine starts
 
+-- Documentation table for all Lua functions exported by TailTales
+-- This table contains metadata for all functions registered in the Lua engine
+documentation = {
+    -- Core Application Functions
+    quit = {
+        name = "quit",
+        description = "Exit the TailTales application",
+        parameters = {},
+        return_value = "none",
+        category = "core"
+    },
+    
+    warning = {
+        name = "warning",
+        description = "Display a warning message to the user",
+        parameters = {"msg (string) - The warning message to display"},
+        return_value = "none",
+        category = "core"
+    },
+    
+    -- Navigation Functions
+    vmove = {
+        name = "vmove",
+        description = "Move the cursor vertically by n lines",
+        parameters = {"n (number) - Number of lines to move (positive = down, negative = up)"},
+        return_value = "none",
+        category = "navigation"
+    },
+    
+    vgoto = {
+        name = "vgoto",
+        description = "Jump to a specific line number",
+        parameters = {"n (number) - Line number to jump to (1-based)"},
+        return_value = "none",
+        category = "navigation"
+    },
+    
+    hmove = {
+        name = "hmove",
+        description = "Move the view horizontally by n characters",
+        parameters = {"n (number) - Number of characters to scroll (positive = right, negative = left)"},
+        return_value = "none",
+        category = "navigation"
+    },
+    
+    move_top = {
+        name = "move_top",
+        description = "Move to the first record",
+        parameters = {},
+        return_value = "none",
+        category = "navigation"
+    },
+    
+    move_bottom = {
+        name = "move_bottom",
+        description = "Move to the last record",
+        parameters = {},
+        return_value = "none",
+        category = "navigation"
+    },
+    
+    -- Search Functions
+    search_next = {
+        name = "search_next",
+        description = "Find the next occurrence of the current search term",
+        parameters = {},
+        return_value = "none",
+        category = "search"
+    },
+    
+    search_prev = {
+        name = "search_prev",
+        description = "Find the previous occurrence of the current search term",
+        parameters = {},
+        return_value = "none",
+        category = "search"
+    },
+    
+    -- Mark Functions
+    toggle_mark = {
+        name = "toggle_mark",
+        description = "Toggle a mark on the current record",
+        parameters = {"color (string, optional) - Mark color (default: 'yellow')"},
+        return_value = "none",
+        category = "marks"
+    },
+    
+    move_to_next_mark = {
+        name = "move_to_next_mark",
+        description = "Move to the next marked record",
+        parameters = {},
+        return_value = "none",
+        category = "marks"
+    },
+    
+    move_to_prev_mark = {
+        name = "move_to_prev_mark",
+        description = "Move to the previous marked record",
+        parameters = {},
+        return_value = "none",
+        category = "marks"
+    },
+    
+    -- Mode and UI Functions
+    mode = {
+        name = "mode",
+        description = "Change the application mode",
+        parameters = {"mode_name (string) - Mode to switch to (normal, search, filter, command, warning, script_input, lua_repl)"},
+        return_value = "none",
+        category = "ui"
+    },
+    
+    toggle_details = {
+        name = "toggle_details",
+        description = "Toggle the details view on/off",
+        parameters = {},
+        return_value = "none",
+        category = "ui"
+    },
+    
+    lua_repl = {
+        name = "lua_repl",
+        description = "Enter Lua REPL mode",
+        parameters = {},
+        return_value = "none",
+        category = "ui"
+    },
+    
+    -- System Functions
+    refresh_screen = {
+        name = "refresh_screen",
+        description = "Force a screen refresh",
+        parameters = {},
+        return_value = "none",
+        category = "system"
+    },
+    
+    clear_records = {
+        name = "clear_records",
+        description = "Clear all records from memory",
+        parameters = {},
+        return_value = "none",
+        category = "system"
+    },
+    
+    clear = {
+        name = "clear",
+        description = "Clear the REPL console buffer",
+        parameters = {},
+        return_value = "none",
+        category = "system"
+    },
+    
+    exec = {
+        name = "exec",
+        description = "Execute an external command",
+        parameters = {"command (string) - Command to execute"},
+        return_value = "boolean - true if successful, false if failed",
+        category = "system"
+    },
+    
+    settings = {
+        name = "settings",
+        description = "Open the settings interface",
+        parameters = {},
+        return_value = "none",
+        category = "system"
+    },
+    
+    -- Filter Functions
+    filter = {
+        name = "filter",
+        description = "Filter records using a filter expression",
+        parameters = {"expression (string) - Filter expression (e.g., 'level == \"ERROR\"', 'status >= 400')"},
+        return_value = "number - Number of records after filtering",
+        category = "filtering"
+    },
+    
+    -- Record Access Functions
+    get_record = {
+        name = "get_record",
+        description = "Get record data at specified index or current position",
+        parameters = {"index (number, optional) - Record index (1-based), defaults to current position"},
+        return_value = "table or nil - Record data table or nil if not found",
+        category = "records"
+    },
+    
+    get_record_data = {
+        name = "get_record_data",
+        description = "Alias for get_record()",
+        parameters = {"index (number, optional) - Record index (1-based), defaults to current position"},
+        return_value = "table or nil - Record data table or nil if not found",
+        category = "records"
+    },
+    
+    get_position = {
+        name = "get_position",
+        description = "Get the current record position",
+        parameters = {},
+        return_value = "number - Current position (1-based)",
+        category = "records"
+    },
+    
+    get_record_count = {
+        name = "get_record_count",
+        description = "Get the total number of records",
+        parameters = {},
+        return_value = "number - Total number of records",
+        category = "records"
+    },
+    
+    -- Record Attribute Functions
+    update_record_attribute = {
+        name = "update_record_attribute",
+        description = "Add, update, or remove an attribute from a record",
+        parameters = {"index (number) - Record index (1-based)", "key (string) - Attribute name", "value (string or nil) - Attribute value (nil to remove)"},
+        return_value = "boolean - true if successful, false if record not found",
+        category = "attributes"
+    },
+    
+    get_record_attribute = {
+        name = "get_record_attribute",
+        description = "Get the value of an attribute from a record",
+        parameters = {"index (number) - Record index (1-based)", "key (string) - Attribute name"},
+        return_value = "string or nil - Attribute value or nil if not found",
+        category = "attributes"
+    },
+    
+    -- State Getter Functions
+    get_viewport = {
+        name = "get_viewport",
+        description = "Get viewport information",
+        parameters = {},
+        return_value = "table - Viewport data (height, width, scroll_top, scroll_left, view_details)",
+        category = "state"
+    },
+    
+    get_mode = {
+        name = "get_mode",
+        description = "Get the current application mode",
+        parameters = {},
+        return_value = "string - Current mode name",
+        category = "state"
+    },
+    
+    get_search = {
+        name = "get_search",
+        description = "Get the current search term",
+        parameters = {},
+        return_value = "string - Current search term",
+        category = "state"
+    },
+    
+    get_filter = {
+        name = "get_filter",
+        description = "Get the current filter expression",
+        parameters = {},
+        return_value = "string - Current filter expression",
+        category = "state"
+    },
+    
+    get_command = {
+        name = "get_command",
+        description = "Get the current command input",
+        parameters = {},
+        return_value = "string - Current command input",
+        category = "state"
+    },
+    
+    get_warning = {
+        name = "get_warning",
+        description = "Get the current warning message",
+        parameters = {},
+        return_value = "string - Current warning message",
+        category = "state"
+    },
+    
+    -- Utility Functions
+    url_encode = {
+        name = "url_encode",
+        description = "URL encode a string",
+        parameters = {"input (string) - String to encode"},
+        return_value = "string - URL encoded string",
+        category = "utility"
+    },
+    
+    url_decode = {
+        name = "url_decode",
+        description = "URL decode a string",
+        parameters = {"input (string) - String to decode"},
+        return_value = "string - URL decoded string",
+        category = "utility"
+    },
+    
+    escape_shell = {
+        name = "escape_shell",
+        description = "Escape a string for safe shell execution",
+        parameters = {"input (string) - String to escape"},
+        return_value = "string - Shell-escaped string",
+        category = "utility"
+    },
+    
+    debug_log = {
+        name = "debug_log",
+        description = "Log a debug message",
+        parameters = {"msg (string) - Debug message"},
+        return_value = "none",
+        category = "utility"
+    },
+    
+    -- Analysis Functions (defined in _init.lua)
+    histogram = {
+        name = "histogram",
+        description = "Calculate histogram data for a numeric attribute",
+        parameters = {"attribute (string) - Attribute name", "buckets (number, optional) - Number of histogram buckets (default: 10)"},
+        return_value = "table - Histogram data (buckets, min, max, count, skipped, bucket_size)",
+        category = "analysis"
+    },
+    
+    print_histogram = {
+        name = "print_histogram",
+        description = "Display histogram with ASCII art visualization",
+        parameters = {"attribute (string) - Attribute name", "buckets (number, optional) - Number of histogram buckets (default: 10)"},
+        return_value = "none",
+        category = "analysis"
+    },
+    
+    extract_number = {
+        name = "extract_number",
+        description = "Extract numeric value from string with units (ms, s, us, ns, m, h)",
+        parameters = {"value (string or number) - Value to extract number from"},
+        return_value = "number or nil - Extracted number in base unit (seconds) or nil if invalid",
+        category = "analysis"
+    },
+    
+    count = {
+        name = "count",
+        description = "Count occurrences of different values for an attribute",
+        parameters = {"attribute (string) - Attribute name"},
+        return_value = "table - Sorted array of {value, count} objects",
+        category = "analysis"
+    },
+    
+    print_count = {
+        name = "print_count",
+        description = "Display count results in formatted table",
+        parameters = {"attribute (string) - Attribute name"},
+        return_value = "none",
+        category = "analysis"
+    },
+    
+    -- Processing Functions (defined in _init.lua)
+    for_each_record = {
+        name = "for_each_record",
+        description = "Process each record with a custom function",
+        parameters = {"processor_func (function) - Function that receives a record and returns a table"},
+        return_value = "none",
+        category = "processing"
+    },
+    
+    -- Helper Functions (defined in _init.lua)
+    dir = {
+        name = "dir",
+        description = "List available functions and variables",
+        parameters = {"obj (optional) - Object to inspect, defaults to global scope"},
+        return_value = "none",
+        category = "helper"
+    },
+    
+    callable = {
+        name = "callable",
+        description = "Check if a value is callable",
+        parameters = {"obj - Value to check"},
+        return_value = "boolean - true if callable, false otherwise",
+        category = "helper"
+    },
+    
+    typeof = {
+        name = "typeof",
+        description = "Get detailed type information for a value",
+        parameters = {"obj - Value to inspect"},
+        return_value = "string - Detailed type information",
+        category = "helper"
+    },
+    
+    ask = {
+        name = "ask",
+        description = "Prompt user for input (used in coroutines)",
+        parameters = {"prompt (string) - Prompt message"},
+        return_value = "string - User input",
+        category = "helper"
+    }
+}
+
 -- Python-like dir() function that lists available functions and variables
 function dir(obj)
     local items = {}
@@ -109,215 +503,158 @@ function typeof(obj)
     return t
 end
 
--- Help function that provides usage information
+-- Enhanced help function that uses the documentation table
 function help(topic)
+    -- if topic is a function, use the function name as the topic
+    if type(topic) == "function" then
+        topic = topic.name
+    end
+
     if topic == nil then
+        -- Show general help with categories
         print("TailTales Lua REPL Help:")
-        print("  dir()           - List all available functions and variables")
-        print("  dir(obj)        - List properties of an object")
-        print("  help()          - Show this help message")
-        print("  help('topic')   - Show help for specific topic")
+        print("  help()                    - Show this help message")
+        print("  help('category')          - Show functions in a category")
+        print("  help('function_name')     - Show help for a specific function")
+        print("  dir()                     - List all available functions and variables")
         print("")
-        print("Available topics: 'functions', 'navigation', 'records', 'analysis', 'filtering', 'attributes', 'processing'")
+        
+        -- Get all unique categories
+        local categories = {}
+        for _, func_info in pairs(documentation) do
+            if not categories[func_info.category] then
+                categories[func_info.category] = true
+            end
+        end
+        
+        -- Sort categories
+        local sorted_categories = {}
+        for category, _ in pairs(categories) do
+            table.insert(sorted_categories, category)
+        end
+        table.sort(sorted_categories)
+        
+        print("Available categories:")
+        for _, category in ipairs(sorted_categories) do
+            local count = 0
+            for _, func_info in pairs(documentation) do
+                if func_info.category == category then
+                    count = count + 1
+                end
+            end
+            print(string.format("  %-15s (%d functions)", category, count))
+        end
+        
         print("")
-        print("Core functions:")
-        print("  get_position()  - Get current line position")
-        print("  get_record()    - Get current record data")
-        print("  quit()          - Exit the application")
-        print("  warning(msg)    - Show warning message")
-        print("  print(...)      - Output text to REPL")
-        print("  clear()         - Clear REPL console buffer")
-        print("  filter(expr)    - Filter records by expression")
-        print("  update_record_attribute(index, key, value) - Add/update/remove record attribute")
-        print("  get_record_attribute(index, key) - Get record attribute value")
-        print("  for_each_record(func) - Process each record with custom function")
-    elseif topic == "functions" then
-        print("TailTales Functions:")
-        print("  Movement: vmove(n), vgoto(n), hmove(n)")
-        print("  Marks: toggle_mark(color), move_to_next_mark(), move_to_prev_mark()")
-        print("  Mode: mode(name), toggle_details()")
-        print("  System: exec(cmd), refresh_screen(), clear_records()")
-        print("  Utility: url_encode(text)")
-    elseif topic == "navigation" then
-        print("Navigation Help:")
-        print("  vmove(n)        - Move cursor n lines up/down")
-        print("  vgoto(n)        - Go to specific line number")
-        print("  hmove(n)        - Scroll horizontally")
-        print("  get_position()  - Get current line number")
-    elseif topic == "records" then
-        print("Record Access Help:")
-        print("  get_record()    - Get current record as table")
-        print("  record.original - Raw log line")
-        print("  record.timestamp- Parsed timestamp (if available)")
-        print("  record.*        - Other parsed fields")
-        print("")
-        print("Analysis Functions:")
-        print("  histogram(attr, buckets) - Calculate histogram data for attribute")
-        print("  print_histogram(attr, buckets) - Display histogram with ASCII art")
-        print("  extract_number(value) - Extract numeric value from string with units")
-        print("  count(attr) - Count occurrences of different values for attribute")
-        print("  print_count(attr) - Display count results in formatted table")
-    elseif topic == "analysis" then
-        print("Analysis Functions Help:")
-        print("  histogram(attribute, buckets)")
-        print("    - Calculate histogram data for a numeric attribute")
-        print("    - buckets: number of histogram buckets (default: 10)")
-        print("    - Returns table with bucket counts, min/max, etc.")
-        print("")
-        print("  print_histogram(attribute, buckets)")
-        print("    - Display histogram with ASCII art visualization")
-        print("    - Uses histogram() internally")
-        print("    - Shows range, bucket size, counts, and percentages")
-        print("")
-        print("  extract_number(value)")
-        print("    - Extract numeric value from string with units")
-        print("    - Supports: ms, us, ns, s, m, h")
-        print("    - Converts all to base unit (seconds)")
-        print("")
-        print("Examples:")
-        print("  print_histogram('duration', 15)")
-        print("  print_histogram('response_time')")
-        print("  local data = histogram('latency', 20)")
-        print("")
-        print("  count(attribute)")
-        print("    - Count occurrences of different values for an attribute")
-        print("    - Returns sorted table with value/count pairs")
-        print("    - Useful for categorical data (log levels, status codes, etc.)")
-        print("")
-        print("  print_count(attribute)")
-        print("    - Display count results in formatted table")
-        print("    - Shows value, count, percentage, and ASCII bar")
-        print("    - Sorted by count (descending) then value (ascending)")
-        print("")
-        print("Count Examples:")
-        print("  print_count('level')     -- Count log levels")
-        print("  print_count('status')    -- Count status codes")
-        print("  local data = count('type') -- Get raw count data")
-    elseif topic == "filtering" then
-        print("Filtering Help:")
-        print("  filter(expression)")
-        print("    - Filter records using a filter expression")
-        print("    - Returns number of records after filtering")
-        print("    - Returns 0 if parse error occurs")
-        print("    - Resets position to first record after filtering")
-        print("")
-        print("Filter Expression Syntax:")
-        print("  String matching: 'error', \"error\"")
-        print("  Variable matching: level, status, method")
-        print("  Comparisons: level == 'ERROR', status >= 400")
-        print("  Logical operators: && (and), || (or), ! (not)")
-        print("  Regex matching: ~/pattern/, level ~/ERROR|WARN/")
-        print("")
-        print("Examples:")
-        print("  filter('error')                    -- Records containing 'error'")
-        print("  filter('level == \"ERROR\"')       -- Records with ERROR level")
-        print("  filter('status >= 400')           -- Records with status >= 400")
-        print("  filter('level == \"ERROR\" || level == \"WARN\"')  -- ERROR or WARN")
-        print("  filter('!level == \"DEBUG\"')      -- Not DEBUG level")
-        print("  filter('method ~/GET|POST/')       -- GET or POST methods")
-        print("")
-        print("Advanced Examples:")
-        print("  filter('level == \"ERROR\" && status >= 500')")
-        print("  filter('(level == \"WARN\" || level == \"ERROR\") && method == \"POST\"')")
-        print("  filter('!level == \"DEBUG\" && word_count > 10')")
-        print("")
-        print("Return Value Examples:")
-        print("  local count = filter('error')")
-        print("  print('Found ' .. count .. ' error records')")
-        print("")
-        print("  local errors = filter('level == \"ERROR\"')")
-        print("  if errors > 0 then")
-        print("      print('Found ' .. errors .. ' error records')")
-        print("  end")
-    elseif topic == "attributes" then
-        print("Record Attribute Manipulation Help:")
-        print("  update_record_attribute(index, key, value)")
-        print("    - Add, update, or remove an attribute from a record")
-        print("    - index: record number (1-based)")
-        print("    - key: attribute name (string)")
-        print("    - value: attribute value (string) or nil to remove")
-        print("    - Returns true if successful, false if record not found")
-        print("")
-        print("  get_record_attribute(index, key)")
-        print("    - Get the value of an attribute from a record")
-        print("    - index: record number (1-based)")
-        print("    - key: attribute name (string)")
-        print("    - Returns attribute value (string) or nil if not found")
-        print("")
-        print("Examples:")
-        print("  -- Add or update an attribute")
-        print("  update_record_attribute(1, 'level', 'ERROR')")
-        print("  update_record_attribute(1, 'status', '500')")
-        print("")
-        print("  -- Remove an attribute")
-        print("  update_record_attribute(1, 'level', nil)")
-        print("")
-        print("  -- Get an attribute value")
-        print("  local level = get_record_attribute(1, 'level')")
-        print("  if level then")
-        print("      print('Level:', level)")
-        print("  else")
-        print("      print('No level attribute')")
-        print("  end")
-        print("")
-        print("  -- Check if attribute exists")
-        print("  if get_record_attribute(1, 'user_id') then")
-        print("      print('Record has user_id')")
-        print("  end")
-        print("")
-        print("Use Cases:")
-        print("  - Add parsed fields to records")
-        print("  - Update existing fields with better values")
-        print("  - Remove incorrect or unwanted fields")
-        print("  - Data cleaning and normalization")
-    elseif topic == "processing" then
-        print("Record Processing Help:")
-        print("  for_each_record(processor_func)")
-        print("    - Process each record with a custom function")
-        print("    - processor_func: function that receives a record and returns a table")
-        print("    - Returns table with attributes to add/update/remove")
-        print("    - Use \"__REMOVE__\" values to remove attributes")
-        print("    - Returns nil to skip updating the record")
-        print("")
-        print("Examples:")
-        print("  -- Mark error records")
-        print("  for_each_record(function(record)")
-        print("      if record.original and string.find(record.original, 'error') then")
-        print("          return {mark = 'red white'}")
-        print("      end")
-        print("      return nil")
-        print("  end)")
-        print("")
-        print("  -- Add severity based on log level")
-        print("  for_each_record(function(record)")
-        print("      if record.level == 'ERROR' then")
-        print("          return {severity = 'high'}")
-        print("      elseif record.level == 'WARN' then")
-        print("          return {severity = 'medium'}")
-        print("      elseif record.level == 'INFO' then")
-        print("          return {severity = 'low'}")
-        print("      end")
-        print("      return nil")
-        print("  end)")
-        print("")
-        print("  -- Remove unwanted attributes")
-        print("  for_each_record(function(record)")
-        print("      return {debug_info = \"__REMOVE__\"}  -- Remove debug_info attribute")
-        print("  end)")
-        print("")
-        print("  -- Add computed fields")
-        print("  for_each_record(function(record)")
-        print("      if record.duration then")
-        print("          local duration_ms = tonumber(record.duration) * 1000")
-        print("          return {duration_ms = tostring(duration_ms)}")
-        print("      end")
-        print("      return nil")
-        print("  end)")
-        print("")
-        print("Note: See examples/ directory for sample scripts using for_each_record")
+        print("Quick examples:")
+        print("  help('navigation')        - Show navigation functions")
+        print("  help('get_record')        - Show help for get_record function")
+        print("  help('analysis')          - Show analysis functions")
+        
+    elseif documentation[topic] then
+        -- Show help for a specific function
+        local func_info = documentation[topic]
+        print(string.format("Function: %s", func_info.name))
+        print(string.format("Category: %s", func_info.category))
+        print(string.format("Description: %s", func_info.description))
+        
+        if #func_info.parameters > 0 then
+            print("Parameters:")
+            for _, param in ipairs(func_info.parameters) do
+                print(string.format("  %s", param))
+            end
+        else
+            print("Parameters: none")
+        end
+        
+        print(string.format("Returns: %s", func_info.return_value))
+        
     else
-        print("Unknown help topic: " .. tostring(topic))
-        print("Available topics: 'functions', 'navigation', 'records', 'analysis', 'filtering', 'attributes', 'processing'")
+        -- Check if it's a category
+        local found_functions = {}
+        for _, func_info in pairs(documentation) do
+            if func_info.category == topic then
+                table.insert(found_functions, func_info)
+            end
+        end
+        
+        if #found_functions > 0 then
+            -- Show functions in the category
+            print(string.format("Functions in category '%s':", topic))
+            print("")
+            
+            -- Sort functions by name
+            table.sort(found_functions, function(a, b) return a.name < b.name end)
+            
+            for _, func_info in ipairs(found_functions) do
+                print(string.format("  %s", func_info.name))
+                print(string.format("    %s", func_info.description))
+                
+                if #func_info.parameters > 0 then
+                    print("    Parameters:")
+                    for _, param in ipairs(func_info.parameters) do
+                        print(string.format("      %s", param))
+                    end
+                end
+                
+                print(string.format("    Returns: %s", func_info.return_value))
+                print("")
+            end
+            
+            print(string.format("Use help('%s') for detailed help on any function.", found_functions[1].name))
+            
+        else
+            -- Unknown topic
+            print(string.format("Unknown help topic: %s", tostring(topic)))
+            print("")
+            print("Available options:")
+            print("  help()                    - Show general help")
+            print("  help('category')          - Show functions in a category")
+            print("  help('function_name')     - Show help for a specific function")
+            print("")
+            
+            -- Show available categories
+            local categories = {}
+            for _, func_info in pairs(documentation) do
+                if not categories[func_info.category] then
+                    categories[func_info.category] = true
+                end
+            end
+            
+            local sorted_categories = {}
+            for category, _ in pairs(categories) do
+                table.insert(sorted_categories, category)
+            end
+            table.sort(sorted_categories)
+            
+            print("Available categories:")
+            for _, category in ipairs(sorted_categories) do
+                print(string.format("  %s", category))
+            end
+            
+            print("")
+            print("Available functions:")
+            local function_names = {}
+            for name, _ in pairs(documentation) do
+                table.insert(function_names, name)
+            end
+            table.sort(function_names)
+            
+            -- Show functions in columns
+            local cols = 3
+            local rows = math.ceil(#function_names / cols)
+            
+            for row = 1, rows do
+                local line = ""
+                for col = 1, cols do
+                    local idx = (col - 1) * rows + row
+                    if idx <= #function_names then
+                        line = line .. string.format("%-20s", function_names[idx])
+                    end
+                end
+                print(line)
+            end
+        end
     end
 end
 
