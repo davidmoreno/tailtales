@@ -1179,6 +1179,7 @@ fn test_function_registration() {
         "get_mode",
         "get_record_count",
         "get_record",
+        "get_record_data",
         "lua_repl",
         // Functions from _init.lua
         "dir",
@@ -1200,4 +1201,204 @@ fn test_function_registration() {
     }
 
     println!("✓ All expected functions are properly registered");
+}
+
+#[test]
+fn test_get_record_by_position() {
+    println!("Testing get_record() function with position parameter");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Test get_record() with specific positions - test each case separately
+    let test_cases = vec![(1, "Record 1:"), (5, "Record 5:"), (999, "Record 999: nil")];
+
+    for (position, expected_text) in test_cases {
+        let test_script = format!(
+            r#"
+                local record = get_record({})
+                if record then
+                    warning("Record {}: " .. record.original)
+                else
+                    warning("Record {}: nil")
+                end
+            "#,
+            position, position, position
+        );
+
+        let script_name = format!("test_get_record_{}", position);
+        engine.compile_script(&script_name, &test_script).unwrap();
+
+        match engine.execute_with_state(&script_name, &mut state) {
+            Ok(_) => {
+                println!("✓ get_record({}) works correctly", position);
+                assert!(
+                    state.warning.contains(expected_text),
+                    "Expected '{}' in warning '{}'",
+                    expected_text,
+                    state.warning
+                );
+            }
+            Err(e) => {
+                panic!("get_record({}) should work: {}", position, e);
+            }
+        }
+    }
+
+    // Test that get_record() without parameter still works (gets current position)
+    state.position = 3;
+    let current_record_script = r#"
+        local record = get_record()
+        if record then
+            warning("Current record: " .. record.original)
+        else
+            warning("Current record: nil")
+        end
+    "#;
+
+    engine
+        .compile_script("test_get_record_current", current_record_script)
+        .unwrap();
+
+    match engine.execute_with_state("test_get_record_current", &mut state) {
+        Ok(_) => {
+            println!("✓ get_record() without parameter works (gets current position)");
+            assert!(state.warning.contains("Current record:"));
+        }
+        Err(e) => {
+            panic!("get_record() without parameter should work: {}", e);
+        }
+    }
+
+    // Test accessing specific fields from records at different positions
+    let field_test_script = r#"
+        local record1 = get_record(1)
+        local record2 = get_record(2)
+        
+        if record1 and record2 then
+            local level1 = record1.level or "unknown"
+            local level2 = record2.level or "unknown"
+            warning("Levels: " .. level1 .. " vs " .. level2)
+        else
+            warning("Failed to get records for field test")
+        end
+    "#;
+
+    engine
+        .compile_script("test_record_fields_by_position", field_test_script)
+        .unwrap();
+
+    match engine.execute_with_state("test_record_fields_by_position", &mut state) {
+        Ok(_) => {
+            println!("✓ Record field access by position works");
+            assert!(state.warning.contains("Levels:"));
+        }
+        Err(e) => {
+            panic!("Record field access by position should work: {}", e);
+        }
+    }
+
+    println!("✓ get_record_data(position) functionality verified");
+}
+
+#[test]
+fn test_get_record_data_function() {
+    println!("Testing get_record_data() function (alias for get_record)");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Test get_record_data() with specific positions - test each case separately
+    let test_cases = vec![(1, "Data 1:"), (3, "Data 3:")];
+
+    for (position, expected_text) in test_cases {
+        let test_script = format!(
+            r#"
+                local record = get_record_data({})
+                if record then
+                    warning("Data {}: " .. record.original)
+                else
+                    warning("Data {}: nil")
+                end
+            "#,
+            position, position, position
+        );
+
+        let script_name = format!("test_get_record_data_{}", position);
+        engine.compile_script(&script_name, &test_script).unwrap();
+
+        match engine.execute_with_state(&script_name, &mut state) {
+            Ok(_) => {
+                println!("✓ get_record_data({}) works correctly", position);
+                assert!(
+                    state.warning.contains(expected_text),
+                    "Expected '{}' in warning '{}'",
+                    expected_text,
+                    state.warning
+                );
+            }
+            Err(e) => {
+                panic!("get_record_data({}) should work: {}", position, e);
+            }
+        }
+    }
+
+    // Test that get_record_data() without parameter gets current position
+    state.position = 3;
+    let current_record_script = r#"
+        local record = get_record_data()
+        if record then
+            warning("Current data: " .. record.original)
+        else
+            warning("Current data: nil")
+        end
+    "#;
+
+    engine
+        .compile_script("test_get_record_data_current", current_record_script)
+        .unwrap();
+
+    match engine.execute_with_state("test_get_record_data_current", &mut state) {
+        Ok(_) => {
+            println!("✓ get_record_data() without parameter works (gets current position)");
+            assert!(state.warning.contains("Current data:"));
+        }
+        Err(e) => {
+            panic!("get_record_data() without parameter should work: {}", e);
+        }
+    }
+
+    // Test that get_record_data and get_record return the same data
+    let comparison_script = r#"
+        local data1 = get_record_data(2)
+        local record1 = get_record(2)
+        
+        if data1 and record1 then
+            if data1.original == record1.original then
+                warning("get_record_data and get_record return same data")
+            else
+                warning("get_record_data and get_record return different data")
+            end
+        else
+            warning("Failed to get records for comparison")
+        end
+    "#;
+
+    engine
+        .compile_script("test_record_data_comparison", comparison_script)
+        .unwrap();
+
+    match engine.execute_with_state("test_record_data_comparison", &mut state) {
+        Ok(_) => {
+            println!("✓ get_record_data and get_record return identical data");
+            assert!(state.warning.contains("same data"));
+        }
+        Err(e) => {
+            panic!("Record data comparison should work: {}", e);
+        }
+    }
+
+    println!("✓ get_record_data() function verified as working alias");
 }

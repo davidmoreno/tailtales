@@ -688,6 +688,34 @@ impl LuaEngine {
             Ok(state.records.len())
         })?;
 
+        // Alias for get_record with more explicit naming
+        self.register_function(
+            "get_record_data",
+            |lua, index: Option<usize>| -> LuaResult<Option<Table>> {
+                let state = Self::get_state_from_registry(lua)?;
+
+                // Get record at specified index, or current position if none provided
+                let position = index.unwrap_or(state.position - 1); // Convert to 0-based for array access
+
+                if let Some(record) = state.records.get(position) {
+                    let record_table = lua.create_table()?;
+
+                    // Add basic record elements
+                    record_table.set("original", record.original.clone())?;
+                    record_table.set("index", record.index)?; // Already 1-based
+
+                    // Add all fields from the record's data hashmap
+                    for (key, value) in &record.data {
+                        record_table.set(key.as_str(), value.clone())?;
+                    }
+
+                    Ok(Some(record_table))
+                } else {
+                    Ok(None)
+                }
+            },
+        )?;
+
         // Get search/filter/command state
         self.register_function("get_search", |lua, ()| -> LuaResult<String> {
             let state = Self::get_state_from_registry(lua)?;

@@ -212,6 +212,7 @@ rules:
       - django/.*\.log
     extractors:
       - pattern <timestamp> <level> <module> <message>
+      - logfmt
       - transform timestamp iso8601
     filters:
       - name: errors
