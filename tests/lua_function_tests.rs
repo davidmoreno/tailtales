@@ -76,7 +76,7 @@ fn test_navigation_functions() {
 
     // Test vmove with large positive value (will be clamped to max available records)
     compile_and_execute_script(&mut engine, &mut state, "vmove(10)").unwrap();
-    let expected_pos = std::cmp::min(initial_pos + 10, 9); // We have 10 records (0-9)
+    let expected_pos = std::cmp::min(initial_pos + 10, 10); // We have 10 records (1-10)
     assert_eq!(
         state.position, expected_pos,
         "vmove(10) should move down by 10 or to max record"
@@ -90,33 +90,36 @@ fn test_navigation_functions() {
     let expected_up_pos = if initial_pos >= 10 {
         initial_pos - 10
     } else {
-        0
+        1 // Minimum position is now 1
     };
     assert_eq!(
         state.position, expected_up_pos,
-        "vmove(-10) should move up by 10 or to 0"
+        "vmove(-10) should move up by 10 or to 1"
     );
 
     // Test vgoto to beginning
     compile_and_execute_script(&mut engine, &mut state, "vgoto(0)").unwrap();
-    assert_eq!(state.position, 0, "vgoto(0) should go to position 0");
+    assert_eq!(
+        state.position, 1,
+        "vgoto(0) should go to position 1 (minimum)"
+    );
 
     // Test vgoto to large number (should clamp to last record)
     compile_and_execute_script(&mut engine, &mut state, "vgoto(2000000000)").unwrap();
     assert_eq!(
-        state.position, 9,
-        "vgoto(large) should go to last record position"
+        state.position, 10,
+        "vgoto(large) should go to last record position (10)"
     );
 
     // Test move_top function
     compile_and_execute_script(&mut engine, &mut state, "move_top()").unwrap();
-    assert_eq!(state.position, 0, "move_top() should go to position 0");
+    assert_eq!(state.position, 1, "move_top() should go to position 1");
 
     // Test move_bottom function
     compile_and_execute_script(&mut engine, &mut state, "move_bottom()").unwrap();
     assert_eq!(
-        state.position, 9,
-        "move_bottom() should go to last record position"
+        state.position, 10,
+        "move_bottom() should go to last record position (10)"
     );
 
     println!("✓ Navigation functions working correctly");
@@ -290,8 +293,8 @@ fn test_system_functions() {
         "clear_records() should remove all records"
     );
     assert_eq!(
-        state.position, 0,
-        "clear_records() should reset position to 0"
+        state.position, 1,
+        "clear_records() should reset position to 1 (1-based)"
     );
 
     // Test refresh_screen function
@@ -536,7 +539,7 @@ fn test_complex_function_scenarios() {
     let goto_script = r#"
         local line_num = 3
         if line_num then
-            vgoto(line_num - 1)  -- Convert to 0-based indexing
+            vgoto(line_num)
             warning("Moved to line " .. line_num)
         else
             warning("Invalid line number")
@@ -545,8 +548,8 @@ fn test_complex_function_scenarios() {
 
     compile_and_execute_script(&mut engine, &mut state, goto_script).unwrap();
     assert_eq!(
-        state.position, 2,
-        "Should move to position 2 (0-based for line 3)"
+        state.position, 3,
+        "Should move to position 3 (1-based for user line 3)"
     );
     assert!(
         state.warning.contains("Moved to line"),
@@ -596,7 +599,7 @@ fn test_ask_function_and_goto_line() {
         local line_str = ask("Go to line number:")
         local line_num = tonumber(line_str)
         if line_num then
-            vgoto(line_num - 1)  -- Convert to 0-based indexing
+            vgoto(line_num)  -- Now using 1-based indexing directly
             warning("Moved to line " .. line_num)
         else
             warning("Invalid line number: " .. line_str)
@@ -650,8 +653,8 @@ fn test_ask_function_and_goto_line() {
                 "Engine should no longer have suspended script"
             );
             assert_eq!(
-                state.position, 2,
-                "Should move to position 2 (0-based for line 3)"
+                state.position, 3,
+                "Should move to position 3 (1-based for user line 3)"
             );
             assert!(
                 state.warning.contains("Moved to line 3"),
@@ -761,7 +764,10 @@ fn test_repl_state_access_functions() {
     let result = engine
         .execute_script_string_with_state("return get_position()", &mut state)
         .unwrap();
-    assert_eq!(result, "3", "get_position() should return current position");
+    assert_eq!(
+        result, "3",
+        "get_position() should return current position (1-based)"
+    );
 
     // Test get_mode()
     let result = engine
@@ -789,7 +795,7 @@ fn test_repl_state_access_functions() {
         .execute_script_string_with_state("local r = get_record(); return r.original", &mut state)
         .unwrap();
     assert!(
-        result.contains("Test log line 3"),
+        result.contains("Test log line 2"),
         "get_record().original should contain the log line"
     );
 
@@ -799,15 +805,15 @@ fn test_repl_state_access_functions() {
         .unwrap();
     assert_eq!(
         result, "3",
-        "get_record().index should match current position"
+        "get_record().index should match current position (1-based)"
     );
 
-    // Test record level field (position 3: 3 % 3 == 0, so should be ERROR)
+    // Test record level field (position 3: accessing record at index 2, 2 % 3 == 2, so should be INFO)
     let result = engine
         .execute_script_string_with_state("local r = get_record(); return r.level", &mut state)
         .unwrap();
     assert_eq!(
-        result, "ERROR",
+        result, "INFO",
         "get_record().level should return the set level"
     );
 
@@ -900,7 +906,7 @@ fn test_repl_error_handling() {
     let position_result = result.unwrap();
     assert_eq!(
         position_result, "7",
-        "get_position() should return the correct position from different state"
+        "get_position() should return the correct position from different state (1-based)"
     );
 
     // Test multiline scripts with state access
@@ -914,7 +920,7 @@ fn test_repl_error_handling() {
         .unwrap();
     assert_eq!(
         result, "5/10",
-        "Multiline scripts should work with state access"
+        "Multiline scripts should work with state access (1-based position)"
     );
 
     println!("✓ REPL error handling works correctly");

@@ -66,7 +66,7 @@ impl RecordList {
             .map(|(line_number, line)| {
                 let mut record = Record::new(line.clone());
                 record.set_data("filename", filename.to_string());
-                record.set_data("line_number", line_number.to_string());
+                record.set_data("line_number", (line_number + 1).to_string());
                 record.parse(&self.parsers);
                 record
             })
@@ -98,7 +98,7 @@ impl RecordList {
             if size > 0 {
                 let mut record = Record::new(first_line);
                 record.set_data("filename", filename.to_string());
-                record.set_data("line_number", "0".to_string());
+                record.set_data("line_number", "1".to_string());
                 record.parse(&self.parsers);
                 self.all_records.push(record);
             }
@@ -112,7 +112,7 @@ impl RecordList {
             .map(|(line_number, line)| {
                 let mut record = Record::new(line.clone());
                 record.set_data("filename", filename.to_string());
-                record.set_data("line_number", line_number.to_string());
+                record.set_data("line_number", (line_number + 1).to_string());
                 record.parse(&self.parsers);
                 record
             })
@@ -167,7 +167,7 @@ impl RecordList {
             .seek(std::io::SeekFrom::Start(position as u64))
             .unwrap();
 
-        let mut line_number = 0;
+        let mut line_number = 1;
         for line in reader.lines() {
             let line = line.expect("could not read line");
             let mut record = Record::new(line.clone());
@@ -194,12 +194,12 @@ impl RecordList {
 
     pub fn add(&mut self, mut record: Record) {
         record.parse(&mut self.parsers);
-        record.set_data("line_number", self.all_records.len().to_string());
+        record.set_data("line_number", (self.all_records.len() + 1).to_string());
         self.max_record_size = self.max_record_size.max(record.original.len());
         self.all_records.push(record.clone());
 
         if self.filter.is_none() || record.matches(&self.filter.as_ref().unwrap()) {
-            record.set_line_number(self.visible_records.len());
+            record.set_line_number(self.visible_records.len() + 1);
             self.visible_records.push(record);
         }
     }

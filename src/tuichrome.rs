@@ -45,7 +45,7 @@ impl TuiChrome {
 
         let mut visible_lines = self.terminal.size()?.height as i32 - 2; // header and footer
         if state.view_details && state.records.visible_records.len() > 0 {
-            if let Some(record) = state.records.visible_records.get(state.position) {
+            if let Some(record) = state.records.visible_records.get(state.position - 1) {
                 visible_lines = visible_lines - 3 - 2; // frame + separator + padding
                 visible_lines = visible_lines - record.data.len() as i32; // data lines
 
@@ -157,7 +157,7 @@ impl TuiChrome {
         state: &'a TuiState,
     ) -> Option<&'a crate::record::Record> {
         if state.view_details {
-            state.records.visible_records.get(state.position)
+            state.records.visible_records.get(state.position - 1)
         } else {
             None
         }
@@ -796,7 +796,7 @@ impl TuiChrome {
             "Line",
             format!(
                 " {:5} / {:5} ",
-                state.position,
+                state.position, // Already 1-based internally
                 state.records.visible_records.len()
             )
             .as_str(),

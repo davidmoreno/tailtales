@@ -70,7 +70,7 @@ impl TuiState {
             records,
             visible_height: 25,
             visible_width: 80,
-            position: 0,
+            position: 1, // Start with 1-based indexing
             scroll_offset_top: 0,
             scroll_offset_left: 0,
             running: true,
@@ -116,14 +116,14 @@ impl TuiState {
             return false;
         }
         let search_ast = search_ast.unwrap();
-        let mut current = self.position;
+        let mut current = self.position - 1; // Convert to 0-based for search
 
         let maybe_position = self.records.search_forward(search_ast, current);
         if maybe_position.is_none() {
             return false;
         }
         current = maybe_position.unwrap();
-        self.set_position(current);
+        self.set_position(current + 1); // Convert back to 1-based
         true
     }
 
@@ -141,14 +141,14 @@ impl TuiState {
             return false;
         }
         let search_ast = search_ast.unwrap();
-        let mut current = self.position;
+        let mut current = self.position - 1; // Convert to 0-based for search
 
         let maybe_position = self.records.search_backwards(search_ast, current);
         if maybe_position.is_none() {
             return false;
         }
         current = maybe_position.unwrap();
-        self.set_position(current);
+        self.set_position(current + 1); // Convert back to 1-based
         true
     }
 
@@ -157,7 +157,7 @@ impl TuiState {
         match parsed {
             Ok(parsed) => {
                 self.records.filter_parallel(parsed);
-                self.set_position(0);
+                self.set_position(1); // Use 1-based indexing
                 self.filter_ok = true;
             }
             Err(_err) => {
@@ -402,7 +402,7 @@ impl TuiState {
 
     pub fn toggle_mark(&mut self, color: &str) {
         let color = color.to_string();
-        let current = self.position;
+        let current = self.position - 1; // Convert to 0-based for array access
         let record = self.records.visible_records.get_mut(current).unwrap();
         let current_value = record.get("mark");
         if current_value.is_some() {
@@ -419,19 +419,17 @@ impl TuiState {
 
     pub fn move_selection(&mut self, delta: i32) {
         // I use i32 all around here as I may get some negatives
-        let mut current = self.position as i32;
-        let mut new = current as i32 + delta;
-        let max = self.records.visible_records.len() as i32 - 1;
+        let current = self.position as i32; // position is now 1-based
+        let new = current + delta;
+        let max = self.records.visible_records.len() as i32;
 
-        if new <= 0 {
-            new = 0;
+        if new < 1 {
+            self.set_position(1); // Use 1-based indexing
+        } else if new > max {
+            self.set_position(max as usize); // Use 1-based indexing
+        } else {
+            self.set_position(new as usize);
         }
-        if new > max {
-            new = max;
-        }
-        current = new;
-
-        self.set_position(current as usize);
     }
 
     pub fn ensure_visible(&mut self, current: usize) {
@@ -457,27 +455,29 @@ impl TuiState {
     pub fn set_position(&mut self, position: usize) {
         let visible_len = self.records.visible_records.len();
         if visible_len == 0 {
-            self.position = 0;
-        } else if position >= visible_len {
-            self.position = visible_len - 1;
+            self.position = 1; // Use 1-based indexing
+        } else if position > visible_len {
+            self.position = visible_len; // Use 1-based indexing
+        } else if position < 1 {
+            self.position = 1; // Use 1-based indexing
         } else {
             self.position = position;
         }
-        self.ensure_visible(self.position);
+        self.ensure_visible(self.position - 1); // Convert to 0-based for internal calculations
     }
 
     pub fn set_position_wrap(&mut self, position: i32) {
         let max = self.records.visible_records.len() as i32;
-        if max <= 1 {
-            self.position = 0
-        } else if position >= max {
-            self.position = 0;
-        } else if position < 0 {
-            self.position = (max - 1) as usize;
+        if max <= 0 {
+            self.position = 1 // Use 1-based indexing
+        } else if position > max {
+            self.position = 1; // Wrap to first position (1-based)
+        } else if position < 1 {
+            self.position = max as usize; // Wrap to last position (1-based)
         } else {
             self.position = position as usize;
         }
-        self.ensure_visible(self.position);
+        self.ensure_visible(self.position - 1); // Convert to 0-based for internal calculations
     }
 
     pub fn set_vposition(&mut self, position: i32) {

@@ -490,14 +490,14 @@ impl LuaEngine {
 
         self.register_function("vgoto", |lua, n: usize| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
-            state.set_position(n);
+            state.set_position(n); // Now using 1-based indexing directly
 
             Ok(())
         })?;
 
         self.register_function("move_top", |lua, ()| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
-            state.set_position(0);
+            state.set_position(1); // Use 1-based indexing
             state.set_vposition(0);
 
             Ok(())
@@ -575,7 +575,7 @@ impl LuaEngine {
         self.register_function("clear_records", |lua, ()| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
             state.records.clear();
-            state.position = 0;
+            state.position = 1; // Use 1-based indexing
             Ok(())
         })?;
 
@@ -625,14 +625,14 @@ impl LuaEngine {
                 let state = Self::get_state_from_registry(lua)?;
 
                 // Get record at specified index, or current position if none provided
-                let position = index.unwrap_or(state.position);
+                let position = index.unwrap_or(state.position - 1); // Convert to 0-based for array access
 
                 if let Some(record) = state.records.get(position) {
                     let record_table = lua.create_table()?;
 
                     // Add basic record elements
                     record_table.set("original", record.original.clone())?;
-                    record_table.set("index", record.index)?;
+                    record_table.set("index", record.index)?; // Already 1-based
 
                     // Add all fields from the record's data hashmap
                     for (key, value) in &record.data {
@@ -649,6 +649,7 @@ impl LuaEngine {
         // Get current position
         self.register_function("get_position", |lua, ()| -> LuaResult<usize> {
             let state = Self::get_state_from_registry(lua)?;
+            // Position is already 1-based internally
             Ok(state.position)
         })?;
 
@@ -1347,7 +1348,7 @@ mod tests {
 
         // Create a mock TuiState for testing
         let mut state = TuiState::new().unwrap();
-        state.position = 0;
+        state.position = 1; // Use 1-based indexing
         state.mode = Mode::Search;
         state.visible_height = 30;
         state.visible_width = 100;
@@ -1368,7 +1369,7 @@ mod tests {
 
         // Test state getter functions
         let position: usize = engine.lua.load("return get_position()").eval().unwrap();
-        assert_eq!(position, 0);
+        assert_eq!(position, 1); // Now returns 1-based line number
 
         let mode: String = engine.lua.load("return get_mode()").eval().unwrap();
         assert_eq!(mode, "search");
@@ -1443,8 +1444,8 @@ mod tests {
             .unwrap();
 
         // Test that the core functions were executed successfully by checking state changes
-        // move_bottom sets position to the last valid record (9 in this case, 0-indexed with 10 records)
-        assert_eq!(state.position, 9); // last valid position with 10 records (0-9)
+        // move_bottom sets position to the last valid record (10 in this case, 1-indexed with 10 records)
+        assert_eq!(state.position, 10); // last valid position with 10 records (1-10)
         assert!(!state.running); // quit() sets running to false
         assert_eq!(state.warning, "test warning"); // warning() sets the warning message
 
@@ -1543,7 +1544,7 @@ mod tests {
 
         // Verify enhanced state access via getter functions
         let position: usize = engine.lua.load("return get_position()").eval().unwrap();
-        assert_eq!(position, 42);
+        assert_eq!(position, 42); // Position is already 1-based internally
 
         let mode: String = engine.lua.load("return get_mode()").eval().unwrap();
         assert_eq!(mode, "filter");

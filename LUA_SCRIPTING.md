@@ -470,7 +470,7 @@ The Lua scripting system is now fully implemented and operational:
 local line_str = ask("Go to line number:")
 local line_num = tonumber(line_str)
 if line_num then
-  vgoto(line_num - 1)  -- Convert to 0-based indexing
+  vgoto(line_num)
   warning("Moved to line " .. line_num)
 else
   warning("Invalid line number: " .. line_str)
