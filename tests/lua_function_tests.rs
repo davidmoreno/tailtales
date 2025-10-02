@@ -97,11 +97,11 @@ fn test_navigation_functions() {
         "vmove(-10) should move up by 10 or to 1"
     );
 
-    // Test vgoto to beginning
+    // Test vgoto(0) - should go to last position
     compile_and_execute_script(&mut engine, &mut state, "vgoto(0)").unwrap();
     assert_eq!(
-        state.position, 1,
-        "vgoto(0) should go to position 1 (minimum)"
+        state.position, 10,
+        "vgoto(0) should go to the last position (10) when there are 10 records"
     );
 
     // Test vgoto to large number (should clamp to last record)
@@ -1401,4 +1401,101 @@ fn test_get_record_data_function() {
     }
 
     println!("✓ get_record_data() function verified as working alias");
+}
+
+#[test]
+fn test_set_position_zero_goes_to_last_record() {
+    println!("Testing that set_position(0) goes to the last position of visible records");
+
+    let mut engine = LuaEngine::new().unwrap();
+    engine.initialize().unwrap();
+    let mut state = create_test_state_with_records();
+
+    // Verify we have 10 records (indices 1-10)
+    assert_eq!(
+        state.records.visible_records.len(),
+        10,
+        "Should have 10 test records"
+    );
+
+    // Start at position 1
+    state.position = 1;
+    assert_eq!(state.position, 1, "Should start at position 1");
+
+    // Test set_position(0) directly
+    state.set_position(0);
+    assert_eq!(
+        state.position, 10,
+        "set_position(0) should go to the last position (10) when there are 10 records"
+    );
+
+    // Reset position and test via Lua vgoto(0)
+    state.position = 1;
+    compile_and_execute_script(&mut engine, &mut state, "vgoto(0)").unwrap();
+    assert_eq!(
+        state.position, 10,
+        "vgoto(0) should go to the last position (10) when there are 10 records"
+    );
+
+    // Test with different number of records
+    let mut state2 = TuiState::new().unwrap();
+
+    // Add 5 records
+    for i in 0..5 {
+        let mut record = Record::new(format!("Test record {}", i));
+        record.index = i;
+        state2.records.add_record(record, None);
+    }
+
+    assert_eq!(
+        state2.records.visible_records.len(),
+        5,
+        "Should have 5 test records"
+    );
+
+    // Test set_position(0) with 5 records
+    state2.position = 1;
+    state2.set_position(0);
+    assert_eq!(
+        state2.position, 5,
+        "set_position(0) should go to the last position (5) when there are 5 records"
+    );
+
+    // Test with single record
+    let mut state3 = TuiState::new().unwrap();
+    let mut record = Record::new("Single test record".to_string());
+    record.index = 0;
+    state3.records.add_record(record, None);
+
+    assert_eq!(
+        state3.records.visible_records.len(),
+        1,
+        "Should have 1 test record"
+    );
+
+    // Test set_position(0) with 1 record
+    state3.position = 1;
+    state3.set_position(0);
+    assert_eq!(
+        state3.position, 1,
+        "set_position(0) should go to position 1 when there is only 1 record"
+    );
+
+    // Test with no records
+    let mut state4 = TuiState::new().unwrap();
+    assert_eq!(
+        state4.records.visible_records.len(),
+        0,
+        "Should have 0 test records"
+    );
+
+    // Test set_position(0) with 0 records
+    state4.position = 1;
+    state4.set_position(0);
+    assert_eq!(
+        state4.position, 1,
+        "set_position(0) should go to position 1 when there are no records"
+    );
+
+    println!("✓ set_position(0) correctly goes to the last position of visible records");
 }

@@ -315,7 +315,7 @@ impl TuiState {
         } else if position > visible_len {
             self.position = visible_len; // Use 1-based indexing
         } else if position == 0 {
-            self.position = 1; // Use 1-based indexing, 0 means go to minimum position
+            self.position = visible_len; // 0 means go to maximum position
         } else if position < 1 {
             self.position = 1; // Use 1-based indexing
         } else {
