@@ -586,6 +586,31 @@ impl LuaEngine {
             Ok(())
         })?;
 
+        // Filter records by expression
+        self.register_function("filter", |lua, expression: String| -> LuaResult<usize> {
+            let state = Self::get_state_from_registry(lua)?;
+
+            // Parse the filter expression
+            let parsed = match crate::ast::parse(&expression) {
+                Ok(ast) => ast,
+                Err(err) => {
+                    state.set_warning(format!("Filter expression parse error: {}", err));
+                    return Ok(0);
+                }
+            };
+
+            // Apply the filter
+            state.records.filter_parallel(parsed);
+            state.set_position(1); // Reset to first record
+            state.filter_ok = true;
+
+            // Update the filter string in state for consistency
+            state.filter = expression;
+
+            // Return the number of records after filtering
+            Ok(state.records.len())
+        })?;
+
         // Movement functions
         self.register_function("hmove", |lua, n: i32| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
