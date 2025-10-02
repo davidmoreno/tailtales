@@ -611,6 +611,67 @@ impl LuaEngine {
             Ok(state.records.len())
         })?;
 
+        // Update record attribute (add, update, or remove if nil)
+        self.register_function(
+            "update_record_attribute",
+            |lua, (index, key, value): (usize, String, Option<String>)| -> LuaResult<bool> {
+                let state = Self::get_state_from_registry(lua)?;
+
+                // Convert to 0-based index for array access
+                let record_index = index.saturating_sub(1);
+
+                // Get mutable reference to the record
+                if let Some(record) = state.records.all_records.get_mut(record_index) {
+                    match &value {
+                        Some(val) => {
+                            // Add or update the attribute
+                            record.set_data(&key, val.clone());
+                        }
+                        None => {
+                            // Remove the attribute (nil value)
+                            record.unset_data(&key);
+                        }
+                    }
+
+                    // Also update the visible record if it exists
+                    if let Some(visible_record) =
+                        state.records.visible_records.get_mut(record_index)
+                    {
+                        match &value {
+                            Some(val) => {
+                                visible_record.set_data(&key, val.clone());
+                            }
+                            None => {
+                                visible_record.unset_data(&key);
+                            }
+                        }
+                    }
+
+                    Ok(true)
+                } else {
+                    Ok(false) // Record not found
+                }
+            },
+        )?;
+
+        // Get record attribute value
+        self.register_function(
+            "get_record_attribute",
+            |lua, (index, key): (usize, String)| -> LuaResult<Option<String>> {
+                let state = Self::get_state_from_registry(lua)?;
+
+                // Convert to 0-based index for array access
+                let record_index = index.saturating_sub(1);
+
+                // Get the record
+                if let Some(record) = state.records.all_records.get(record_index) {
+                    Ok(record.get(&key).map(|s| s.clone()))
+                } else {
+                    Ok(None) // Record not found
+                }
+            },
+        )?;
+
         // Movement functions
         self.register_function("hmove", |lua, n: i32| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
