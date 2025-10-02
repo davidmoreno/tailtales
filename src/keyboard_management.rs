@@ -402,7 +402,12 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
             let input = state.repl_input.trim().to_string();
 
             if input.is_empty() && !state.repl_is_multiline {
-                // Empty input, do nothing
+                // Empty input - add empty line with prompt to history for console interactivity check
+                state.repl_output_history.push("> ".to_string());
+
+                // Clear current input line for next input
+                state.repl_input.clear();
+                state.text_edit_position = 0;
                 return;
             }
 

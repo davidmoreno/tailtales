@@ -633,14 +633,9 @@ impl TuiChrome {
         let visible_lines = state.visible_height.saturating_sub(2); // Account for footer
         let start_line = state.repl_scroll_offset;
 
-        // Create a combined list of history + current input line
-        let mut all_lines = state.repl_output_history.clone();
-
-        // Add current input line with cursor
-        let input_line = Self::render_repl_input_line(state);
-        all_lines.push(input_line);
-
-        let lines: Vec<Line> = all_lines
+        // Create a combined list of history lines
+        let mut lines: Vec<Line> = state
+            .repl_output_history
             .iter()
             .skip(start_line)
             .take(visible_lines)
@@ -664,6 +659,12 @@ impl TuiChrome {
             })
             .collect();
 
+        // Add current input line with cursor (only if we have space)
+        if lines.len() < visible_lines {
+            let input_line = Self::render_repl_input_line(state);
+            lines.push(input_line);
+        }
+
         let paragraph = Paragraph::new(lines)
             .block(
                 Block::default()
@@ -676,7 +677,7 @@ impl TuiChrome {
         paragraph
     }
 
-    fn render_repl_input_line(state: &TuiState) -> String {
+    fn render_repl_input_line(state: &TuiState) -> Line {
         let input = &state.repl_input;
         let cursor_pos = state.text_edit_position;
 
@@ -687,29 +688,47 @@ impl TuiChrome {
             "> " // Main prompt
         };
 
-        // Create input line with cursor visualization
-        let mut display_line = String::from(prompt);
+        // Create spans for the input line with cursor visualization
+        let mut spans = vec![Span::styled(
+            prompt.to_string(),
+            Style::default().fg(Color::Green).bold(),
+        )];
 
         if input.is_empty() {
-            // Show cursor at start when empty
-            display_line.push('█'); // Block cursor
+            // Show cursor at start when empty - use a space with reversed style
+            spans.push(Span::styled(
+                " ".to_string(),
+                Style::default().fg(Color::Black).bg(Color::Green),
+            ));
         } else {
-            // Insert characters up to cursor position
+            // Insert characters with cursor reversal
             let chars: Vec<char> = input.chars().collect();
             for (i, &ch) in chars.iter().enumerate() {
                 if i == cursor_pos {
-                    display_line.push('█'); // Block cursor before this character
+                    // Reverse the character under cursor
+                    spans.push(Span::styled(
+                        ch.to_string(),
+                        Style::default().fg(Color::Black).bg(Color::Green),
+                    ));
+                } else {
+                    // Normal character
+                    spans.push(Span::styled(
+                        ch.to_string(),
+                        Style::default().fg(Color::Green).bold(),
+                    ));
                 }
-                display_line.push(ch);
             }
 
-            // If cursor is at the end, add it
+            // If cursor is at the end, add a reversed space
             if cursor_pos >= chars.len() {
-                display_line.push('█');
+                spans.push(Span::styled(
+                    " ".to_string(),
+                    Style::default().fg(Color::Black).bg(Color::Green),
+                ));
             }
         }
 
-        display_line
+        Line::from(spans)
     }
 
     pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
