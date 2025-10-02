@@ -582,6 +582,7 @@ impl LuaEngine {
         // Clear REPL console buffer
         self.register_function("clear", |lua, ()| -> LuaResult<()> {
             let state = Self::get_state_from_registry(lua)?;
+            state.repl_scroll_offset = 0;
             state.repl_output_history.clear();
             Ok(())
         })?;
