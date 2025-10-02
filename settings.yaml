@@ -56,45 +56,59 @@ default_arguments:
   - short-iso
 
 keybindings:
-  ":": "command"
-  "=": "warning {{line_number}}"
-  "|": "mode filter"
-  "f": "mode filter"
-  "/": "mode search"
-  "n": "search_next"
-  "shift-n": "search_prev"
-  "control-del": "clear_records"
-  "control-l": "refresh_screen"
-  "F1": "exec xdg-open https://github.com/davidmoreno/tailtales/#use"
-  "F2": "exec xdg-open https://www.perplexity.ai/search/new?q={{lineqs}}"
-  "F3": "exec xdg-open https://www.duckduckgo.com/?q={{lineqs}}"
-  "F4": "exec xdg-open https://google.com/search?q={{lineqs}}"
-  "q": "quit"
+  ":": "mode('command')"
+  "=": "warning('Line: ' .. (get_position() + 1))"
+  "|": "mode('filter')"
+  "f": "mode('filter')"
+  "/": "mode('search')"
+  "n": "search_next()"
+  "shift-n": "search_prev()"
+  "control-del": "clear_records()"
+  "control-l": "refresh_screen()"
+  "F1": "exec('xdg-open https://github.com/davidmoreno/tailtales/#use'); warning('Opened documentation')"
+  "F2": "exec('xdg-open https://www.perplexity.ai/search/new?q=' .. url_encode(get_record().original)); warning('Opened Perplexity')"
+  "F3": "exec('xdg-open https://www.duckduckgo.com/?q=' .. url_encode(get_record().original)); warning('Opened DuckDuckGo')"
+  "F4": "exec('xdg-open https://google.com/search?q=' .. url_encode(get_record().original)); warning('Opened Google')"
+  "F12": "lua_repl()"
+  "q": "quit()"
   "control-c": |
-    exec wl-copy "{{line}}" || echo "{{line}}" | xclip -i -selection clipboard
-    warning "Line copied to clipboard"
-  "j": "vmove 1"
-  "k": "vmove -1"
-  "up": "vmove -1"
-  "down": "vmove 1"
-  "page up": "vmove -10"
-  "page down": "vmove 10"
-  "left": "hmove -1"
-  "right": "hmove 1"
-  "control-left": "hmove -10"
-  "control-right": "hmove 10"
-  "home": "vgoto 0"
-  "end": "vgoto 2000000000" # should be enough, and 32 bits signed
-  " ": "toggle_mark yellow"
-  "1": "toggle_mark red"
-  "2": "toggle_mark green"
-  "3": "toggle_mark blue"
-  "4": "toggle_mark magenta"
-  "5": "toggle_mark cyan"
-  "tab": "move_to_next_mark"
-  "shift-back tab": "move_to_prev_mark"
-  "esc": "mode normal"
-  "v": "toggle_details"
+    local record = get_record()
+    local success = exec('wl-copy "' .. escape_shell(record.original) .. '"')
+    if not success then
+      exec('echo "' .. escape_shell(record.original) .. '" | xclip -i -selection clipboard')
+    end
+    warning("Line copied to clipboard")
+  "j": "vmove(1)"
+  "k": "vmove(-1)"
+  "up": "vmove(-1)"
+  "down": "vmove(1)"
+  "page up": "vmove(-10)"
+  "page down": "vmove(10)"
+  "left": "hmove(-1)"
+  "right": "hmove(1)"
+  "control-left": "hmove(-10)"
+  "control-right": "hmove(10)"
+  "home": "vgoto(0)"
+  "end": "vgoto(2000000000)" # should be enough, and 32 bits signed
+  " ": "toggle_mark('yellow')"
+  "1": "toggle_mark('red')"
+  "2": "toggle_mark('green')"
+  "3": "toggle_mark('blue')"
+  "4": "toggle_mark('magenta')"
+  "5": "toggle_mark('cyan')"
+  "tab": "move_to_next_mark()"
+  "shift-back tab": "move_to_prev_mark()"
+  "esc": "mode('normal')"
+  "v": "toggle_details()"
+  "g": |
+    local line_str = ask("Go to line number:")
+    local line_num = tonumber(line_str)
+    if line_num then
+      vgoto(line_num)
+      warning("Moved to line " .. line_num)
+    else
+      warning("Invalid line number: " .. line_str)
+    end
 
 # Uses the file_patterns to determine which rules to apply
 # Can be expanded at your ~/.config/tailtales/settings.yaml

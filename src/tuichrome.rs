@@ -45,7 +45,7 @@ impl TuiChrome {
 
         let mut visible_lines = self.terminal.size()?.height as i32 - 2; // header and footer
         if state.view_details && state.records.visible_records.len() > 0 {
-            if let Some(record) = state.records.visible_records.get(state.position) {
+            if let Some(record) = state.records.visible_records.get(state.position - 1) {
                 visible_lines = visible_lines - 3 - 2; // frame + separator + padding
                 visible_lines = visible_lines - record.data.len() as i32; // data lines
 
@@ -70,60 +70,118 @@ impl TuiChrome {
         Ok(())
     }
 
+    /// Main render function - dispatches to appropriate renderer based on mode
     pub fn render(&mut self, state: &TuiState) -> io::Result<()> {
         let size = self.terminal.size()?;
 
-        let mainarea = Self::render_records_table(state, size);
+        // Dispatch to appropriate renderer based on mode
+        if state.mode == Mode::LuaRepl {
+            self.render_repl_mode(state)?;
+        } else {
+            self.render_normal_mode(state, size)?;
+        }
+
+        // Set cursor appropriately for the current mode
+        self.set_cursor_for_mode(state, size)?;
+        Ok(())
+    }
+
+    /// Render REPL mode with output and input
+    fn render_repl_mode(&mut self, state: &TuiState) -> io::Result<()> {
         let footer = Self::render_footer(state);
+        let repl_output = Self::render_repl_output(state);
 
         self.terminal
             .draw(|rect| {
                 let layout = Layout::default().direction(Direction::Vertical);
-
-                let current_record = if state.view_details {
-                    state.records.visible_records.get(state.position)
-                } else {
-                    None
-                };
-
-                let main_area_height = if let Some(current_record) = current_record {
-                    min(
-                        size.height / 2,
-                        current_record.data.len() as u16
-                            + 3
-                            + Self::record_wrap_lines_count(current_record, state) as u16,
-                    )
-                } else {
-                    0
-                };
-
                 let chunks = layout
-                    .constraints(
-                        [
-                            Constraint::Min(0),
-                            Constraint::Length(main_area_height),
-                            Constraint::Length(1),
-                        ]
-                        .as_ref(),
-                    )
+                    .constraints([Constraint::Min(0), Constraint::Length(1)].as_ref())
                     .split(rect.area());
-                rect.render_widget(mainarea, chunks[0]);
-                if current_record.is_some() {
-                    rect.render_widget(
-                        Self::render_record_details(state, current_record.unwrap()),
-                        chunks[1],
-                    );
-                }
-                rect.render_widget(footer, chunks[2]);
+                rect.render_widget(repl_output, chunks[0]);
+                rect.render_widget(footer, chunks[1]);
             })
             .unwrap();
 
-        // set cursor at the begining of the last line
+        Ok(())
+    }
+
+    /// Render normal mode with records table and optional details
+    fn render_normal_mode(&mut self, state: &TuiState, size: Size) -> io::Result<()> {
+        let footer = Self::render_footer(state);
+        let mainarea = Self::render_records_table(state, size);
+        let constraints = self.calculate_layout_constraints(state, size);
+        let current_record = self.get_current_record_for_details(state);
+
         self.terminal
-            .backend_mut()
-            .execute(crossterm::cursor::MoveTo(0, size.height - 1))
+            .draw(|rect| {
+                let layout = Layout::default().direction(Direction::Vertical);
+                let chunks = layout.constraints(&constraints).split(rect.area());
+
+                rect.render_widget(mainarea, chunks[0]);
+
+                // Render record details if available
+                if let Some(record) = current_record {
+                    rect.render_widget(Self::render_record_details(state, record), chunks[1]);
+                    rect.render_widget(footer, chunks[2]);
+                } else {
+                    rect.render_widget(footer, chunks[1]);
+                }
+            })
             .unwrap();
 
+        Ok(())
+    }
+
+    /// Calculate layout constraints for normal mode
+    fn calculate_layout_constraints(&self, state: &TuiState, size: Size) -> Vec<Constraint> {
+        if let Some(current_record) = self.get_current_record_for_details(state) {
+            let main_area_height = min(
+                size.height / 2,
+                current_record.data.len() as u16
+                    + 3
+                    + Self::record_wrap_lines_count(current_record, state) as u16,
+            );
+            vec![
+                Constraint::Min(0),
+                Constraint::Length(main_area_height),
+                Constraint::Length(1),
+            ]
+        } else {
+            vec![Constraint::Min(0), Constraint::Length(1)]
+        }
+    }
+
+    /// Get current record if details should be shown
+    fn get_current_record_for_details<'a>(
+        &self,
+        state: &'a TuiState,
+    ) -> Option<&'a crate::record::Record> {
+        if state.view_details {
+            state.records.visible_records.get(state.position - 1)
+        } else {
+            None
+        }
+    }
+
+    /// Set cursor position based on current mode
+    fn set_cursor_for_mode(&mut self, state: &TuiState, size: Size) -> io::Result<()> {
+        if state.mode == Mode::LuaRepl {
+            // Hide cursor in REPL mode since we show our own cursor in the output
+            self.terminal
+                .backend_mut()
+                .execute(crossterm::cursor::Hide)
+                .unwrap();
+        } else {
+            // Set cursor at the beginning of the last line for other modes
+            self.terminal
+                .backend_mut()
+                .execute(crossterm::cursor::Show)
+                .unwrap();
+            self.terminal
+                .backend_mut()
+                .execute(crossterm::cursor::MoveTo(0, size.height - 1))
+                .unwrap();
+        }
         Ok(())
     }
 
@@ -467,6 +525,8 @@ impl TuiChrome {
             Mode::Filter => Self::render_footer_filter(state),
             Mode::Command => Self::render_footer_command(state),
             Mode::Warning => Self::render_footer_warning(state),
+            Mode::ScriptInput => Self::render_footer_script_input(state),
+            Mode::LuaRepl => Self::render_footer_lua_repl(state),
         }
     }
 
@@ -501,6 +561,155 @@ impl TuiChrome {
                 .bg(Color::LightYellow)
                 .bold(),
         )
+    }
+
+    pub fn render_footer_script_input(state: &TuiState) -> Block {
+        Self::render_textinput_block(
+            &state.script_prompt,
+            &state.script_input,
+            state.text_edit_position,
+            state.settings.colors.footer.command, // Use command colors for now
+        )
+    }
+
+    pub fn render_footer_lua_repl(state: &TuiState) -> Block {
+        // Simple footer for REPL mode - no input field here since input is shown inline
+        let mut spans = vec![];
+
+        if state.repl_is_multiline {
+            Self::render_tag(
+                &mut spans,
+                "Multiline Mode",
+                "Ctrl+C to cancel",
+                state.settings.colors.footer.command,
+            );
+        }
+
+        Self::render_tag(
+            &mut spans,
+            "Lua REPL",
+            "ESC to exit",
+            state.settings.colors.footer.other,
+        );
+        Self::render_tag(
+            &mut spans,
+            "History",
+            "↑↓ arrows",
+            state.settings.colors.footer.other,
+        );
+        Self::render_tag(
+            &mut spans,
+            "Scroll",
+            "Ctrl+↑↓ PgUp PgDn",
+            state.settings.colors.footer.other,
+        );
+
+        // Show history position if navigating
+        if let Some(index) = state.repl_history_index {
+            if !state.repl_command_history.is_empty() {
+                Self::render_tag(
+                    &mut spans,
+                    &format!("Pos {}/{}", index + 1, state.repl_command_history.len()),
+                    "",
+                    state.settings.colors.footer.command,
+                );
+            }
+        } else if !state.repl_command_history.is_empty() {
+            Self::render_tag(
+                &mut spans,
+                &format!("History: {}", state.repl_command_history.len()),
+                "",
+                state.settings.colors.footer.other,
+            );
+        }
+
+        let line = Line::from(spans);
+        Block::default()
+            .title_style(Style::default().fg(Color::Black).bg(Color::LightGreen))
+            .title(line)
+    }
+
+    pub fn render_repl_output<'a>(state: &'a TuiState) -> Paragraph<'a> {
+        let visible_lines = state.visible_height.saturating_sub(2); // Account for footer
+        let start_line = state.repl_scroll_offset;
+
+        // Create a combined list of history + current input line
+        let mut all_lines = state.repl_output_history.clone();
+
+        // Add current input line with cursor
+        let input_line = Self::render_repl_input_line(state);
+        all_lines.push(input_line);
+
+        let lines: Vec<Line> = all_lines
+            .iter()
+            .skip(start_line)
+            .take(visible_lines)
+            .map(|line| {
+                if line.starts_with("> ") {
+                    // Input line - style differently
+                    Line::from(Span::styled(
+                        line.clone(),
+                        Style::default().fg(Color::Green).bold(),
+                    ))
+                } else if line.starts_with("Error: ") {
+                    // Error line - style in red
+                    Line::from(Span::styled(line.clone(), Style::default().fg(Color::Red)))
+                } else {
+                    // Output line - normal style
+                    Line::from(Span::styled(
+                        line.clone(),
+                        Style::default().fg(Color::White),
+                    ))
+                }
+            })
+            .collect();
+
+        let paragraph = Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title("Lua REPL Output")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Blue)),
+            )
+            .wrap(Wrap { trim: false });
+
+        paragraph
+    }
+
+    fn render_repl_input_line(state: &TuiState) -> String {
+        let input = &state.repl_input;
+        let cursor_pos = state.text_edit_position;
+
+        // Choose prompt based on multiline state
+        let prompt = if state.repl_is_multiline {
+            ">> " // Continuation prompt
+        } else {
+            "> " // Main prompt
+        };
+
+        // Create input line with cursor visualization
+        let mut display_line = String::from(prompt);
+
+        if input.is_empty() {
+            // Show cursor at start when empty
+            display_line.push('█'); // Block cursor
+        } else {
+            // Insert characters up to cursor position
+            let chars: Vec<char> = input.chars().collect();
+            for (i, &ch) in chars.iter().enumerate() {
+                if i == cursor_pos {
+                    display_line.push('█'); // Block cursor before this character
+                }
+                display_line.push(ch);
+            }
+
+            // If cursor is at the end, add it
+            if cursor_pos >= chars.len() {
+                display_line.push('█');
+            }
+        }
+
+        display_line
     }
 
     pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
@@ -587,7 +796,7 @@ impl TuiChrome {
             "Line",
             format!(
                 " {:5} / {:5} ",
-                state.position,
+                state.position, // Already 1-based internally
                 state.records.visible_records.len()
             )
             .as_str(),

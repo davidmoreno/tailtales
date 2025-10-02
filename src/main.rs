@@ -15,6 +15,7 @@ mod ast;
 mod events;
 mod keyboard_input;
 mod keyboard_management;
+mod lua_engine;
 mod parser;
 mod record;
 mod recordlist;

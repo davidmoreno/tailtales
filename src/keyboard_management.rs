@@ -1,20 +1,24 @@
 use std::cmp::min;
 
 use crossterm::event::{self, KeyCode, KeyEvent};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     ast,
+    lua_engine::LuaEngine,
+    settings::Settings,
     state::{Mode, TuiState},
 };
+use log::debug;
 
 /**
  * This module is responsible for managing the keyboard input and output
  */
 
-pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     match state.mode {
         Mode::Normal => {
-            handle_normal_mode(key_event, state);
+            handle_normal_mode(key_event, state, lua_engine);
         }
         Mode::Search => {
             handle_search_mode(key_event, state);
@@ -23,18 +27,24 @@ pub fn handle_key_event(key_event: KeyEvent, state: &mut TuiState) {
             handle_filter_mode(key_event, state);
         }
         Mode::Command => {
-            handle_command_mode(key_event, state);
+            handle_command_mode(key_event, state, lua_engine);
+        }
+        Mode::ScriptInput => {
+            handle_script_input_mode(key_event, state, lua_engine);
+        }
+        Mode::LuaRepl => {
+            handle_lua_repl_mode(key_event, state, lua_engine);
         }
         Mode::Warning => {
             // Any key will dismiss the warning
             state.mode = state.next_mode;
             state.next_mode = Mode::Normal;
-            handle_key_event(key_event, state); // pass through
+            handle_key_event(key_event, state, lua_engine); // pass through
         }
     }
 }
 
-pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     let keyname: &str = match key_event.code {
         // numbers add to number
         KeyCode::Char(x) => &String::from(x).to_lowercase(),
@@ -70,10 +80,42 @@ pub fn handle_normal_mode(key_event: KeyEvent, state: &mut TuiState) {
     };
 
     if state.settings.keybindings.contains_key(keyname) {
-        let command = state.settings.keybindings[keyname].clone();
+        let script_name = Settings::get_keybinding_script_name(keyname);
 
-        state.command = command;
-        state.handle_command();
+        // Execute compiled Lua script (try async first for ask() support)
+        if lua_engine
+            .get_compiled_scripts()
+            .contains(&script_name.as_str())
+        {
+            // Execute the script with efficient immediate execution
+            match lua_engine.execute_with_state(&script_name, state) {
+                Ok(Some(prompt)) => {
+                    // Script asking for input - handle in state
+                    state.script_prompt = prompt;
+                    state.script_waiting = true;
+                    state.mode = Mode::ScriptInput;
+                    state.script_input.clear();
+                }
+                Ok(None) => {
+                    // Script completed immediately - no need to process commands since they executed immediately
+                    debug!(
+                        "Script '{}' completed with immediate execution",
+                        script_name
+                    );
+                }
+                Err(e) => {
+                    state.set_warning(format!(
+                        "Lua script execution failed for key '{}': {}",
+                        keyname, e
+                    ));
+                }
+            }
+        } else {
+            state.set_warning(format!(
+                "No compiled Lua script found for key: {:?}",
+                keyname
+            ));
+        }
     } else {
         state.set_warning(format!("Unknown keybinding: {:?}", keyname));
     }
@@ -161,7 +203,7 @@ pub fn handle_textinput(text: &mut String, position: &mut usize, keyevent: KeyEv
     };
 }
 
-pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState) {
+pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     match key_event.code {
         KeyCode::Tab => {
             show_completions(state);
@@ -171,16 +213,62 @@ pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState) {
         }
         KeyCode::Char('\n') => {
             state.mode = Mode::Normal;
-            state.handle_command();
+            handle_command_execution(state, lua_engine);
         }
         KeyCode::Enter => {
             state.mode = Mode::Normal;
-            state.handle_command();
+            handle_command_execution(state, lua_engine);
         }
         _ => {
             handle_textinput(&mut state.command, &mut state.text_edit_position, key_event);
         }
     }
+}
+
+/// Handle execution of user-entered commands from command mode
+pub fn handle_command_execution(state: &mut TuiState, lua_engine: &mut LuaEngine) {
+    let command = state.command.trim().to_string();
+    if command.is_empty() {
+        return;
+    }
+
+    debug!("Executing command from command mode: {}", command);
+
+    // Create a unique script name for the command
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let script_name = format!("cmd_{}", timestamp);
+
+    // Compile the command as a Lua script
+    match lua_engine.compile_script(&script_name, &command) {
+        Ok(_) => {
+            // Execute the compiled script
+            match lua_engine.execute_with_state(&script_name, state) {
+                Ok(Some(prompt)) => {
+                    // Script asking for input - handle in state
+                    state.script_prompt = prompt;
+                    state.script_waiting = true;
+                    state.mode = Mode::ScriptInput;
+                    state.script_input.clear();
+                }
+                Ok(None) => {
+                    // Script completed immediately
+                    debug!("Command '{}' completed successfully", command);
+                }
+                Err(e) => {
+                    state.set_warning(format!("Command execution failed: {}", e));
+                }
+            }
+        }
+        Err(e) => {
+            state.set_warning(format!("Command compilation failed: {}", e));
+        }
+    }
+
+    // Clear the command after execution
+    state.command.clear();
 }
 
 pub fn show_completions(state: &mut TuiState) {
@@ -222,6 +310,237 @@ pub fn handle_filter_mode(key_event: KeyEvent, state: &mut TuiState) {
         _ => {
             handle_textinput(&mut state.filter, &mut state.text_edit_position, key_event);
             state.handle_filter();
+        }
+    }
+}
+
+pub fn handle_script_input_mode(
+    key_event: KeyEvent,
+    state: &mut TuiState,
+    lua_engine: &mut LuaEngine,
+) {
+    match key_event.code {
+        KeyCode::Esc => {
+            // Cancel the suspended script
+            lua_engine.cancel_suspended_script();
+            state.script_waiting = false;
+            state.script_prompt.clear();
+            state.script_input.clear();
+            state.mode = Mode::Normal;
+        }
+        KeyCode::Char('\n') | KeyCode::Enter => {
+            // Submit the input to the suspended script
+            let input = state.script_input.clone();
+            if !state.script_waiting {
+                state.set_warning("No script is waiting for input".to_string());
+                return;
+            }
+
+            match lua_engine.resume_with_input(input) {
+                Ok(_) => {
+                    // Check if the script is asking for more input
+                    if let Some(new_prompt) = lua_engine.get_suspended_prompt() {
+                        state.script_prompt = new_prompt.to_string();
+                        state.script_input.clear();
+                    } else {
+                        // Script completed, return to normal mode
+                        state.script_waiting = false;
+                        state.script_prompt.clear();
+                        state.script_input.clear();
+                        state.mode = Mode::Normal;
+
+                        // No need to process commands - they executed immediately
+                    }
+                }
+                Err(e) => {
+                    // Script failed, return to normal mode
+                    state.script_waiting = false;
+                    state.script_prompt.clear();
+                    state.script_input.clear();
+                    state.mode = Mode::Normal;
+                    state.set_warning(format!("Script execution failed: {}", e));
+                }
+            }
+        }
+        _ => {
+            // Handle text input for the script prompt
+            handle_textinput(
+                &mut state.script_input,
+                &mut state.text_edit_position,
+                key_event,
+            );
+        }
+    }
+}
+
+pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
+    match key_event.code {
+        KeyCode::Esc | KeyCode::F(12) => {
+            // Exit REPL mode back to Normal
+            state.mode = Mode::Normal;
+            state.repl_input.clear();
+            state.text_edit_position = 0;
+            // Reset multiline state
+            state.repl_multiline_buffer.clear();
+            state.repl_is_multiline = false;
+        }
+        KeyCode::Char('c') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+            // Cancel current multiline input (Ctrl+C)
+            if state.repl_is_multiline {
+                state.repl_output_history.push("^C".to_string());
+                state.repl_multiline_buffer.clear();
+                state.repl_is_multiline = false;
+                state.repl_input.clear();
+                state.text_edit_position = 0;
+            }
+        }
+        KeyCode::Char('\n') | KeyCode::Enter => {
+            let input = state.repl_input.trim().to_string();
+
+            if input.is_empty() && !state.repl_is_multiline {
+                // Empty input, do nothing
+                return;
+            }
+
+            // Add current line to multiline buffer or start one
+            if state.repl_is_multiline {
+                // Add continuation line to buffer
+                let prompt = if state.repl_multiline_buffer.is_empty() {
+                    "> "
+                } else {
+                    ">> "
+                };
+                state
+                    .repl_output_history
+                    .push(format!("{}{}", prompt, input));
+                state.repl_multiline_buffer.push(input.clone());
+            } else {
+                // This might be the start of a multiline construct
+                state.repl_output_history.push(format!("> {}", input));
+                state.repl_multiline_buffer.push(input.clone());
+                state.repl_is_multiline = true;
+            }
+
+            // Check if input is complete
+            if state.is_lua_input_complete() {
+                // Execute the complete multiline code
+                let full_code = state.repl_multiline_buffer.join("\n");
+
+                match lua_engine.execute_script_string_with_state(&full_code, state) {
+                    Ok(result) => {
+                        if !result.is_empty() {
+                            // Split multi-line output into separate history entries
+                            for line in result.lines() {
+                                if !line.is_empty() {
+                                    state.repl_output_history.push(line.to_string());
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        state.repl_output_history.push(format!("Error: {}", e));
+                    }
+                }
+
+                // Add command to history with semicolon separators for multiline
+                let history_command = if state.repl_multiline_buffer.len() > 1 {
+                    state.repl_multiline_buffer.join("; ")
+                } else {
+                    full_code
+                };
+                state.add_to_repl_history(history_command);
+
+                // Reset multiline state
+                state.repl_multiline_buffer.clear();
+                state.repl_is_multiline = false;
+
+                // Reset history navigation
+                state.reset_repl_history_navigation();
+
+                // Keep output history reasonable size
+                if state.repl_output_history.len() > 1000 {
+                    state.repl_output_history.drain(0..500);
+                }
+
+                // Auto-scroll to bottom to show new output and input line
+                let visible_lines = state.visible_height.saturating_sub(2);
+                let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+                if total_lines > visible_lines {
+                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                }
+            }
+
+            // Clear current input line for next input
+            state.repl_input.clear();
+            state.text_edit_position = 0;
+        }
+        KeyCode::PageUp => {
+            // Scroll up in output history
+            state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(10);
+        }
+        KeyCode::PageDown => {
+            // Scroll down in output history
+            let visible_lines = state.visible_height.saturating_sub(2);
+            let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+            let max_scroll = total_lines.saturating_sub(visible_lines);
+            state.repl_scroll_offset = (state.repl_scroll_offset + 10).min(max_scroll);
+        }
+        // Alternative scrolling keys (Ctrl+Up/Down for output history scrolling)
+        KeyCode::Up if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+            // Scroll up one line in output history
+            state.repl_scroll_offset = state.repl_scroll_offset.saturating_sub(1);
+        }
+        KeyCode::Down if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
+            // Scroll down one line in output history
+            let visible_lines = state.visible_height.saturating_sub(2);
+            let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+            let max_scroll = total_lines.saturating_sub(visible_lines);
+            state.repl_scroll_offset = (state.repl_scroll_offset + 1).min(max_scroll);
+        }
+        KeyCode::Up => {
+            // Navigate command history up (older commands)
+            if state.repl_history_up() {
+                // Auto-scroll to show input line
+                let visible_lines = state.visible_height.saturating_sub(2);
+                let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+                if total_lines > visible_lines {
+                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                }
+            }
+        }
+        KeyCode::Down => {
+            // Navigate command history down (newer commands)
+            if state.repl_history_down() {
+                // Auto-scroll to show input line
+                let visible_lines = state.visible_height.saturating_sub(2);
+                let total_lines = state.repl_output_history.len() + 1; // +1 for input line
+                if total_lines > visible_lines {
+                    state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+                }
+            }
+        }
+        _ => {
+            // Reset history navigation when user starts typing
+            if matches!(
+                key_event.code,
+                KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete
+            ) {
+                state.reset_repl_history_navigation();
+            }
+
+            // Handle text input for the REPL
+            handle_textinput(
+                &mut state.repl_input,
+                &mut state.text_edit_position,
+                key_event,
+            );
+
+            // Auto-scroll to keep input line visible while typing
+            let visible_lines = state.visible_height.saturating_sub(2);
+            let total_lines = state.repl_output_history.len() + 1; // +1 for current input line
+            if total_lines > visible_lines {
+                state.repl_scroll_offset = total_lines.saturating_sub(visible_lines);
+            }
         }
     }
 }

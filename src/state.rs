@@ -2,7 +2,6 @@ use std::time;
 
 use crate::{
     ast,
-    record::Record,
     recordlist::{self, load_parsers},
     settings::{RulesSettings, Settings},
 };
@@ -14,6 +13,8 @@ pub enum Mode {
     Filter,
     Command,
     Warning,
+    ScriptInput,
+    LuaRepl,
 }
 
 pub struct TuiState {
@@ -38,18 +39,38 @@ pub struct TuiState {
     pub view_details: bool,
     pub text_edit_position: usize,
     pub pending_refresh: bool, // If true, the screen will be refreshed when the screen receives render request
+    pub script_prompt: String,
+    pub script_input: String,
+    pub script_waiting: bool,
+    // Lua REPL state
+    pub repl_input: String,
+    pub repl_output_history: Vec<String>,
+    pub repl_scroll_offset: usize,
+    pub repl_multiline_buffer: Vec<String>,
+    pub repl_is_multiline: bool,
+    pub repl_command_history: Vec<String>,
+    pub repl_history_index: Option<usize>,
+    pub repl_temp_input: String,
 }
 
 impl TuiState {
     pub fn new() -> Result<TuiState, Box<dyn std::error::Error>> {
         let settings = Settings::new()?;
+
+        let current_rule = RulesSettings::default();
+        let mut records = recordlist::RecordList::new();
+
+        if let Err(err) = load_parsers(&current_rule, &mut records.parsers) {
+            return Err(format!("Could not load parsers: {:?}", err).into());
+        }
+
         Ok(TuiState {
             settings,
-            current_rule: RulesSettings::default(),
-            records: recordlist::RecordList::new(),
+            current_rule,
+            records,
             visible_height: 25,
             visible_width: 80,
-            position: 0,
+            position: 1, // Start with 1-based indexing
             scroll_offset_top: 0,
             scroll_offset_left: 0,
             running: true,
@@ -62,9 +83,21 @@ impl TuiState {
             filter_ok: true,
             command: String::new(),
             warning: String::new(),
-            view_details: false,
+            view_details: false, // Default view_details value
             text_edit_position: 0,
             pending_refresh: false,
+            script_prompt: String::new(),
+            script_input: String::new(),
+            script_waiting: false,
+            // Initialize REPL state
+            repl_input: String::new(),
+            repl_output_history: Vec::new(),
+            repl_scroll_offset: 0,
+            repl_multiline_buffer: Vec::new(),
+            repl_is_multiline: false,
+            repl_command_history: Vec::new(),
+            repl_history_index: None,
+            repl_temp_input: String::new(),
         })
     }
 
@@ -83,14 +116,14 @@ impl TuiState {
             return false;
         }
         let search_ast = search_ast.unwrap();
-        let mut current = self.position;
+        let mut current = self.position - 1; // Convert to 0-based for search
 
         let maybe_position = self.records.search_forward(search_ast, current);
         if maybe_position.is_none() {
             return false;
         }
         current = maybe_position.unwrap();
-        self.set_position(current);
+        self.set_position(current + 1); // Convert back to 1-based
         true
     }
 
@@ -108,14 +141,14 @@ impl TuiState {
             return false;
         }
         let search_ast = search_ast.unwrap();
-        let mut current = self.position;
+        let mut current = self.position - 1; // Convert to 0-based for search
 
         let maybe_position = self.records.search_backwards(search_ast, current);
         if maybe_position.is_none() {
             return false;
         }
         current = maybe_position.unwrap();
-        self.set_position(current);
+        self.set_position(current + 1); // Convert back to 1-based
         true
     }
 
@@ -124,7 +157,7 @@ impl TuiState {
         match parsed {
             Ok(parsed) => {
                 self.records.filter_parallel(parsed);
-                self.set_position(0);
+                self.set_position(1); // Use 1-based indexing
                 self.filter_ok = true;
             }
             Err(_err) => {
@@ -133,133 +166,7 @@ impl TuiState {
             }
         }
     }
-    pub fn handle_command(&mut self) {
-        let lines: Vec<String> = self.command.lines().map(String::from).collect();
-        for line in lines {
-            match self.handle_one_command_line(&line) {
-                Ok(_) => (),
-                Err(err) => {
-                    self.set_warning(format!("Error executing command: {} | {}", line, err));
-                    return;
-                }
-            }
-        }
-    }
 
-    pub fn handle_one_command_line(&mut self, line: &str) -> Result<(), String> {
-        let record = match self.records.get(self.position) {
-            Some(record) => record,
-            None => &Record::new("".to_string()),
-        };
-        let parsed_command = placeholder_render(line, &record);
-        let mut args = sh_style_split(&parsed_command).into_iter();
-        // Remove the first argument, which is the command itself
-
-        let command = match args.next() {
-            Some(command) => command,
-            None => {
-                self.set_warning("No command provided".into());
-                return Err("No command provided".into());
-            }
-        };
-
-        match command.as_str() {
-            "" => {}
-            "quit" => {
-                self.running = false;
-            }
-            "clear" => {
-                self.records.clear();
-                self.position = 0;
-                self.scroll_offset_top = 0;
-                self.scroll_offset_left = 0;
-            }
-            "command" => {
-                self.command = String::new();
-                self.mode = Mode::Command;
-            }
-            "search_next" => {
-                self.search_next();
-            }
-            "search_prev" => {
-                self.search_prev();
-            }
-            "vmove" => {
-                let args: Vec<String> = args.map(String::from).collect();
-                let def_arg1 = "1".to_string();
-                let position = args.get(0).unwrap_or(&def_arg1);
-
-                self.move_selection(position.parse::<i32>().unwrap());
-            }
-            "vgoto" => {
-                let args: Vec<String> = args.map(String::from).collect();
-                let def_arg1 = "0".to_string();
-                let position = args.get(0).unwrap_or(&def_arg1);
-
-                self.set_position(position.parse::<usize>().unwrap());
-            }
-            "move_top" => {
-                self.set_position(0);
-                self.set_vposition(0);
-            }
-            "move_bottom" => {
-                self.set_position(usize::max_value());
-            }
-            "clear_records" => {
-                self.records.clear();
-                self.set_position(0);
-                self.set_vposition(0);
-            }
-            "warning" => {
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let message = args_vec.join(" ");
-                self.set_warning(message);
-            }
-            "toggle_mark" => {
-                let default_color = "yellow".to_string();
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let color = args_vec.get(0).unwrap_or(&default_color);
-                self.toggle_mark(color);
-            }
-            "move_to_next_mark" => {
-                self.move_to_next_mark();
-            }
-            "move_to_prev_mark" => {
-                self.move_to_prev_mark();
-            }
-            "settings" => {
-                self.open_settings();
-            }
-            "reload_settings" => {
-                self.reload_settings();
-            }
-            "mode" => {
-                let args: Vec<String> = args.map(String::from).collect();
-                self.set_mode(args.get(0).unwrap_or(&"normal".to_string()));
-            }
-            "toggle_details" => {
-                self.view_details = !self.view_details;
-            }
-            "hmove" => {
-                let args_vec: Vec<String> = args.map(String::from).collect();
-                let def_arg1 = "1".to_string();
-                let position = args_vec.get(0).unwrap_or(&def_arg1);
-                self.set_vposition(
-                    self.scroll_offset_left as i32 + position.parse::<i32>().unwrap(),
-                );
-            }
-            "exec" => {
-                return self.exec(args.into_iter().collect());
-            }
-            "refresh_screen" => {
-                self.refresh_screen();
-            }
-            _ => {
-                self.set_warning(format!("Unknown command: {}", command));
-            }
-        }
-        Ok(())
-    }
     pub fn set_warning(&mut self, warning: String) {
         self.warning = warning;
         self.mode = Mode::Warning;
@@ -279,15 +186,223 @@ impl TuiState {
             "command" => {
                 self.mode = Mode::Command;
             }
+            "script_input" => {
+                self.mode = Mode::ScriptInput;
+            }
+            "lua_repl" => {
+                self.mode = Mode::LuaRepl;
+                // Add welcome message if REPL history is empty
+                if self.repl_output_history.is_empty() {
+                    self.repl_output_history.push(
+                        "Welcome to Lua REPL! Type Lua code and press Enter to execute."
+                            .to_string(),
+                    );
+                    self.repl_output_history.push(
+                        "Supports multiline input: functions, if/do blocks, etc.".to_string(),
+                    );
+                    self.repl_output_history.push(
+                        "Use print() to output text, dir() to explore, help() for assistance."
+                            .to_string(),
+                    );
+                    self.repl_output_history
+                        .push("Press Esc to exit, Ctrl+C to cancel multiline input.".to_string());
+                    self.repl_output_history
+                        .push("Use ↑/↓ arrows to navigate command history.".to_string());
+                    self.repl_output_history.push("".to_string());
+                }
+
+                // Load command history from disk when entering REPL mode
+                self.load_repl_history();
+                self.reset_repl_history_navigation();
+            }
             _ => {
                 self.set_warning(format!("Unknown mode: {}", mode));
             }
         }
     }
 
+    /// Check if the current Lua input is complete or needs more lines
+    pub fn is_lua_input_complete(&self) -> bool {
+        let mut all_input = self.repl_multiline_buffer.join("\n");
+        if !all_input.is_empty() {
+            all_input.push('\n');
+        }
+        all_input.push_str(&self.repl_input);
+
+        // Simple heuristic: count various brackets and keywords
+        let mut paren_count = 0;
+        let mut bracket_count = 0;
+        let mut brace_count = 0;
+        let mut do_count = 0;
+        let mut end_count = 0;
+        let mut if_count = 0;
+        let mut function_count = 0;
+        let mut for_count = 0;
+        let mut while_count = 0;
+        let mut repeat_count = 0;
+        let mut until_count = 0;
+
+        // Simple tokenization - split by whitespace and check each token
+        let tokens: Vec<&str> = all_input.split_whitespace().collect();
+
+        for token in tokens {
+            // Count brackets/parentheses
+            for ch in token.chars() {
+                match ch {
+                    '(' => paren_count += 1,
+                    ')' => paren_count -= 1,
+                    '[' => bracket_count += 1,
+                    ']' => bracket_count -= 1,
+                    '{' => brace_count += 1,
+                    '}' => brace_count -= 1,
+                    _ => {}
+                }
+            }
+
+            // Count keywords (simple exact match)
+            match token {
+                "do" => do_count += 1,
+                "end" => end_count += 1,
+                "if" => if_count += 1,
+                "function" => function_count += 1,
+                "for" => for_count += 1,
+                "while" => while_count += 1,
+                "repeat" => repeat_count += 1,
+                "until" => until_count += 1,
+                _ => {}
+            }
+        }
+
+        // Check if all constructs are balanced
+        let blocks_balanced =
+            (do_count + if_count + function_count + for_count + while_count + repeat_count)
+                <= (end_count + until_count);
+        let brackets_balanced = paren_count == 0 && bracket_count == 0 && brace_count == 0;
+
+        // Input is complete if brackets are balanced and blocks are balanced
+        brackets_balanced && blocks_balanced
+    }
+
+    /// Load REPL command history from disk
+    pub fn load_repl_history(&mut self) {
+        if let Some(history_path) = Self::get_repl_history_path() {
+            if let Ok(contents) = std::fs::read_to_string(&history_path) {
+                self.repl_command_history = contents
+                    .lines()
+                    .map(|line| line.to_string())
+                    .filter(|line| !line.is_empty())
+                    .collect();
+            }
+        }
+    }
+
+    /// Save REPL command history to disk
+    pub fn save_repl_history(&self) {
+        if let Some(history_path) = Self::get_repl_history_path() {
+            if let Some(parent) = history_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+
+            let contents = self.repl_command_history.join("\n");
+            let _ = std::fs::write(&history_path, contents);
+        }
+    }
+
+    /// Get the path for REPL history file
+    fn get_repl_history_path() -> Option<std::path::PathBuf> {
+        use xdg::BaseDirectories;
+
+        if let Ok(xdg) = BaseDirectories::with_prefix("tailtales") {
+            if let Ok(path) = xdg.place_config_file("history") {
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    /// Add a command to REPL history
+    pub fn add_to_repl_history(&mut self, command: String) {
+        if command.trim().is_empty() {
+            return;
+        }
+
+        // Don't add duplicate consecutive commands
+        if let Some(last) = self.repl_command_history.last() {
+            if last == &command {
+                return;
+            }
+        }
+
+        self.repl_command_history.push(command);
+
+        // Keep history size reasonable (last 1000 commands)
+        if self.repl_command_history.len() > 1000 {
+            self.repl_command_history.drain(0..500);
+        }
+
+        // Save to disk
+        self.save_repl_history();
+    }
+
+    /// Navigate REPL history up (older commands)
+    pub fn repl_history_up(&mut self) -> bool {
+        if self.repl_command_history.is_empty() {
+            return false;
+        }
+
+        match self.repl_history_index {
+            None => {
+                // First time accessing history - save current input and go to most recent
+                self.repl_temp_input = self.repl_input.clone();
+                self.repl_history_index = Some(self.repl_command_history.len() - 1);
+                self.repl_input =
+                    self.repl_command_history[self.repl_history_index.unwrap()].clone();
+                self.text_edit_position = self.repl_input.len();
+                true
+            }
+            Some(index) => {
+                if index > 0 {
+                    self.repl_history_index = Some(index - 1);
+                    self.repl_input = self.repl_command_history[index - 1].clone();
+                    self.text_edit_position = self.repl_input.len();
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    /// Navigate REPL history down (newer commands)
+    pub fn repl_history_down(&mut self) -> bool {
+        match self.repl_history_index {
+            None => false,
+            Some(index) => {
+                if index < self.repl_command_history.len() - 1 {
+                    self.repl_history_index = Some(index + 1);
+                    self.repl_input = self.repl_command_history[index + 1].clone();
+                    self.text_edit_position = self.repl_input.len();
+                    true
+                } else {
+                    // Back to current input
+                    self.repl_history_index = None;
+                    self.repl_input = self.repl_temp_input.clone();
+                    self.text_edit_position = self.repl_input.len();
+                    true
+                }
+            }
+        }
+    }
+
+    /// Reset REPL history navigation
+    pub fn reset_repl_history_navigation(&mut self) {
+        self.repl_history_index = None;
+        self.repl_temp_input.clear();
+    }
+
     pub fn toggle_mark(&mut self, color: &str) {
         let color = color.to_string();
-        let current = self.position;
+        let current = self.position - 1; // Convert to 0-based for array access
         let record = self.records.visible_records.get_mut(current).unwrap();
         let current_value = record.get("mark");
         if current_value.is_some() {
@@ -304,19 +419,17 @@ impl TuiState {
 
     pub fn move_selection(&mut self, delta: i32) {
         // I use i32 all around here as I may get some negatives
-        let mut current = self.position as i32;
-        let mut new = current as i32 + delta;
-        let max = self.records.visible_records.len() as i32 - 1;
+        let current = self.position as i32; // position is now 1-based
+        let new = current + delta;
+        let max = self.records.visible_records.len() as i32;
 
-        if new <= 0 {
-            new = 0;
+        if new < 1 {
+            self.set_position(1); // Use 1-based indexing
+        } else if new > max {
+            self.set_position(max as usize); // Use 1-based indexing
+        } else {
+            self.set_position(new as usize);
         }
-        if new > max {
-            new = max;
-        }
-        current = new;
-
-        self.set_position(current as usize);
     }
 
     pub fn ensure_visible(&mut self, current: usize) {
@@ -342,27 +455,29 @@ impl TuiState {
     pub fn set_position(&mut self, position: usize) {
         let visible_len = self.records.visible_records.len();
         if visible_len == 0 {
-            self.position = 0;
-        } else if position >= visible_len {
-            self.position = visible_len - 1;
+            self.position = 1; // Use 1-based indexing
+        } else if position > visible_len {
+            self.position = visible_len; // Use 1-based indexing
+        } else if position < 1 {
+            self.position = 1; // Use 1-based indexing
         } else {
             self.position = position;
         }
-        self.ensure_visible(self.position);
+        self.ensure_visible(self.position - 1); // Convert to 0-based for internal calculations
     }
 
     pub fn set_position_wrap(&mut self, position: i32) {
         let max = self.records.visible_records.len() as i32;
-        if max <= 1 {
-            self.position = 0
-        } else if position >= max {
-            self.position = 0;
-        } else if position < 0 {
-            self.position = (max - 1) as usize;
+        if max <= 0 {
+            self.position = 1 // Use 1-based indexing
+        } else if position > max {
+            self.position = 1; // Wrap to first position (1-based)
+        } else if position < 1 {
+            self.position = max as usize; // Wrap to last position (1-based)
         } else {
             self.position = position as usize;
         }
-        self.ensure_visible(self.position);
+        self.ensure_visible(self.position - 1); // Convert to 0-based for internal calculations
     }
 
     pub fn set_vposition(&mut self, position: i32) {
@@ -376,18 +491,13 @@ impl TuiState {
     pub fn exec(&mut self, args: Vec<String>) -> Result<(), String> {
         let mut allargs: Vec<String> = Vec::new();
         allargs.push("-c".to_string());
-        allargs.push(
-            args.iter()
-                .map(|arg| {
-                    if arg.contains(" ") {
-                        format!("\"{}\"", arg.replace("\"", "\\\""))
-                    } else {
-                        arg.to_string()
-                    }
-                })
-                .collect::<Vec<String>>()
-                .join(" "),
-        );
+        // For sh -c, we just join all arguments as a single command string
+        // The shell will parse the command and arguments properly
+        let command_string = args.join(" ");
+
+        allargs.push(command_string.clone());
+
+        log::debug!("Executing command: sh -c '{}'", command_string);
 
         // Execute the command inside a shell
         let child = std::process::Command::new("sh")
@@ -401,28 +511,29 @@ impl TuiState {
                 let exit_code = child.wait();
                 match exit_code {
                     Ok(status) => {
-                        if status.code().unwrap_or(0) != 0 {
+                        let code = status.code().unwrap_or(-1);
+                        log::debug!("Command exited with code: {}", code);
+                        if code != 0 {
                             return Err(format!(
-                                "Command exited with code {}",
-                                status.code().unwrap_or(0)
+                                "Command '{}' exited with code {}",
+                                command_string, code
                             ));
                         }
                     }
                     Err(e) => {
-                        self.set_warning(format!("Failed to get exit code: {}", e));
-                        return Err(format!("Failed to get exit code: {}", e));
+                        let error_msg =
+                            format!("Failed to get exit code for '{}': {}", command_string, e);
+                        log::error!("{}", error_msg);
+                        self.set_warning(error_msg.clone());
+                        return Err(error_msg);
                     }
                 }
             }
             Err(e) => {
-                self.set_warning(format!(
-                    "Failed to execute command: {}. Error: {}",
-                    &allargs[1], e
-                ));
-                return Err(format!(
-                    "Failed to execute command: {}. Error: {}",
-                    &allargs[1], e
-                ));
+                let error_msg = format!("Failed to execute command '{}': {}", command_string, e);
+                log::error!("{}", error_msg);
+                self.set_warning(error_msg.clone());
+                return Err(error_msg);
             }
         };
         Ok(())
@@ -489,26 +600,38 @@ impl TuiState {
 
     pub fn get_completions(&self) -> (String, Vec<String>) {
         let current = self.command.trim();
+
+        // Lua function names for completion
         let mut completions: Vec<&str> = vec![
-            "command",
-            "quit",
-            "clear",
-            "search_next",
-            "search_prev",
-            "vmove",
-            "hmove",
-            "vgoto",
-            "clear_records",
-            "warning",
-            "toggle_mark",
-            "move_to_next_mark",
-            "move_to_prev_mark",
-            "settings",
-            "mode",
-            "toggle_details",
-            "exec",
-            "reload_settings",
-            "refresh_screen",
+            "quit()",
+            "warning(",
+            "vmove(",
+            "vgoto(",
+            "move_top()",
+            "move_bottom()",
+            "hmove(",
+            "search_next()",
+            "search_prev()",
+            "toggle_mark(",
+            "move_to_next_mark()",
+            "move_to_prev_mark()",
+            "mode(",
+            "toggle_details()",
+            "exec(",
+            "refresh_screen()",
+            "clear()",
+            "clear_records()",
+            "settings()",
+            "reload_settings()",
+            "ask(",
+            "url_encode(",
+            "url_decode(",
+            "escape_shell(",
+            "debug_log(",
+            "get_record(",
+            "get_position(",
+            "get_mode(",
+            "app.",
         ];
 
         completions.retain(|&c| c.starts_with(current));
@@ -554,6 +677,8 @@ impl TuiState {
         let result = self.settings.read_from_yaml(filename.to_str().unwrap());
         match result {
             Ok(_) => {
+                // Note: Keybinding scripts compilation now needs to be done from Application
+
                 self.current_rule = self
                     .settings
                     .rules
@@ -576,91 +701,4 @@ impl TuiState {
             }
         }
     }
-}
-
-lazy_static::lazy_static! {
-    static ref PLACEHOLDER_RE: regex::Regex = regex::Regex::new(r"\{\{(.*?)\}\}").unwrap();
-}
-
-fn placeholder_render(orig: &str, record: &Record) -> String {
-    let context = &record.data;
-    let mut result = orig.to_string();
-
-    // regex get all the $key, and replace with value or "none"
-    let captures = PLACEHOLDER_RE.captures_iter(orig);
-    for cap in captures {
-        let key = &cap[1];
-        let value = context
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| get_default_value(key, record));
-        result = result.replace(&cap[0], &value);
-    }
-
-    result
-}
-
-fn get_default_value(key: &str, record: &Record) -> String {
-    match key {
-        "line" => record.original.clone(),
-        "lineqs" => safe_qs_string(&record.original),
-        _ => "none".to_string(),
-    }
-}
-
-fn safe_qs_string(line: &str) -> String {
-    let hostname = match hostname::get() {
-        Ok(name) => name.to_string_lossy().into_owned(),
-        Err(_) => String::from("unknown"),
-    };
-    let line = line.replace(&hostname, "");
-    // remove ips to xxx.xxx.xxx.xx
-    let line = regex::Regex::new(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
-        .unwrap()
-        .replace_all(&line, "xxx.xxx.xxx.xxx");
-
-    // remove date
-    let line = regex::Regex::new(r"\d{4}-\d{2}-\d{2}")
-        .unwrap()
-        .replace_all(&line, "");
-    // remove time
-    let line = regex::Regex::new(r"\d{2}:\d{2}:\d{2}")
-        .unwrap()
-        .replace_all(&line, "");
-
-    // remove username
-    let username = whoami::username();
-    let line = line.replace(&username, "username");
-
-    // open xdg-open
-    let urlencodedline = urlencoding::encode(&line);
-
-    urlencodedline.to_string()
-}
-
-fn sh_style_split(line: &str) -> Vec<String> {
-    let mut args: Vec<String> = Vec::new();
-    let mut current_arg = String::new();
-    let mut in_quotes = false;
-    let mut in_single_quotes = false;
-
-    for c in line.chars() {
-        if c == '"' {
-            in_quotes = !in_quotes;
-        } else if c == '\'' {
-            in_single_quotes = !in_single_quotes;
-        } else if c.is_whitespace() && !in_quotes && !in_single_quotes {
-            if !current_arg.is_empty() {
-                let trimmed_arg = current_arg.trim();
-                args.push(trimmed_arg.to_string());
-                current_arg.clear();
-            }
-        } else {
-            current_arg.push(c);
-        }
-    }
-    if !current_arg.is_empty() {
-        args.push(current_arg.trim().to_string());
-    }
-    args
 }
