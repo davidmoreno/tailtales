@@ -1666,7 +1666,7 @@ mod tests {
         let mut record = Record::new("test log line".to_string());
         record.set_data("timestamp", "2024-01-01T00:00:00Z".to_string());
         record.set_data("level", "INFO".to_string());
-        state.records.add(record);
+        state.records.add_record(record, None);
 
         // Update context
         let result = engine.update_context(&state);
@@ -1716,7 +1716,7 @@ mod tests {
         for i in 0..10 {
             let mut record = crate::record::Record::new(format!("Test log line {}", i));
             record.index = i;
-            state.records.add(record);
+            state.records.add_record(record, None);
         }
 
         // Test LUA013: Core command functions with state

@@ -4,6 +4,7 @@
 //! log parsing, filtering, searching, and Lua scripting integration.
 
 pub mod application;
+pub mod args;
 pub mod ast;
 pub mod completions;
 pub mod events;

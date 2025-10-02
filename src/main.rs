@@ -3,23 +3,17 @@ use std::io::{self, IsTerminal};
 use std::time::{self};
 
 use application::Application;
-use clap::{Arg, Command};
 use parser::Parser;
 use regex::Regex;
 use settings::Settings;
 use settings::{Alignment, RulesSettings};
 
+use crate::args::{parse_args_with_clap, ParsedArgs};
 use crate::recordlist::load_parsers;
 use std::fs;
 
-#[derive(Debug)]
-struct ParsedArgs {
-    rule: Option<String>,
-    files: Vec<String>,
-    lua_script: Option<String>,
-}
-
 mod application;
+mod args;
 mod ast;
 mod completions;
 mod events;
@@ -36,8 +30,11 @@ mod tuichrome;
 mod utils;
 
 fn main() {
+    // Get command line arguments
+    let raw_args: Vec<String> = std::env::args().collect();
+
     // Parse command line arguments first, before initializing TUI
-    let args = parse_args_with_clap();
+    let args = parse_args_with_clap(raw_args);
 
     let app = Application::new();
 
@@ -77,50 +74,6 @@ fn get_rule_by_filename(settings: &mut Settings, filename: String) -> RulesSetti
         "Could not guess rules for filename: {}. Checked {} rule sets.",
         filename, count
     );
-}
-
-fn parse_args_with_clap() -> ParsedArgs {
-    let settings = Settings::new().unwrap();
-    let rules = settings
-        .rules
-        .iter()
-        .map(|r| r.name.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
-    let matches = Command::new("tt")
-        .about("TailTales - Flexible log viewer for logfmt and other formats")
-        .version("0.2.0")
-        .arg(
-            Arg::new("rule")
-                .long("rule")
-                .value_name("RULE")
-                .help(format!("Force parsing rule ({})", &rules)),
-        )
-        .arg(
-            Arg::new("lua")
-                .long("lua")
-                .value_name("SCRIPT")
-                .help("Execute a Lua script file before processing logs"),
-        )
-        .arg(
-            Arg::new("files")
-                .num_args(0..)
-                .help("Files to process, or '-' for stdin, or '--' followed by command to execute"),
-        )
-        .get_matches();
-
-    let rule = matches.get_one::<String>("rule").cloned();
-    let lua_script = matches.get_one::<String>("lua").cloned();
-    let files = matches
-        .get_many::<String>("files")
-        .map(|f| f.cloned().collect())
-        .unwrap_or_default();
-
-    ParsedArgs {
-        rule,
-        files,
-        lua_script,
-    }
 }
 
 fn apply_args_to_app(args: ParsedArgs, app: &mut Application) {

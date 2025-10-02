@@ -27,7 +27,7 @@ fn create_test_state_with_records() -> TuiState {
             "timestamp",
             format!("2024-01-{:02}T10:{}:00", (i % 28) + 1, i * 2),
         );
-        state.records.add(record);
+        state.records.add_record(record, None);
     }
 
     state.position = 5; // Start in the middle
