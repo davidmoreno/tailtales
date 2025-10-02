@@ -5,6 +5,7 @@
 
 pub mod application;
 pub mod ast;
+pub mod completions;
 pub mod events;
 pub mod keyboard_input;
 pub mod keyboard_management;

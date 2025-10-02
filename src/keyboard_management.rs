@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     ast,
+    completions::{handle_command_completion, handle_repl_completion},
     lua_engine::LuaEngine,
     settings::Settings,
     state::{Mode, TuiState},
@@ -206,7 +207,7 @@ pub fn handle_textinput(text: &mut String, position: &mut usize, keyevent: KeyEv
 pub fn handle_command_mode(key_event: KeyEvent, state: &mut TuiState, lua_engine: &mut LuaEngine) {
     match key_event.code {
         KeyCode::Tab => {
-            show_completions(state);
+            handle_command_completion(state, lua_engine);
         }
         KeyCode::Esc => {
             state.mode = Mode::Normal;
@@ -271,26 +272,6 @@ pub fn handle_command_execution(state: &mut TuiState, lua_engine: &mut LuaEngine
     state.command.clear();
 }
 
-pub fn show_completions(state: &mut TuiState) {
-    let (common_prefix, completions) = state.get_completions();
-
-    if common_prefix != state.command {
-        state.command = common_prefix;
-        state.text_edit_position = state.command.len();
-        return;
-    }
-    if completions.len() == 1 {
-        state.command = completions[0].clone();
-        state.text_edit_position = state.command.len();
-    } else if completions.len() > 1 {
-        let completions = completions.join(" █ ");
-        state.next_mode = Mode::Command;
-        state.set_warning(format!("{}", completions));
-    } else {
-        state.next_mode = Mode::Command;
-        state.set_warning("No completions found".to_string());
-    }
-}
 
 pub fn handle_filter_mode(key_event: KeyEvent, state: &mut TuiState) {
     match key_event.code {
@@ -397,6 +378,10 @@ pub fn handle_lua_repl_mode(key_event: KeyEvent, state: &mut TuiState, lua_engin
         KeyCode::Char('l') if key_event.modifiers.contains(event::KeyModifiers::CONTROL) => {
             // Clear REPL console buffer (Ctrl+L)
             state.repl_output_history.clear();
+        }
+        KeyCode::Tab => {
+            // Tab completion for Lua REPL
+            handle_repl_completion(state, lua_engine);
         }
         KeyCode::Char('\n') | KeyCode::Enter => {
             let input = state.repl_input.trim().to_string();

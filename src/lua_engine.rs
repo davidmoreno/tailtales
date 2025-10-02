@@ -14,7 +14,7 @@
 use crate::state::{Mode, TuiState};
 use log::{debug, error, warn};
 use mlua::prelude::LuaError;
-use mlua::{Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
+use mlua::{FromLua, Lua, Result as LuaResult, Table, Thread, UserData, UserDataMethods, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1339,6 +1339,47 @@ impl LuaEngine {
     pub fn get_suspended_prompt(&self) -> Option<&str> {
         self.suspended_coroutine.as_ref().map(|s| s.prompt.as_str())
     }
+
+    /// Get completions from the Lua VM by querying the global environment directly
+    pub fn get_completions_from_lua(&self, prefix: &str) -> Result<Vec<String>, LuaEngineError> {
+        let mut completions = Vec::new();
+
+        // Get the global environment table
+        let globals = self.lua.globals();
+
+        // Iterate through all global variables
+        for pair in globals.pairs::<mlua::Value, mlua::Value>() {
+            match pair {
+                Ok((key, value)) => {
+                    // Only process string keys
+                    if let Ok(key_str) = String::from_lua(key, &self.lua) {
+                        // Check if the key starts with our prefix
+                        if key_str.starts_with(prefix) {
+                            match value {
+                                mlua::Value::Function(_) => {
+                                    // Add function with parentheses
+                                    completions.push(format!("{}()", key_str));
+                                }
+                                _ => {
+                                    // Add variable without parentheses
+                                    completions.push(key_str);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Skip invalid pairs
+                    continue;
+                }
+            }
+        }
+
+        // Sort the completions alphabetically
+        completions.sort();
+
+        Ok(completions)
+    }
 }
 
 /// Helper struct to wrap TuiState for safe Lua access
@@ -1684,5 +1725,100 @@ mod tests {
         println!("✓ All Phase 1 functionality maintained");
         println!("✓ Improved error reporting with stack traces");
         println!("✓ Performance optimizations with bytecode caching");
+    }
+
+    #[test]
+    fn test_dynamic_completions() {
+        let mut engine = LuaEngine::new().unwrap();
+        engine.initialize().unwrap();
+
+        // Test getting completions for "get_"
+        let completions = engine.get_completions_from_lua("get_").unwrap();
+        assert!(
+            !completions.is_empty(),
+            "Should find completions for 'get_'"
+        );
+
+        // Should include functions like get_record, get_position, etc.
+        assert!(
+            completions.iter().any(|c| c.contains("get_record")),
+            "Should include get_record"
+        );
+        assert!(
+            completions.iter().any(|c| c.contains("get_position")),
+            "Should include get_position"
+        );
+
+        // Test getting completions for "vmove"
+        let completions = engine.get_completions_from_lua("vmove").unwrap();
+        assert!(
+            !completions.is_empty(),
+            "Should find completions for 'vmove'"
+        );
+        assert!(
+            completions.iter().any(|c| c.contains("vmove()")),
+            "Should include vmove()"
+        );
+
+        // Test getting completions for empty prefix
+        let completions = engine.get_completions_from_lua("").unwrap();
+        assert!(
+            !completions.is_empty(),
+            "Should find completions for empty prefix"
+        );
+
+        // Should include many functions
+        assert!(
+            completions.len() > 10,
+            "Should find many completions for empty prefix"
+        );
+
+        println!("✓ Dynamic completions from Lua VM work correctly");
+    }
+
+    #[test]
+    fn test_repl_completion_integration() {
+        let mut engine = LuaEngine::new().unwrap();
+        engine.initialize().unwrap();
+
+        // Test that the completion system works for REPL-style completions
+        let completions = engine.get_completions_from_lua("get_").unwrap();
+        assert!(
+            !completions.is_empty(),
+            "Should find completions for 'get_'"
+        );
+
+        // Should include functions like get_record, get_position, etc.
+        assert!(
+            completions.iter().any(|c| c.contains("get_record()")),
+            "Should include get_record()"
+        );
+        assert!(
+            completions.iter().any(|c| c.contains("get_position()")),
+            "Should include get_position()"
+        );
+
+        // Test empty prefix returns many completions
+        let all_completions = engine.get_completions_from_lua("").unwrap();
+        assert!(
+            all_completions.len() > 20,
+            "Should find many completions for empty prefix"
+        );
+
+        // Should include core functions
+        assert!(
+            all_completions.iter().any(|c| c.contains("quit()")),
+            "Should include quit()"
+        );
+        assert!(
+            all_completions.iter().any(|c| c.contains("warning()")),
+            "Should include warning()"
+        );
+        assert!(
+            all_completions.iter().any(|c| c.contains("vmove()")),
+            "Should include vmove()"
+        );
+
+        println!("✓ REPL completion integration works correctly");
     }
 }

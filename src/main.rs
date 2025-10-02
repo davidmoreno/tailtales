@@ -21,6 +21,7 @@ struct ParsedArgs {
 
 mod application;
 mod ast;
+mod completions;
 mod events;
 mod keyboard_input;
 mod keyboard_management;

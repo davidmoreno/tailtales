@@ -210,6 +210,9 @@ impl TuiState {
                         "Use ↑/↓ arrows to navigate command history, Ctrl+L to clear screen."
                             .to_string(),
                     );
+                    self.repl_output_history.push(
+                        "Press Tab for function/variable completion, Esc to exit.".to_string(),
+                    );
                     self.repl_output_history.push("".to_string());
                 }
 
@@ -598,77 +601,6 @@ impl TuiState {
             .expect("failed to execute process")
             .wait()
             .expect("failed to wait for process");
-    }
-
-    pub fn get_completions(&self) -> (String, Vec<String>) {
-        let current = self.command.trim();
-
-        // Lua function names for completion
-        let mut completions: Vec<&str> = vec![
-            "quit()",
-            "warning(",
-            "vmove(",
-            "vgoto(",
-            "move_top()",
-            "move_bottom()",
-            "hmove(",
-            "search_next()",
-            "search_prev()",
-            "toggle_mark(",
-            "move_to_next_mark()",
-            "move_to_prev_mark()",
-            "mode(",
-            "toggle_details()",
-            "exec(",
-            "refresh_screen()",
-            "clear()",
-            "clear_records()",
-            "settings()",
-            "reload_settings()",
-            "ask(",
-            "url_encode(",
-            "url_decode(",
-            "escape_shell(",
-            "debug_log(",
-            "get_record(",
-            "get_position(",
-            "get_mode(",
-            "app.",
-        ];
-
-        completions.retain(|&c| c.starts_with(current));
-        let completions: Vec<String> = completions.iter().map(|&s| s.to_string()).collect();
-
-        // Find common prefix
-        let mut common_prefix = String::new();
-        if completions.len() == 1 {
-            common_prefix = completions[0].to_string();
-        } else if completions.len() > 1 {
-            let mut pos = 0;
-            let mut done = false;
-
-            while !done {
-                let mut c: Option<char> = None;
-                for completion in &completions {
-                    if pos >= completion.len() {
-                        done = true;
-                        break;
-                    }
-                    let current_char = completion.chars().nth(pos).unwrap();
-                    if c.is_none() {
-                        c = Some(current_char);
-                    } else if c.unwrap() != current_char {
-                        done = true;
-                        break;
-                    }
-                }
-                if !done {
-                    common_prefix.push(c.unwrap());
-                    pos += 1;
-                }
-            }
-        }
-        return (common_prefix, completions);
     }
 
     pub fn refresh_screen(&mut self) {
