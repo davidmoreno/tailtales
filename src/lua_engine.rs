@@ -1380,6 +1380,152 @@ impl LuaEngine {
 
         Ok(completions)
     }
+
+    /// Execute record processors callbacks on a record
+    pub fn execute_record_processors(
+        &mut self,
+        record: &mut crate::record::Record,
+    ) -> Result<(), LuaEngineError> {
+        let globals = self.lua.globals();
+
+        // Get the record_processors array
+        let processors: mlua::Table = match globals.get("record_processors") {
+            Ok(table) => table,
+            Err(_) => {
+                // If record_processors doesn't exist, create it
+                let table = self.lua.create_table().map_err(|e| {
+                    LuaEngineError::format_with_script(
+                        "Failed to create table",
+                        e,
+                        "execute_record_processors",
+                    )
+                })?;
+                globals.set("record_processors", &table).map_err(|e| {
+                    LuaEngineError::format_with_script(
+                        "Failed to set record_processors",
+                        e,
+                        "execute_record_processors",
+                    )
+                })?;
+                table
+            }
+        };
+
+        // Convert record to Lua table
+        let record_table = self.record_to_lua_table(record)?;
+
+        // Execute each processor
+        for pair in processors.pairs::<mlua::Value, mlua::Function>() {
+            let (_, processor): (mlua::Value, mlua::Function) = pair.map_err(|e| {
+                LuaEngineError::format_with_script(
+                    "Failed to iterate processors",
+                    e,
+                    "execute_record_processors",
+                )
+            })?;
+
+            // Call the processor with the record
+            let result: mlua::Table = processor.call(record_table.clone()).map_err(|e| {
+                LuaEngineError::format_with_script(
+                    "Failed to call processor",
+                    e,
+                    "execute_record_processors",
+                )
+            })?;
+
+            // Apply the result to the record
+            self.apply_processor_result(record, result)?;
+        }
+
+        Ok(())
+    }
+
+    /// Convert a Rust Record to a Lua table
+    fn record_to_lua_table(
+        &self,
+        record: &crate::record::Record,
+    ) -> Result<mlua::Table, LuaEngineError> {
+        let table = self.lua.create_table().map_err(|e| {
+            LuaEngineError::format_with_script("Failed to create table", e, "record_to_lua_table")
+        })?;
+
+        // Add original line
+        table
+            .set("original", record.original.as_str())
+            .map_err(|e| {
+                LuaEngineError::format_with_script(
+                    "Failed to set original",
+                    e,
+                    "record_to_lua_table",
+                )
+            })?;
+
+        // Add all data fields
+        for (key, value) in &record.data {
+            table.set(key.as_str(), value.as_str()).map_err(|e| {
+                LuaEngineError::format_with_script(
+                    "Failed to set data field",
+                    e,
+                    "record_to_lua_table",
+                )
+            })?;
+        }
+
+        Ok(table)
+    }
+
+    /// Apply processor result to the record
+    fn apply_processor_result(
+        &self,
+        record: &mut crate::record::Record,
+        result: mlua::Table,
+    ) -> Result<(), LuaEngineError> {
+        for pair in result.pairs::<mlua::String, mlua::Value>() {
+            let (key, value): (mlua::String, mlua::Value) = pair.map_err(|e| {
+                LuaEngineError::format_with_script(
+                    "Failed to iterate result pairs",
+                    e,
+                    "apply_processor_result",
+                )
+            })?;
+            let key_borrowed = key.to_str().map_err(|e| {
+                LuaEngineError::format_with_script(
+                    "Failed to convert key to string",
+                    e,
+                    "apply_processor_result",
+                )
+            })?;
+            let key_str = key_borrowed.as_ref();
+
+            match value {
+                mlua::Value::String(s) => {
+                    let s_str = s.to_str().map_err(|e| {
+                        LuaEngineError::format_with_script(
+                            "Failed to convert string value",
+                            e,
+                            "apply_processor_result",
+                        )
+                    })?;
+                    record.set_data(key_str, s_str.as_ref().to_string());
+                }
+                mlua::Value::Number(n) => {
+                    record.set_data(key_str, n.to_string());
+                }
+                mlua::Value::Boolean(b) => {
+                    record.set_data(key_str, b.to_string());
+                }
+                mlua::Value::Nil => {
+                    record.unset_data(key_str);
+                }
+                _ => {
+                    // Convert other types to string
+                    record.set_data(key_str, format!("{:?}", value));
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Helper struct to wrap TuiState for safe Lua access

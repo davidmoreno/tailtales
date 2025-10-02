@@ -536,4 +536,10 @@ function print_count(attribute)
     print("")
 end
 
+-- Record processors array - callbacks that process each new record
+-- Each callback receives the current record (with builtin attributes already set)
+-- and returns a table with new attributes to add/update/remove
+-- Use nil values to remove attributes
+record_processors = {}
+
 print("TailTales Lua environment initialized. Use dir() to explore or help() for assistance.")

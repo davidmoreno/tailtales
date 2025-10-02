@@ -156,7 +156,9 @@ impl Application {
                     }
                 },
                 TuiEvent::NewRecord(record) => {
-                    self.state.records.add(record);
+                    self.state
+                        .records
+                        .add_record(record, Some(&mut self.lua_engine));
                     if self.state.position == max(0, self.state.records.len() as i32 - 2) as usize {
                         self.state.move_selection(1);
                     }

@@ -192,9 +192,21 @@ impl RecordList {
         });
     }
 
-    pub fn add(&mut self, mut record: Record) {
+    pub fn add_record(
+        &mut self,
+        mut record: Record,
+        lua_engine: Option<&mut crate::lua_engine::LuaEngine>,
+    ) {
         record.parse(&mut self.parsers);
         record.set_data("line_number", (self.all_records.len() + 1).to_string());
+
+        // Execute record processors if Lua engine is provided
+        if let Some(engine) = lua_engine {
+            if let Err(e) = engine.execute_record_processors(&mut record) {
+                eprintln!("Error executing record processors: {}", e);
+            }
+        }
+
         self.max_record_size = self.max_record_size.max(record.original.len());
         self.all_records.push(record.clone());
 

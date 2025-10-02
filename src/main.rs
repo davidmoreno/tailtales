@@ -100,7 +100,7 @@ fn parse_args_with_clap() -> ParsedArgs {
             Arg::new("lua")
                 .long("lua")
                 .value_name("SCRIPT")
-                .help("Run a Lua script file in console mode"),
+                .help("Execute a Lua script file before processing logs"),
         )
         .arg(
             Arg::new("files")
@@ -124,10 +124,10 @@ fn parse_args_with_clap() -> ParsedArgs {
 }
 
 fn apply_args_to_app(args: ParsedArgs, app: &mut Application) {
-    // Handle Lua script execution first
+    // Handle Lua script execution first (if provided)
     if let Some(script_path) = args.lua_script {
         execute_lua_script(&script_path, app);
-        return; // Don't process files when running Lua script
+        // Continue to process files after script execution
     }
 
     // Handle mode selection
@@ -219,15 +219,9 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
         }
     };
 
-    // Set up the application for Lua REPL mode
-    app.state.set_mode("lua_repl");
-
-    // Add a message indicating external script execution
-    app.state
-        .repl_output_history
-        .push(format!("Executing external Lua script: {}", script_path));
-    app.state.repl_output_history.push("=".repeat(50));
-    app.state.repl_output_history.push("".to_string());
+    // Execute the script in normal mode (not REPL mode)
+    // This allows the script to set up record processors and other configurations
+    // while keeping the main view active for file processing
 
     // Compile and execute the script
     let script_name = format!(
@@ -243,30 +237,21 @@ fn execute_lua_script(script_path: &str, app: &mut Application) {
                 .execute_script_string_with_state(&script_content, &mut app.state)
             {
                 Ok(output) => {
+                    // Print script output to stderr so it's visible but doesn't interfere with the UI
                     if !output.is_empty() {
-                        // Split multi-line output into separate history entries
-                        for line in output.lines() {
-                            if !line.is_empty() {
-                                app.state.repl_output_history.push(line.to_string());
-                            }
-                        }
+                        eprintln!("Script output: {}", output);
                     }
-                    app.state.repl_output_history.push("".to_string());
-                    app.state
-                        .repl_output_history
-                        .push("Script execution completed.".to_string());
+                    eprintln!("Script '{}' executed successfully.", script_path);
                 }
                 Err(e) => {
-                    app.state
-                        .repl_output_history
-                        .push(format!("Error executing script: {}", e));
+                    eprintln!("Error executing script '{}': {}", script_path, e);
+                    std::process::exit(1);
                 }
             }
         }
         Err(e) => {
-            app.state
-                .repl_output_history
-                .push(format!("Error compiling script: {}", e));
+            eprintln!("Error compiling script '{}': {}", script_path, e);
+            std::process::exit(1);
         }
     }
 }
