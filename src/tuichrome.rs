@@ -213,11 +213,7 @@ impl TuiChrome {
                 })
                 .collect();
 
-            let gutter = if let Some(gutter) = Self::get_gutter_from_record(state, &record) {
-                Cell::from(Span::styled(&settings.global.gutter_symbol, gutter))
-            } else {
-                Cell::from(Span::styled(" ", settings.colors.normal))
-            };
+            let gutter = Cell::from(Self::get_gutter_from_record(state, &record));
             cells.insert(0, gutter);
 
             // let vscroll_left = min(
@@ -373,18 +369,21 @@ impl TuiChrome {
         Line::from(spans)
     }
 
-    pub fn get_gutter_from_record(state: &TuiState, record: &record::Record) -> Option<Style> {
+    pub fn get_gutter_from_record<'a>(state: &'a TuiState, record: &'a record::Record) -> Span<'a> {
         let filters = &state.current_rule.filters;
 
         for filter in filters {
             if record.matches(&filter.expression) {
                 if filter.gutter.is_some() {
-                    return Some(Style::from(filter.gutter.unwrap()));
+                    return Span::styled(
+                        filter.gutter_symbol.clone(),
+                        Style::from(filter.gutter.unwrap()),
+                    );
                 }
             }
         }
 
-        return None;
+        return Span::styled(" ", Style::from(state.settings.colors.normal));
     }
 
     pub fn get_row_style(state: &TuiState, record: &record::Record) -> Style {
@@ -580,9 +579,9 @@ impl TuiChrome {
     pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
         let rstyle = reverse_style(style);
 
-        spans.push(Span::styled(format!(" {} ", label), rstyle));
-        spans.push(Span::styled(format!(" {} ", value), style));
-        spans.push(Span::styled(" ".to_string(), rstyle));
+        spans.push(Span::styled(format!(" {} ", label), rstyle));
+        spans.push(Span::styled(format!(" {} ", value), style));
+        spans.push(Span::styled("".to_string(), rstyle));
         spans.push(Span::styled(
             " ".to_string(),
             Style::default().fg(Color::Black).bg(Color::Black),

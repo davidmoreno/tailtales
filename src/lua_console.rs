@@ -566,9 +566,10 @@ fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
 
     let rstyle = reverse_style(style);
 
-    spans.push(Span::styled(format!(" {} ", label), rstyle));
-    spans.push(Span::styled(format!(" {} ", value), style));
-    spans.push(Span::styled(" ".to_string(), rstyle));
+    spans.push(Span::styled(format!(" {} ", label), rstyle));
+    spans.push(Span::styled(format!(" {} ", value), style));
+    spans.push(Span::styled("".to_string(), rstyle));
+    // spans.push(Span::styled(" ".to_string(), rstyle));
 }
 
 #[cfg(test)]

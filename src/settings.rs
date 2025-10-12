@@ -143,6 +143,8 @@ pub struct FilterSettings {
         serialize_with = "serialize_optional_style"
     )]
     pub gutter: Option<Style>,
+    #[serde(default)]
+    pub gutter_symbol: String,
 }
 
 fn parse_expression<'de, D>(deserializer: D) -> Result<ast::AST, D::Error>

@@ -18,7 +18,7 @@
 
 global:
   reload_on_truncate: false
-  gutter_symbol: "▌" # I like this one as it allows to have two colors (front and back)
+  gutter_symbol: "" # I like this one as it allows to have two colors (front and back)
   # gutter_symbol: "█"
   # gutter_symbol: "♥"
   # gutter_symbol: "✔"
@@ -238,10 +238,20 @@ rules:
     filters:
       - name: kernel
         expression: "kernel"
-        gutter: blue
+        gutter: yellow
+        gutter_symbol: "\ue712"
       - name: systemd
         expression: "systemd"
-        gutter: darkgrey
+        gutter: yellow
+        gutter_symbol: ""
+      - name: mozilla
+        expression: "mozilla"
+        gutter: red
+        gutter_symbol: ""
+      - name: pipewire
+        expression: "pipewire"
+        gutter: blue
+        gutter_symbol: ""
 
   - name: csv
     file_patterns:
