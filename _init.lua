@@ -311,6 +311,14 @@ documentation = {
         category = "utility"
     },
     
+    beep = {
+        name = "beep",
+        description = "Play a beep sound using xdg-open with a standard wav file",
+        parameters = {},
+        return_value = "boolean - true if successful, false if failed",
+        category = "utility"
+    },
+    
     -- Analysis Functions (defined in _init.lua)
     histogram = {
         name = "histogram",
@@ -501,6 +509,38 @@ function typeof(obj)
         end
     end
     return t
+end
+
+-- Play a beep sound using xdg-open with a standard wav file
+function beep()
+    -- Try to find a standard beep sound file in common locations
+    local beep_files = {
+        "/usr/share/sounds/alsa/Front_Left.wav",
+        "/usr/share/sounds/alsa/Front_Right.wav", 
+        "/usr/share/sounds/sound-icons/prompt.wav",
+        "/usr/share/sounds/sound-icons/button.wav",
+        "/usr/share/sounds/gnome/default/alerts/drip.ogg",
+        "/usr/share/sounds/gnome/default/alerts/glass.ogg",
+        "/usr/share/sounds/gnome/default/alerts/click.ogg",
+        "/usr/share/sounds/freedesktop/stereo/audio-volume-change.oga",
+        "/usr/share/sounds/freedesktop/stereo/complete.oga",
+        "/usr/share/sounds/freedesktop/stereo/notification.oga"
+    }
+    
+    -- Try each beep file until one works
+    for _, beep_file in ipairs(beep_files) do
+        local cmd = "xdg-open " .. escape_shell(beep_file) .. " 2>/dev/null"
+        if exec(cmd) then
+            return true
+        end
+    end
+    
+    -- If no wav file found, try using the system beep
+    if exec("echo -e '\\a'") then
+        return true
+    end
+    
+    return false
 end
 
 -- Enhanced help function that uses the documentation table
