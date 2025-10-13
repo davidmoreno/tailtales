@@ -515,10 +515,7 @@ end
 function beep()
     -- Try to find a standard beep sound file in common locations
     local beep_files = {
-        "/usr/share/sounds/alsa/Front_Left.wav",
-        "/usr/share/sounds/alsa/Front_Right.wav", 
-        "/usr/share/sounds/sound-icons/prompt.wav",
-        "/usr/share/sounds/sound-icons/button.wav",
+        "/usr/share/sounds/freedesktop/stereo/bell.oga",
         "/usr/share/sounds/gnome/default/alerts/drip.ogg",
         "/usr/share/sounds/gnome/default/alerts/glass.ogg",
         "/usr/share/sounds/gnome/default/alerts/click.ogg",
@@ -529,7 +526,7 @@ function beep()
     
     -- Try each beep file until one works
     for _, beep_file in ipairs(beep_files) do
-        local cmd = "xdg-open " .. escape_shell(beep_file) .. " 2>/dev/null"
+        local cmd = "paplay " .. escape_shell(beep_file) .. " 2>/dev/null"
         if exec(cmd) then
             return true
         end
