@@ -38,6 +38,36 @@ pub struct SettingsFromYaml {
 pub struct GlobalSettings {
     // pub reload_on_truncate: bool,
     pub gutter_symbol: String,
+    #[serde(default)]
+    pub symbols: SymbolSettings,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct SymbolSettings {
+    #[serde(default = "default_tag_initial")]
+    pub tag_initial: String,
+    #[serde(default = "default_tag_mid_left")]
+    pub tag_mid_left: String,
+    #[serde(default = "default_tag_mid_right")]
+    pub tag_mid_right: String,
+    #[serde(default = "default_tag_end")]
+    pub tag_end: String,
+}
+
+fn default_tag_initial() -> String {
+    "[".to_string()
+}
+
+fn default_tag_mid_left() -> String {
+    ":".to_string()
+}
+
+fn default_tag_mid_right() -> String {
+    " ".to_string()
+}
+
+fn default_tag_end() -> String {
+    "]".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]

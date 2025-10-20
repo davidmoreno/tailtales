@@ -24,6 +24,19 @@ global:
   # gutter_symbol: "✔"
   # gutter_symbol: "│"
 
+  symbols:
+    # https://github.com/ryanoasis/powerline-extra-symbols
+    # with nerd fonts. Change this if they do not look right.
+    tag_initial: "\ue0b8" # Symbol before label in footer tags
+    tag_mid_left: " \ue0be" # Symbol between label and value in footer tags
+    tag_mid_right: " " # Symbol between value and end in footer tags
+    tag_end: " \ue0be\ue0b8" # Symbol after value in footer tags
+    # Alternative ASCII-friendly symbols:
+    # tag_initial: "["
+    # tag_mid_left: " :"
+    # tag_mid_right: " "
+    # tag_end: "]"
+
 colors:
   normal: white black
   highlight: white darkgray

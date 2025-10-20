@@ -162,23 +162,23 @@ impl TuiChrome {
 
     /// Set cursor position based on current mode
     fn set_cursor_for_mode(&mut self, state: &TuiState, size: Size) -> io::Result<()> {
-        if state.mode == Mode::LuaRepl {
-            // Hide cursor in REPL mode since we show our own cursor in the output
-            self.terminal
-                .backend_mut()
-                .execute(crossterm::cursor::Hide)
-                .unwrap();
-        } else {
-            // Set cursor at the beginning of the last line for other modes
-            self.terminal
-                .backend_mut()
-                .execute(crossterm::cursor::Show)
-                .unwrap();
-            self.terminal
-                .backend_mut()
-                .execute(crossterm::cursor::MoveTo(0, size.height - 1))
-                .unwrap();
-        }
+        // if state.mode == Mode::LuaRepl {
+        // Hide cursor in REPL mode since we show our own cursor in the output
+        self.terminal
+            .backend_mut()
+            .execute(crossterm::cursor::Hide)
+            .unwrap();
+        // } else {
+        //     // Set cursor at the beginning of the last line for other modes
+        //     self.terminal
+        //         .backend_mut()
+        //         .execute(crossterm::cursor::Show)
+        //         .unwrap();
+        //     self.terminal
+        //         .backend_mut()
+        //         .execute(crossterm::cursor::MoveTo(0, size.height - 1))
+        //         .unwrap();
+        // }
         Ok(())
     }
 
@@ -532,6 +532,7 @@ impl TuiChrome {
             &state.search,
             state.text_edit_position,
             state.settings.colors.footer.search,
+            &state.settings.global.symbols,
         )
     }
     pub fn render_footer_filter(state: &TuiState) -> Block {
@@ -540,7 +541,13 @@ impl TuiChrome {
         } else {
             Style::default().fg(Color::Red).bg(Color::Black)
         };
-        Self::render_textinput_block("Filter", &state.filter, state.text_edit_position, style)
+        Self::render_textinput_block(
+            "Filter",
+            &state.filter,
+            state.text_edit_position,
+            style,
+            &state.settings.global.symbols,
+        )
     }
     pub fn render_footer_command(state: &TuiState) -> Block {
         Self::render_textinput_block(
@@ -548,6 +555,7 @@ impl TuiChrome {
             &state.command,
             state.text_edit_position,
             state.settings.colors.footer.command,
+            &state.settings.global.symbols,
         )
     }
     pub fn render_footer_warning(state: &TuiState) -> Block {
@@ -565,6 +573,7 @@ impl TuiChrome {
             &state.script_input,
             state.text_edit_position,
             state.settings.colors.footer.command, // Use command colors for now
+            &state.settings.global.symbols,
         )
     }
 
@@ -576,15 +585,22 @@ impl TuiChrome {
         render_console_output(&state.lua_console, state.visible_height)
     }
 
-    pub fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
+    pub fn render_tag(
+        spans: &mut Vec<Span>,
+        label: &str,
+        value: &str,
+        style: Style,
+        symbols: &crate::settings::SymbolSettings,
+    ) {
         let rstyle = reverse_style(style);
 
-        spans.push(Span::styled(format!(" {} ", label), rstyle));
-        spans.push(Span::styled(format!(" {} ", value), style));
-        spans.push(Span::styled("".to_string(), rstyle));
         spans.push(Span::styled(
-            " ".to_string(),
-            Style::default().fg(Color::Black).bg(Color::Black),
+            format!("{}{}{}", symbols.tag_initial, label, symbols.tag_mid_left),
+            rstyle,
+        ));
+        spans.push(Span::styled(
+            format!("{}{}{}", symbols.tag_mid_right, value, symbols.tag_end),
+            style,
         ));
     }
 
@@ -593,21 +609,29 @@ impl TuiChrome {
         value: &'a str,
         position: usize,
         style: Style,
+        symbols: &crate::settings::SymbolSettings,
     ) -> Block<'a> {
         let mut spans = vec![];
         let rstyle = reverse_style(style);
 
-        spans.push(Span::styled(format!(" {} ", label), rstyle));
+        spans.push(Span::styled(
+            format!("{}{}{}", symbols.tag_initial, label, symbols.tag_mid_left),
+            rstyle,
+        ));
 
         // we split value in three, before cursor, cursor, after cursor
         let before_cursor = value.chars().take(position).collect::<String>();
         let cursor = value.chars().nth(position).unwrap_or(' ');
         let after_cursor = value.chars().skip(position + 1).collect::<String>();
-        spans.push(Span::styled(" ", style));
-        spans.push(Span::styled(before_cursor, style));
+        spans.push(Span::styled(
+            format!("{}{}", symbols.tag_mid_right, before_cursor),
+            style,
+        ));
         spans.push(Span::styled(cursor.to_string(), rstyle));
-        spans.push(Span::styled(after_cursor, style));
-        spans.push(Span::styled(" ", style));
+        spans.push(Span::styled(
+            format!("{}{}", after_cursor, symbols.tag_end),
+            style,
+        ));
 
         let line = Line::from(spans);
 
@@ -624,12 +648,19 @@ impl TuiChrome {
 
         let mut spans = vec![];
 
-        Self::render_tag(&mut spans, "F1", "help", state.settings.colors.footer.other);
+        Self::render_tag(
+            &mut spans,
+            "F1",
+            "help",
+            state.settings.colors.footer.other,
+            &state.settings.global.symbols,
+        );
         Self::render_tag(
             &mut spans,
             ":",
             "commands",
             state.settings.colors.footer.other,
+            &state.settings.global.symbols,
         );
         if state.search != "" {
             Self::render_tag(
@@ -637,6 +668,7 @@ impl TuiChrome {
                 "Search",
                 &state.search,
                 state.settings.colors.footer.search,
+                &state.settings.global.symbols,
             );
         }
 
@@ -646,6 +678,7 @@ impl TuiChrome {
                 "Filter",
                 &state.filter,
                 state.settings.colors.footer.filter,
+                &state.settings.global.symbols,
             );
         }
 
@@ -654,6 +687,7 @@ impl TuiChrome {
             "Rule",
             &state.current_rule.name,
             state.settings.colors.footer.rule,
+            &state.settings.global.symbols,
         );
         Self::render_tag(
             &mut spans,
@@ -665,6 +699,7 @@ impl TuiChrome {
             )
             .as_str(),
             state.settings.colors.footer.line_number,
+            &state.settings.global.symbols,
         );
 
         let right_line = Line::from(spans);
@@ -677,6 +712,7 @@ impl TuiChrome {
             "Tailtales",
             version.as_str(),
             state.settings.colors.footer.version,
+            &state.settings.global.symbols,
         );
 
         let left_line = Line::from(spans);

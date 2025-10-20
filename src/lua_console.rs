@@ -513,6 +513,7 @@ pub fn render_console_footer<'a>(
             "Multiline Mode",
             "Ctrl+C to cancel",
             settings.colors.footer.command,
+            &settings.global.symbols,
         );
     }
 
@@ -521,18 +522,21 @@ pub fn render_console_footer<'a>(
         "Lua REPL",
         "ESC to exit",
         settings.colors.footer.other,
+        &settings.global.symbols,
     );
     render_tag(
         &mut spans,
         "History",
         "↑↓ arrows",
         settings.colors.footer.other,
+        &settings.global.symbols,
     );
     render_tag(
         &mut spans,
         "Scroll",
         "Ctrl+↑↓ PgUp PgDn",
         settings.colors.footer.other,
+        &settings.global.symbols,
     );
 
     // Show history position if navigating
@@ -543,6 +547,7 @@ pub fn render_console_footer<'a>(
                 "Pos",
                 &format!("{}/{}", index + 1, console.command_history.len()),
                 settings.colors.footer.command,
+                &settings.global.symbols,
             );
         }
     } else if !console.command_history.is_empty() {
@@ -551,6 +556,7 @@ pub fn render_console_footer<'a>(
             "History",
             &format!("{}", console.command_history.len()),
             settings.colors.footer.other,
+            &settings.global.symbols,
         );
     }
 
@@ -561,15 +567,25 @@ pub fn render_console_footer<'a>(
 }
 
 /// Helper function to render footer tags with proper styling
-fn render_tag(spans: &mut Vec<Span>, label: &str, value: &str, style: Style) {
+fn render_tag(
+    spans: &mut Vec<Span>,
+    label: &str,
+    value: &str,
+    style: Style,
+    symbols: &crate::settings::SymbolSettings,
+) {
     use crate::utils::reverse_style;
 
     let rstyle = reverse_style(style);
 
-    spans.push(Span::styled(format!(" {} ", label), rstyle));
-    spans.push(Span::styled(format!(" {} ", value), style));
-    spans.push(Span::styled("".to_string(), rstyle));
-    // spans.push(Span::styled(" ".to_string(), rstyle));
+    spans.push(Span::styled(
+        format!("{}{}{}", symbols.tag_initial, label, symbols.tag_mid_left),
+        rstyle,
+    ));
+    spans.push(Span::styled(
+        format!("{}{}{}", symbols.tag_mid_right, value, symbols.tag_end),
+        style,
+    ));
 }
 
 #[cfg(test)]
